@@ -1,0 +1,18 @@
+{
+  "name": "skill-creation",
+  "description": "Auto-generated from task: \"Research self-improvement in agent systems\"",
+  "tags": [
+    "auto",
+    "researcher"
+  ],
+  "steps": [
+    "Identify recurring task pattern",
+    "Extract steps from execution",
+    "Write skill JSON document",
+    "Save to skills/ directory",
+    "Increment usageCount on reuse"
+  ],
+  "createdAt": "2026-08-26T20:39:02.952Z",
+  "usageCount": 1,
+  "successRate": 1
+}

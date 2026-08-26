@@ -1,0 +1,33 @@
+{
+  "version": "0.0.1",
+  "author": {
+    "name": "Mohamed Moughamir",
+    "url": "https://moughamir.github.io",
+    "email": "moughamir@gmail.com"
+  },
+  "description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
+  "scripts": {
+    "orchestrator": "bun agents/orchestrator.ts",
+    "coder": "bun agents/coder-agent.ts",
+    "researcher": "bun agents/researcher-agent.ts",
+    "mcp": "bun mcp-servers/tools.ts",
+    "acp-bridge": "bun agents/acp-bridge.ts",
+    "demo": "bun run --parallel scripts/demo.ts",
+    "dev": "bun run --parallel coder researcher mcp orchestrator acp-bridge"
+  },
+  "name": "agent-lab",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "1.4.0"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}

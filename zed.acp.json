@@ -1,0 +1,6 @@
+{
+  "command": "bun",
+  "args": [
+    "agents/acp-bridge.ts"
+  ]
+}
