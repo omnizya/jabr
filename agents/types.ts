@@ -1,21 +1,18 @@
-export interface PackageDefaults {
-  name: string;
-  description: string;
-  version?: string;
-  url?: string;
-}
+// ─── Domain types ─────────────────────────────────────────────────────────────
 
-export interface AgentCardCapabilities {
-  streaming: boolean;
-  pushNotifications: boolean;
-}
-export interface AgentCard {
+export interface AgentConfig {
   name: string;
   description: string;
   url: string;
   version: string;
-  capabilities: AgentCardCapabilities;
-  skills: AgentSkill[];
+  port: number;
+}
+
+// ─── A2A (Agent-to-Agent) types ───────────────────────────────────────────────
+
+export interface AgentCardCapabilities {
+  streaming: boolean;
+  pushNotifications: boolean;
 }
 
 export interface AgentSkill {
@@ -26,7 +23,15 @@ export interface AgentSkill {
   outputModes: string[];
 }
 
-// A2A task lifecycle states
+export interface AgentCard {
+  name: string;
+  description: string;
+  url: string;
+  version: string;
+  capabilities: AgentCardCapabilities;
+  skills: AgentSkill[];
+}
+
 export type TaskState =
   | "submitted"
   | "working"
@@ -39,6 +44,7 @@ export interface A2ATaskStatus {
   state: TaskState;
   timestamp: string;
 }
+
 export interface A2ATask {
   id: string;
   contextId: string;
@@ -48,6 +54,7 @@ export interface A2ATask {
 }
 
 export type A2AMessageRole = "user" | "agent";
+
 export interface A2AMessage {
   messageId: string;
   role: A2AMessageRole;
@@ -67,7 +74,8 @@ export interface A2AArtifact {
   parts: A2APart[];
 }
 
-// ACP (Agent Client Protocol) JSON-RPC shapes
+// ─── ACP (Agent Client Protocol) types ────────────────────────────────────────
+
 export interface ACPRequest {
   jsonrpc: "2.0";
   id: number | string;
@@ -80,6 +88,7 @@ export interface ErrorCard {
   message: string;
   data?: unknown;
 }
+
 export interface ACPResponse {
   jsonrpc: "2.0";
   id: number | string;
@@ -87,7 +96,8 @@ export interface ACPResponse {
   error?: ErrorCard;
 }
 
-// Hermes-style skill document (self-improvement loop)
+// ─── Skill types (self-improvement loop) ──────────────────────────────────────
+
 export interface SkillDocument {
   name: string;
   description: string;
@@ -98,7 +108,8 @@ export interface SkillDocument {
   successRate: number;
 }
 
-// MCP tool call
+// ─── MCP tool types ───────────────────────────────────────────────────────────
+
 export interface MCPToolCall {
   name: string;
   arguments: Record<string, unknown>;

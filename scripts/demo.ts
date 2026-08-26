@@ -219,7 +219,7 @@ step("6 · ACP bridge — simulated initialize + sessions/message");
 
 await check("ACP initialize returns capabilities", async () => {
   // Spawn the ACP bridge as a subprocess and test it via stdin/stdout
-  const proc = Bun.spawn(["bun", "agents/acp-bridge.ts"], {
+  const proc = Bun.spawn(["bun", "agents/run/acp-bridge.ts"], {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -315,10 +315,10 @@ console.log("═".repeat(60));
 
 if (failed > 0) {
   console.log("\n⚠ Some tests failed. Make sure all agents are running:");
-  console.log("  bun agents/coder-agent.ts &");
-  console.log("  bun agents/researcher-agent.ts &");
-  console.log("  bun agents/orchestrator.ts &");
-  console.log("  bun scripts/demo.ts");
+  console.log("  bun run coder &");
+  console.log("  bun run researcher &");
+  console.log("  bun run orchestrator &");
+  console.log("  bun run demo");
 }
 
 process.exit(failed > 0 ? 1 : 0);
