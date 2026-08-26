@@ -18,36 +18,12 @@
  */
 
 import type { ACPRequest, ACPResponse } from "../../types.ts";
-
-// ── Wire-format types ──────────────────────────────────────────────────────────
-
-interface JSONRPCRequest {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  method: string;
-  params?: unknown;
-}
-
-interface JSONRPCResponse {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-// ── JSON-RPC helpers (not exported) ────────────────────────────────────────────
-
-function ok(id: number | string | null, result: unknown): JSONRPCResponse {
-  return { jsonrpc: "2.0", id, result };
-}
-
-function err(
-  id: number | string | null,
-  code: number,
-  message: string,
-): JSONRPCResponse {
-  return { jsonrpc: "2.0", id, error: { code, message } };
-}
+import {
+  type JSONRPCRequest,
+  type JSONRPCResponse,
+  ok,
+  err,
+} from "../../utils/rpc.ts";
 
 // ── StdioBridge ────────────────────────────────────────────────────────────────
 

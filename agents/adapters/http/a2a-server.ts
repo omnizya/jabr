@@ -10,39 +10,18 @@
  */
 
 import type { AgentCard } from "../../types.ts";
+import {
+  type JSONRPCRequest,
+  ok,
+  err,
+  corsHeaders,
+  corsPreflightHeaders,
+} from "../../utils/rpc.ts";
 
 interface A2AServerConfig {
   port: number;
   card: AgentCard;
   onTask: (message: string) => Promise<string>;
-}
-
-interface JSONRPCRequest {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  method: string;
-  params?: unknown;
-}
-
-interface JSONRPCResponse {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-// ── JSON-RPC helpers ───────────────────────────────────────────────────────────
-
-function ok(id: number | string | null, result: unknown): JSONRPCResponse {
-  return { jsonrpc: "2.0", id, result };
-}
-
-function err(
-  id: number | string | null,
-  code: number,
-  message: string,
-): JSONRPCResponse {
-  return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
 // ── A2A server ─────────────────────────────────────────────────────────────────
@@ -65,16 +44,8 @@ export class A2AServer {
 
         // 1. CORS preflight
         if (req.method === "OPTIONS") {
-          return new Response(null, {
-            headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type",
-            },
-          });
+          return new Response(null, { headers: corsPreflightHeaders });
         }
-
-        const corsHeaders = { "Access-Control-Allow-Origin": "*" };
 
         // 2. AgentCard serving
         if (

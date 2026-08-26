@@ -1,44 +1,51 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "opencode/big-pickle",
-  "provider": {
-    "anthropic": {
-      "options": {
-        "apiKey": "${ANTHROPIC_API_KEY}"
-      }
-    }
-  },
+  "model": "ollama-cloud/gemma4:31b",
   "agents": {
     "orchestrator": {
-      "description": "Routes tasks, persists memory, self-improves. Main coordinator.",
-      "skills": ["deepwork", "verification-planning", "reflect", "worktrees", "codemap"]
+      "mode": "primary",
+      "skills": [
+        "deepwork",
+        "verification-planning",
+        "reflect",
+        "worktrees",
+        "codemap"
+      ]
     },
     "oracle": {
-      "description": "Code review, simplification, architecture decisions. Senior advisor.",
-      "skills": ["simplify"]
+      "mode": "subagent",
+      "skills": [
+        "simplify"
+      ]
     },
     "librarian": {
-      "description": "Docs, web research, code search. External knowledge specialist.",
+      "mode": "subagent",
       "skills": []
     },
     "explorer": {
-      "description": "Fast codebase recon, file search. Scouting specialist.",
-      "skills": ["codemap"]
+      "mode": "subagent",
+      "skills": [
+        "codemap"
+      ]
     },
     "designer": {
-      "description": "UI/UX design, responsive layouts. Visual design specialist.",
+      "mode": "subagent",
       "skills": []
     },
     "fixer": {
-      "description": "Bug fixes, code generation, mechanical implementation. Bounded execution.",
+      "mode": "subagent",
       "skills": []
     }
   },
   "mcp": {
-    "agent-lab-tools": {
-      "type": "local",
-      "command": ["bun", "mcp-servers/tools.ts"]
+    "servers": {
+      "agent-lab-tools": {
+        "type": "local",
+        "command": [
+          "bun",
+          "mcp-servers/tools.ts"
+        ]
+      }
     }
-  },
-  "instructions": ["AGENTS.md"]
+  }
 }
