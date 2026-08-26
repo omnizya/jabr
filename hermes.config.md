@@ -1,62 +1,88 @@
-# Hermes Agent Integration
+# Hermes Configuration
 
-## Add to your Hermes `.env` or config
+Reference config for running agent-lab with Hermes.
 
-```bash
-# MCP server (Bun) — add to your Hermes MCP list
-MCP_SERVERS='[
-  {
-    "name": "agent-lab-tools",
-    "command": "bun",
-    "args": ["/path/to/agent-lab/mcp-servers/tools.ts"],
-    "type": "stdio"
-  }
-]'
+## `~/.hermes/config.yaml`
+
+```yaml
+# MCP Tool Server — stdio, launched per session
+mcp_servers:
+  agent-lab-tools:
+    command: "bun"
+    args: ["mcp-servers/tools.ts"]
+    timeout: 120
+    tools:
+      resources: false
+      prompts: false
+
+# A2A specialist agents — HTTP JSON-RPC on localhost
+a2a_agents:
+  orchestrator:
+    url: "http://localhost:4000"
+    timeout: 30
+    capabilities: ["routing", "memory", "skills"]
+  coder:
+    url: "http://localhost:4001"
+    timeout: 30
+    capabilities: ["code-generation", "review", "python-execution"]
+  researcher:
+    url: "http://localhost:4002"
+    timeout: 30
+    capabilities: ["research", "summarization", "skill-creation"]
+
+# Gateway — enables A2A platform routing
+gateway:
+  platforms:
+    a2a:
+      enabled: true
+  extra:
+    port: 9900
 ```
 
-## Hermes → A2A Orchestrator
+## Environment Variables
 
-Hermes can delegate to the A2A orchestrator directly via HTTP:
+| Variable | Default | Description |
+|---|---|---|
+| `A2A_HOST` | `localhost` | Bind host for A2A gateway |
+| `A2A_PORT` | `9900` | Bind port for A2A gateway |
+| `A2A_AUTH_TOKEN` | — | Shared secret for A2A auth |
+| `A2A_REQUIRE_AUTH` | `false` | Require auth on A2A endpoints |
+| `A2A_REPLY_TIMEOUT` | `30` | Seconds to wait for agent reply |
 
-```bash
-# In a Hermes skill or cron job:
-curl -X POST http://localhost:4000/a2a \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "1",
-    "method": "message/send",
-    "params": {
-      "message": {
-        "messageId": "msg-1",
-        "role": "user",
-        "kind": "message",
-        "parts": [{ "kind": "text", "text": "Implement a rate limiter" }],
-        "contextId": "ctx-1"
-      }
-    }
-  }'
+## Skills
+
+Skills live in `~/.hermes/skills/<category>/SKILL.md` with YAML frontmatter:
+
+```yaml
+---
+name: agent-lab-example
+description: Example skill
+version: "1.0"
+metadata:
+  hermes:
+    tags: ["example", "agent-lab"]
+---
+
+# When to Use
+Describe trigger conditions.
+
+# Procedure
+Step-by-step instructions.
+
+# Pitfalls
+Common mistakes.
+
+# Verification
+How to confirm success.
+
+# Quick Reference
+Cheat sheet.
 ```
 
-## Memory bridge
+Plus a `skill.json` for machine-readable metadata.
 
-Hermes writes to `memory/user.md` + `memory/memory.md`.
-The orchestrator writes to `memory/orchestrator.md`.
-Both use append-only markdown — compatible formats.
+## Memory
 
-## Skill interop
-
-Hermes skills live in `~/.hermes/skills/`.
-This project writes to `./skills/`.
-Copy compatible: both are JSON with `name`, `description`, `steps`.
-
-## Kilo / Codex delegation
-
-Configure in Hermes as A2A sub-agents:
-
-```
-Kilo  → http://kilo-agent-endpoint/a2a   (kilocode provider)
-Codex → http://codex-agent-endpoint/a2a  (openai-codex provider)
-```
-
-Orchestrator discovers them via Agent Cards automatically.
+- `~/.hermes/memories/MEMORY.md` — 2200 char limit, `§`-delimited entries
+- `~/.hermes/memories/USER.md` — 1375 char limit
+- Frozen snapshot at session start

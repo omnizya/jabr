@@ -58,22 +58,17 @@ bun run demo
 
 ## IDE integration (ACP)
 
-**Zed** `~/.config/zed/settings.json`:
+**Zed** `~/.config/zed/settings.json` or project `.zed/settings.json`:
 
 ```json
 {
-  "bindings": {
-    "cmd-alt-o": [
-      "agent::NewExternalAgentThread",
-      {
-        "agent": {
-          "custom": {
-            "name": "agent-lab",
-            "command": { "command": "bun", "args": ["agents/acp-bridge.ts"] }
-          }
-        }
-      }
-    ]
+  "agent_servers": {
+    "agent-lab": {
+      "type": "custom",
+      "command": "bun",
+      "args": ["agents/acp-bridge.ts"],
+      "default_mode": "base"
+    }
   }
 }
 ```

@@ -1,0 +1,10 @@
+{
+  "agent_servers": {
+    "agent-lab": {
+      "type": "custom",
+      "command": "bun",
+      "args": ["agents/acp-bridge.ts"],
+      "default_mode": "base"
+    }
+  }
+}
