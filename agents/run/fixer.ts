@@ -1,19 +1,19 @@
 import { A2AServer } from "../adapters/http/a2a-server.ts";
 import { TaskMemory } from "../adapters/task-memory.ts";
 import { SkillFS } from "../adapters/skill-fs.ts";
-import { CoderAgent, CODER_CARD } from "../core/coder.ts";
+import { FixerAgent, FIXER_CARD } from "../core/fixer.ts";
 
 // @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
-  const PORT = 4001;
+  const PORT = 4005;
 
   const taskStore = new TaskMemory();
   const skillStore = new SkillFS("skills");
-  const agent = new CoderAgent(taskStore, skillStore);
+  const agent = new FixerAgent(taskStore, skillStore);
 
   const server = new A2AServer({
     port: PORT,
-    card: { ...CODER_CARD, url: `http://localhost:${PORT}` },
+    card: { ...FIXER_CARD, url: `http://localhost:${PORT}` },
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
       taskStore.create(taskId);
