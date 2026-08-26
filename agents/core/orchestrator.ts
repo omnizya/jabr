@@ -4,17 +4,42 @@ import type { TaskStorePort } from "../ports/task-store.ts";
 import type { MemoryStorePort } from "../ports/memory-store.ts";
 
 // Keyword routing — exported for testability.
-export const CODER_KEYWORDS = [
-  "code",
-  "function",
-  "implement",
-  "fibonacci",
-  "algorithm",
-  "python",
-  "typescript",
-  "bug",
-  "review",
-  "write",
+// Each agent has its own keyword list; orchestrator picks the first match.
+export const ROUTING_TABLE: Array<{
+  keywords: string[];
+  agentName: string;
+  label: string;
+}> = [
+  {
+    agentName: "fixer",
+    label: "Fixer Agent",
+    keywords: ["fix", "bug", "error", "patch", "repair", "debug"],
+  },
+  {
+    agentName: "oracle",
+    label: "Oracle Agent",
+    keywords: ["review", "simplify", "refactor", "architecture", "audit"],
+  },
+  {
+    agentName: "explorer",
+    label: "Explorer Agent",
+    keywords: ["find", "files", "map", "structure", "grep", "search"],
+  },
+  {
+    agentName: "designer",
+    label: "Designer Agent",
+    keywords: ["layout", "responsive", "component", "button", "color", "palette", "ui", "ux"],
+  },
+  {
+    agentName: "librarian",
+    label: "Librarian Agent",
+    keywords: ["research", "doc", "api", "library", "how-to", "summarize"],
+  },
+  {
+    agentName: "fixer", // default for code tasks
+    label: "Fixer Agent",
+    keywords: ["code", "function", "implement", "algorithm", "python", "typescript", "write"],
+  },
 ];
 
 // Agent card metadata
@@ -55,13 +80,16 @@ export class OrchestratorAgent {
     return ORCHESTRATOR_CARD;
   }
 
-  // Keyword routing — pure function
+  // Keyword routing — pure function, iterates ROUTING_TABLE in priority order
   routeTask(text: string): { agentName: string; label: string } {
     const lower = text.toLowerCase();
-    const isCoder = CODER_KEYWORDS.some((k) => lower.includes(k));
-    return isCoder
-      ? { agentName: "coder", label: "Coder Agent" }
-      : { agentName: "researcher", label: "Researcher Agent" };
+    for (const entry of ROUTING_TABLE) {
+      if (entry.keywords.some((k) => lower.includes(k))) {
+        return { agentName: entry.agentName, label: entry.label };
+      }
+    }
+    // Fallback — no keyword matched
+    return { agentName: "librarian", label: "Librarian Agent" };
   }
 
   // Main task execution — uses ports

@@ -13,8 +13,11 @@ if (import.meta.main) {
   const memory = new MemoryFS("memory/orchestrator.md");
 
   const agentUrls: Record<string, string> = {
-    coder: "http://localhost:4001",
-    researcher: "http://localhost:4002",
+    oracle: "http://localhost:4001",
+    librarian: "http://localhost:4002",
+    explorer: "http://localhost:4003",
+    designer: "http://localhost:4004",
+    fixer: "http://localhost:4005",
   };
 
   const agent = new OrchestratorAgent(registry, taskStore, memory, agentUrls);

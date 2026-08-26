@@ -2,14 +2,21 @@ import type { TaskStorePort } from "../ports/task-store.ts";
 import type { SkillStorePort } from "../ports/skill-store.ts";
 import type { AgentCard, A2AMessage } from "../types.ts";
 
-export const CODER_CARD: AgentCard = {
-  name: "Coder Agent",
+export const FIXER_CARD: AgentCard = {
+  name: "Fixer Agent",
   description:
-    "Writes, reviews, and runs code. Delegates Python execution to MCP uv-tools.",
+    "Fixes bugs, generates code, runs reviews, executes Python. Bounded implementation specialist.",
   url: "", // filled by run module
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
   skills: [
+    {
+      id: "fix-bug",
+      name: "Fix bug",
+      description: "Diagnoses and fixes bugs, errors, and broken behavior",
+      inputModes: ["text"],
+      outputModes: ["text", "data"],
+    },
     {
       id: "write-code",
       name: "Write code",
@@ -34,14 +41,14 @@ export const CODER_CARD: AgentCard = {
   ],
 };
 
-export class CoderAgent {
+export class FixerAgent {
   constructor(
     private taskStore: TaskStorePort,
     private skillStore: SkillStorePort,
   ) {}
 
   get card(): AgentCard {
-    return CODER_CARD;
+    return FIXER_CARD;
   }
 
   // Pure domain logic — pattern matching on user text
@@ -49,6 +56,12 @@ export class CoderAgent {
     userText: string,
   ): { text: string; artifact?: { name: string; content: string } } {
     const lower = userText.toLowerCase();
+
+    if (lower.includes("bug") || lower.includes("fix") || lower.includes("error")) {
+      return {
+        text: `Bug fix analysis for: "${userText}"\n\n1. Reproduce the failing behavior\n2. Locate the root cause\n3. Apply a minimal, targeted fix\n4. Verify with a test\n\nFix applied — review the diff and run the test suite.`,
+      };
+    }
 
     if (lower.includes("fibonacci") || lower.includes("fib")) {
       // Save skill (idempotent — skipped if slug already exists)
@@ -87,7 +100,7 @@ export class CoderAgent {
     }
 
     return {
-      text: `Coder agent processed: "${userText}"\n\nGenerated skeleton — fill in your domain logic here.`,
+      text: `Fixer agent processed: "${userText}"\n\nGenerated skeleton — fill in your domain logic here.`,
     };
   }
 

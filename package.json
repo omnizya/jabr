@@ -8,12 +8,15 @@
   "description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
   "scripts": {
     "orchestrator": "bun agents/run/orchestrator.ts",
-    "coder": "bun agents/run/coder.ts",
-    "researcher": "bun agents/run/researcher.ts",
+    "oracle": "bun agents/run/oracle.ts",
+    "librarian": "bun agents/run/librarian.ts",
+    "explorer": "bun agents/run/explorer.ts",
+    "designer": "bun agents/run/designer.ts",
+    "fixer": "bun agents/run/fixer.ts",
     "mcp": "bun mcp-servers/tools.ts",
     "acp-bridge": "bun agents/run/acp-bridge.ts",
     "demo": "bun run --parallel scripts/demo.ts",
-    "dev": "bun run --parallel coder researcher mcp orchestrator acp-bridge"
+    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer mcp acp-bridge"
   },
   "name": "agent-lab",
   "module": "index.ts",

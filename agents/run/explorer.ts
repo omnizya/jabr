@@ -1,19 +1,17 @@
 import { A2AServer } from "../adapters/http/a2a-server.ts";
 import { TaskMemory } from "../adapters/task-memory.ts";
-import { SkillFS } from "../adapters/skill-fs.ts";
-import { ResearcherAgent, RESEARCHER_CARD } from "../core/researcher.ts";
+import { ExplorerAgent, EXPLORER_CARD } from "../core/explorer.ts";
 
 // @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
-  const PORT = 4002;
+  const PORT = 4003;
 
   const taskStore = new TaskMemory();
-  const skillStore = new SkillFS("skills");
-  const agent = new ResearcherAgent(taskStore, skillStore);
+  const agent = new ExplorerAgent(taskStore);
 
   const server = new A2AServer({
     port: PORT,
-    card: { ...RESEARCHER_CARD, url: `http://localhost:${PORT}` },
+    card: { ...EXPLORER_CARD, url: `http://localhost:${PORT}` },
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
       taskStore.create(taskId);
