@@ -3,7 +3,7 @@
 ## What this is
 
 Experimental multi-agent system testing ACP + A2A + MCP together.
-Runtime: **Bun 1.4** (TypeScript) + **uv** (Python tools).
+Runtime: **Bun 1.4** (TypeScript) + **uv** (Python tools). No build step — run `.ts` files directly.
 
 ## Agents
 
@@ -17,7 +17,7 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python tools).
 
 ## Protocol layers
 
-- **ACP** (stdio nd-JSON) — IDE ↔ ACP bridge — JSON-RPC 2.0
+- **ACP** (stdio nd-JSON) — IDE ↔ ACP bridge — JSON-RPC 2.0, one JSON object per line
 - **A2A** (HTTP JSON-RPC) — Orchestrator ↔ Specialists — Agent Cards at `/.well-known/agent-card.json`
 - **MCP** (stdio) — Agents ↔ Tools — `bun mcp-servers/tools.ts`
 
@@ -25,29 +25,34 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python tools).
 
 After each novel task, Researcher Agent writes `skills/<slug>.json`.
 These are Hermes-style skill documents with steps + success tracking.
+Skills are idempotent: same task type → slug match → skipped if file exists.
 
 ## Key files
 
-- `agents/orchestrator.ts` — Hermes-style brain
+- `agents/orchestrator.ts` — Hermes-style brain, routes via keyword matching
 - `agents/coder-agent.ts` — A2A specialist (port 4001)
 - `agents/researcher-agent.ts` — A2A specialist (port 4002)
 - `agents/acp-bridge.ts` — ACP stdio bridge for IDEs
+- `agents/types.ts` — Shared TypeScript types (A2A, ACP, Skill, MCP shapes)
 - `mcp-servers/tools.ts` — MCP tool server (Bun)
-- `scripts/demo.ts` — Full end-to-end test
-- `skills/` — Auto-generated skill documents
-- `memory/orchestrator.md` — Session memory
+- `scripts/demo.ts` — End-to-end integration test (requires all agents running)
+- `skills/` — Auto-generated skill documents (JSON)
+- `memory/orchestrator.md` — Session memory (append-only markdown)
 
 ## Quick start
 
 ```bash
 bun install
-# Terminal 1
-bun run coder
-# Terminal 2
-bun run researcher
-# Terminal 3
-bun run orchestrator
-# Terminal 4 — run full demo
+
+# Start all agents in parallel (dev mode)
+bun run dev
+
+# Or individually:
+bun run coder        # port 4001
+bun run researcher   # port 4002
+bun run orchestrator # port 4000
+
+# Run integration test (agents must be running first)
 bun run demo
 ```
 
@@ -79,9 +84,19 @@ bun run demo
 { "agent-lab": { "command": "bun", "args": ["agents/acp-bridge.ts"] } }
 ```
 
+## Architecture notes
+
+- **Routing**: Orchestrator keyword-matches user text against a hardcoded list (code, function, implement, algorithm, python, typescript, bug, review, write). Anything without a code keyword → Researcher Agent.
+- **Task polling**: A2A uses simple polling (200ms interval, 20 retries = ~4s max). Use SSE streaming in production.
+- **ACP bridge**: Hardcodes orchestrator URL as `http://localhost:4000` (see FIXME in source). Communicates with orchestrator only, not directly with sub-agents.
+- **MCP run_python**: Writes temp `.py` to `/tmp`, runs via `uv run --quiet`, 10s timeout. No persistent venv — each call is isolated.
+- **MCP tools**: `read_file`, `write_file`, `run_python`, `calculate`, `save_skill`, `list_skills`. All paths relative to `process.cwd()`.
+- **Memory**: Append-only markdown. Orchestrator writes to `memory/orchestrator.md`. Compatible with Hermes `memory.md` pattern.
+- **Skills**: JSON files in `skills/` with `name`, `description`, `tags`, `steps`, `createdAt`, `usageCount`, `successRate`.
+
 ## Notes
 
-- A2A task polling: 250ms interval, 5s timeout (use SSE streaming in production)
-- MCP run_python: executes via `uv run` — no venv needed, isolated per call
-- Memory: append-only markdown — matches Hermes `memory.md` pattern
-- Skills: JSON files in `skills/` — loaded by orchestrator on warm paths
+- No typecheck, lint, or test scripts configured — `bun run tsc --noEmit` for type checking if needed
+- `index.ts` is a Bun init placeholder, not a real entrypoint
+- Agent routing defaults to Researcher for unrecognized task types — add code keywords to Coder routing if needed
+- All A2A endpoints return CORS `Access-Control-Allow-Origin: *`
