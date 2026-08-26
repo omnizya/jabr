@@ -8,6 +8,32 @@
       }
     }
   },
+  "agents": {
+    "orchestrator": {
+      "description": "Routes tasks, persists memory, self-improves. Main coordinator.",
+      "skills": ["deepwork", "verification-planning", "reflect", "worktrees", "codemap"]
+    },
+    "oracle": {
+      "description": "Code review, simplification, architecture decisions. Senior advisor.",
+      "skills": ["simplify"]
+    },
+    "librarian": {
+      "description": "Docs, web research, code search. External knowledge specialist.",
+      "skills": []
+    },
+    "explorer": {
+      "description": "Fast codebase recon, file search. Scouting specialist.",
+      "skills": ["codemap"]
+    },
+    "designer": {
+      "description": "UI/UX design, responsive layouts. Visual design specialist.",
+      "skills": []
+    },
+    "fixer": {
+      "description": "Bug fixes, code generation, mechanical implementation. Bounded execution.",
+      "skills": []
+    }
+  },
   "mcp": {
     "agent-lab-tools": {
       "type": "local",

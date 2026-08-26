@@ -61,6 +61,41 @@ agents/
 - **A2A** (HTTP JSON-RPC) — Orchestrator ↔ Specialists — Agent Cards at `/.well-known/agent-card.json`
 - **MCP** (stdio) — Agents ↔ Tools — `bun mcp-servers/tools.ts`
 
+## Skills system
+
+### Builtin skills (`skills/builtin/`)
+
+Static Hermes-style SKILL.md files with YAML frontmatter + markdown body.
+Each skill is assigned to an agent and loaded at task time.
+
+| Skill                 | Assigned To   | Description                                      |
+| --------------------- | ------------- | ------------------------------------------------ |
+| `simplify`            | Oracle        | Behavior-preserving code simplification          |
+| `codemap`             | Explorer      | Hierarchical repository mapping                  |
+| `deepwork`            | Orchestrator  | Complex coding sessions with review gates        |
+| `verification-planning` | Orchestrator | Evidence planning before implementation          |
+| `reflect`             | Orchestrator  | Review repeated work, suggest reusable skills    |
+| `worktrees`           | Orchestrator  | Git worktree management for isolated work        |
+
+### Auto-generated skills (`skills/*.json`)
+
+JSON files created by agents during the self-improvement loop.
+Librarian Agent writes `skills/<slug>.json` after each novel task.
+Skills are idempotent: same task type → slug match → skipped if file exists.
+
+### Skill assignment (opencode.json)
+
+```json
+"agents": {
+  "orchestrator": { "skills": ["deepwork", "verification-planning", "reflect", "worktrees", "codemap"] },
+  "oracle": { "skills": ["simplify"] },
+  "explorer": { "skills": ["codemap"] },
+  "librarian": { "skills": [] },
+  "designer": { "skills": [] },
+  "fixer": { "skills": [] }
+}
+```
+
 ## Self-improvement loop
 
 After each novel task, Librarian Agent writes `skills/<slug>.json`.
@@ -77,6 +112,7 @@ Skills are idempotent: same task type → slug match → skipped if file exists.
 - `mcp-servers/tools.ts` — MCP tool server (Bun, uses McpServer from SDK)
 - `scripts/demo.ts` — End-to-end integration test (requires all agents running)
 - `skills/` — Auto-generated skill documents (JSON)
+- `skills/builtin/` — Static Hermes-style SKILL.md files
 - `memory/orchestrator.md` — Session memory (append-only markdown)
 
 ## Quick start
