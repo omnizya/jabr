@@ -1,4 +1,6 @@
-# agent-lab — Project Memory
+# Jabr — Project Memory
+
+*Jabr (جبر) — Arabic for "restoration of broken parts," the root of algebra.*
 
 ## What this is
 
@@ -142,7 +144,7 @@ bun run demo
 ```json
 {
   "agent_servers": {
-    "agent-lab": {
+    "jabr": {
       "type": "custom",
       "command": "bun",
       "args": ["agents/run/acp-bridge.ts"],
@@ -155,7 +157,7 @@ bun run demo
 **JetBrains** `acp.json`:
 
 ```json
-{ "agent-lab": { "command": "bun", "args": ["agents/run/acp-bridge.ts"] } }
+{ "jabr": { "command": "bun", "args": ["agents/run/acp-bridge.ts"] } }
 ```
 
 ## Aliased imports

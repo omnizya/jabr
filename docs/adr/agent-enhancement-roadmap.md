@@ -59,7 +59,7 @@
 > { "capabilities": { "resources": { "subscribe": true, "listChanged": true } } }
 > ```
 >
-> **Implementation note for agent-lab**: The current `mcp-servers/tools.ts` uses `@modelcontextprotocol/sdk/server/mcp.js` which handles the subscription stream internally. To expose resource subscriptions, we need to register resources (not just tools) via `server.registerResource()` and declare the `subscribe` capability. The `SubscriptionManager` in the Orchestrator should correlate `subscriptionId` values to agent interest sets for targeted push delivery.
+> **Implementation note for Jabr**: The current `mcp-servers/tools.ts` uses `@modelcontextprotocol/sdk/server/mcp.js` which handles the subscription stream internally. To expose resource subscriptions, we need to register resources (not just tools) via `server.registerResource()` and declare the `subscribe` capability. The `SubscriptionManager` in the Orchestrator should correlate `subscriptionId` values to agent interest sets for targeted push delivery.
 >
 > *Sources: MCP Specification 2026-07-28, Resources section; MCP Subscriptions pattern; ChatForest MCP Notifications Guide (2026-03-28)*
 
@@ -131,7 +131,7 @@
 >
 > The loop continues until `stopReason: "endTurn"`. `toolChoice.mode` controls behavior: `"auto"` (model decides), `"required"` (must use tools), `"none"` (forbidden). This is fenced by `clientCapabilities.sampling.tools`.
 >
-> **⚠️ Deprecation notice**: As of MCP 2026-07-28 (SEP-2577), Sampling is deprecated with a 12-month grace period. New implementations should migrate to direct LLM provider API integration. However, for agent-lab's architecture where the MCP server runs inside a controlled environment, the sampling-with-tools pattern remains valuable as a design reference for recursive reasoning — the key insight (server-initiated tool loops with LLM backends) can be replicated via direct API calls even after sampling removal.
+> **⚠️ Deprecation notice**: As of MCP 2026-07-28 (SEP-2577), Sampling is deprecated with a 12-month grace period. New implementations should migrate to direct LLM provider API integration. However, for Jabr's architecture where the MCP server runs inside a controlled environment, the sampling-with-tools pattern remains valuable as a design reference for recursive reasoning — the key insight (server-initiated tool loops with LLM backends) can be replicated via direct API calls even after sampling removal.
 >
 > **Message content constraint**: When a user message contains `tool_result` blocks, it **MUST** contain ONLY tool results — no mixing with text/image/audio. This mirrors Claude API's dedicated tool role and OpenAI's `tool` role.
 >

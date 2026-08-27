@@ -9,9 +9,9 @@ export const DESIGNER_CARD: AgentCard = {
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
   skills: [
-    { id: "layout", name: "Layout design", description: "Creates responsive layouts with proper hierarchy and spacing", inputModes: ["text"], outputModes: ["text", "data"] },
-    { id: "component", name: "Component design", description: "Designs UI components with accessibility and interaction patterns", inputModes: ["text"], outputModes: ["text"] },
-    { id: "style", name: "Style guide", description: "Creates color palettes, typography scales, and design tokens", inputModes: ["text"], outputModes: ["text", "data"] },
+    { name: "Layout design", description: "Creates responsive layouts with proper hierarchy and spacing", tags: ["layout", "responsive", "grid", "spacing"], inputModes: ["text"], outputModes: ["text", "data"] },
+    { name: "Component design", description: "Designs UI components with accessibility and interaction patterns", tags: ["component", "accessibility", "interaction"], inputModes: ["text"], outputModes: ["text"] },
+    { name: "Style guide", description: "Creates color palettes, typography scales, and design tokens", tags: ["color", "palette", "theme", "typography", "design-tokens"], inputModes: ["text"], outputModes: ["text", "data"] },
   ],
 };
 

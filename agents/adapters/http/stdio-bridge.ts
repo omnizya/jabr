@@ -9,7 +9,7 @@
  *   { "command": "bun", "args": ["agents/adapters/http/stdio-bridge.ts"] }
  *
  * Wire in JetBrains acp.json:
- *   { "agent-lab": { "command": "bun", "args": ["agents/adapters/http/stdio-bridge.ts"] } }
+ *   { "jabr": { "command": "bun", "args": ["agents/adapters/http/stdio-bridge.ts"] } }
  *
  * ACP flow:
  *   IDE  →  initialize  →  bridge

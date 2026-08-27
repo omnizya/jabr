@@ -1,5 +1,6 @@
 import { A2AServer } from "../adapters/http/a2a-server.ts";
 import { A2AClient } from "../adapters/a2a-client.ts";
+import { DynamicRegistry } from "../adapters/dynamic-registry.ts";
 import { TaskMemory } from "../adapters/task-memory.ts";
 import { MemoryFS } from "../adapters/memory-fs.ts";
 import { OrchestratorAgent, ORCHESTRATOR_CARD } from "../core/orchestrator.ts";
@@ -8,11 +9,11 @@ import { OrchestratorAgent, ORCHESTRATOR_CARD } from "../core/orchestrator.ts";
 if (import.meta.main) {
   const PORT = 4000;
 
-  const registry = new A2AClient();
+  const registryClient = new A2AClient();
   const taskStore = new TaskMemory();
   const memory = new MemoryFS("memory/orchestrator.md");
 
-  const agentUrls: Record<string, string> = {
+  const seedUrls: Record<string, string> = {
     oracle: "http://localhost:4001",
     librarian: "http://localhost:4002",
     explorer: "http://localhost:4003",
@@ -20,7 +21,10 @@ if (import.meta.main) {
     fixer: "http://localhost:4005",
   };
 
-  const agent = new OrchestratorAgent(registry, taskStore, memory, agentUrls);
+  const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
+  await dynamicRegistry.initialize();
+
+  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry);
 
   const server = new A2AServer({
     port: PORT,

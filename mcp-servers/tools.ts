@@ -12,7 +12,7 @@ import { z } from "zod";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
 
-const server = new McpServer({ name: "agent-lab-tools", version: "1.0.0" });
+const server = new McpServer({ name: "jabr-tools", version: "1.0.0" });
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 

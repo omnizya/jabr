@@ -1,6 +1,8 @@
-# agent-lab
+# Jabr
 
 Experimental multi-agent system testing [ACP](https://github.com/anthropics/agent-communication-protocol) + [A2A](https://github.com/google/A2A) + [MCP](https://modelcontextprotocol.io/) together.
+
+*Jabr (جبر) — Arabic for "restoration of broken parts," the root of algebra.*
 
 Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` files directly.
 
@@ -46,7 +48,7 @@ Add to `~/.config/zed/settings.json` or project `.zed/settings.json`:
 ```json
 {
   "agent_servers": {
-    "agent-lab": {
+    "jabr": {
       "type": "custom",
       "command": "bun",
       "args": ["agents/acp-bridge.ts"],
@@ -62,7 +64,7 @@ Create `acp.json` in project root:
 
 ```json
 {
-  "agent-lab": {
+  "jabr": {
     "command": "bun",
     "args": ["agents/acp-bridge.ts"]
   }

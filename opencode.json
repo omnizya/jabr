@@ -43,7 +43,7 @@
   },
   "mcp": {
     "servers": {
-      "agent-lab-tools": {
+      "jabr-tools": {
         "type": "local",
         "command": [
           "bun",

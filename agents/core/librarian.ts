@@ -10,9 +10,9 @@ export const LIBRARIAN_CARD: AgentCard = {
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
   skills: [
-    { id: "lookup-docs", name: "Lookup docs", description: "Researches documentation and looks up library APIs", inputModes: ["text"], outputModes: ["text", "data"] },
-    { id: "summarize", name: "Summarize text", description: "Condenses long text into key bullets", inputModes: ["text"], outputModes: ["text"] },
-    { id: "save-skill", name: "Save skill", description: "Persists a reusable skill document (self-improvement loop)", inputModes: ["text", "data"], outputModes: ["text"] },
+    { name: "Lookup docs", description: "Researches documentation and looks up library APIs", tags: ["research", "doc", "api", "library", "how-to"], inputModes: ["text"], outputModes: ["text", "data"] },
+    { name: "Summarize text", description: "Condenses long text into key bullets", tags: ["summarize", "summary"], inputModes: ["text"], outputModes: ["text"] },
+    { name: "Save skill", description: "Persists a reusable skill document (self-improvement loop)", tags: ["skill", "self-improvement", "persist"], inputModes: ["text", "data"], outputModes: ["text"] },
   ],
 };
 

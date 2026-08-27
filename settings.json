@@ -1,6 +1,6 @@
 {
   "agent_servers": {
-    "agent-lab": {
+    "jabr": {
       "type": "custom",
       "command": "bun",
       "args": ["agents/acp-bridge.ts"],

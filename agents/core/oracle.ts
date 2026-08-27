@@ -9,9 +9,9 @@ export const ORACLE_CARD: AgentCard = {
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
   skills: [
-    { id: "review-code", name: "Review code", description: "Senior-level code review for correctness, patterns, and maintainability", inputModes: ["text"], outputModes: ["text"] },
-    { id: "simplify", name: "Simplify code", description: "Behavior-preserving simplification for readability", inputModes: ["text"], outputModes: ["text"] },
-    { id: "architecture", name: "Architecture advice", description: "System design decisions, trade-offs, refactoring strategy", inputModes: ["text"], outputModes: ["text"] },
+    { name: "Review code", description: "Senior-level code review for correctness, patterns, and maintainability", tags: ["review", "code-review", "audit"], inputModes: ["text"], outputModes: ["text"] },
+    { name: "Simplify code", description: "Behavior-preserving simplification for readability", tags: ["simplify", "refactor", "readability"], inputModes: ["text"], outputModes: ["text"] },
+    { name: "Architecture advice", description: "System design decisions, trade-offs, refactoring strategy", tags: ["architecture", "design", "trade-off"], inputModes: ["text"], outputModes: ["text"] },
   ],
 };
 

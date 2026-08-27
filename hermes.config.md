@@ -1,13 +1,13 @@
 # Hermes Configuration
 
-Reference config for running agent-lab with Hermes.
+Reference config for running Jabr with Hermes.
 
 ## `~/.hermes/config.yaml`
 
 ```yaml
 # MCP Tool Server — stdio, launched per session
 mcp_servers:
-  agent-lab-tools:
+  jabr-tools:
     command: "bun"
     args: ["mcp-servers/tools.ts"]
     timeout: 120
@@ -55,12 +55,12 @@ Skills live in `~/.hermes/skills/<category>/SKILL.md` with YAML frontmatter:
 
 ```yaml
 ---
-name: agent-lab-example
+name: jabr-example
 description: Example skill
 version: "1.0"
 metadata:
   hermes:
-    tags: ["example", "agent-lab"]
+    tags: ["example", "jabr"]
 ---
 
 # When to Use

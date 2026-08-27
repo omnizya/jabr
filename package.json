@@ -1,11 +1,19 @@
 {
+  "name": "@omnizya/jabr",
+  "description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
   "version": "0.0.1",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
   "author": {
     "name": "Mohamed Moughamir",
     "url": "https://moughamir.github.io",
     "email": "moughamir@gmail.com"
   },
-  "description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
+  "repository": {
+    "url": "github.com/omnizya/jabr"
+  },
   "scripts": {
     "orchestrator": "bun agents/run/orchestrator.ts",
     "oracle": "bun agents/run/oracle.ts",
@@ -16,12 +24,9 @@
     "mcp": "bun mcp-servers/tools.ts",
     "acp-bridge": "bun agents/run/acp-bridge.ts",
     "demo": "bun run --parallel scripts/demo.ts",
-    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer mcp acp-bridge"
+    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer mcp acp-bridge",
+    "typecheck": "bun run tsc --noEmit"
   },
-  "name": "agent-lab",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
   "devDependencies": {
     "@types/bun": "1.4.0"
   },

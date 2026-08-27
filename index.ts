@@ -1,5 +1,5 @@
 /**
- * agent-lab — ACP + A2A + MCP integration experiments
+ * Jabr — ACP + A2A + MCP integration experiments
  *
  * This is not a real entrypoint. Run agents individually:
  *   bun run orchestrator  → port 4000
@@ -10,4 +10,4 @@
  *   bun run dev
  */
 
-console.log("agent-lab — run `bun run dev` to start all agents");
+console.log("Jabr — run `bun run dev` to start all agents");
