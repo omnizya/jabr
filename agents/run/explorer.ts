@@ -1,25 +1,15 @@
-import { A2AServer } from "@adapters/http/a2a-server";
 import { TaskMemory } from "@adapters/task-memory";
 import { ExplorerAgent, EXPLORER_CARD } from "@core/explorer";
+import { runAgent } from "./serve";
 
 if (import.meta.main) {
-  const PORT = 4003;
-
   const taskStore = new TaskMemory();
   const agent = new ExplorerAgent(taskStore);
 
-  const server = new A2AServer({
-    port: PORT,
-    card: { ...EXPLORER_CARD, url: `http://localhost:${PORT}` },
-    async onTask(text: string): Promise<string> {
-      const taskId = crypto.randomUUID();
-      taskStore.create(taskId);
-      await agent.execute(taskId, text);
-      const task = taskStore.get(taskId);
-      const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
-      return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
-    },
+  runAgent({
+    port: 4003,
+    card: EXPLORER_CARD,
+    execute: (taskId, text) => agent.execute(taskId, text),
+    taskStore,
   });
-
-  server.start();
 }

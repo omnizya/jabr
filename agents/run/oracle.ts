@@ -1,27 +1,16 @@
-import { A2AServer } from "@adapters/http/a2a-server";
 import { TaskMemory } from "@adapters/task-memory";
 import { SkillFS } from "@adapters/skill-fs";
 import { OracleAgent, ORACLE_CARD } from "@core/oracle";
+import { runAgent } from "./serve";
 
 if (import.meta.main) {
-  const PORT = 4001;
-
   const taskStore = new TaskMemory();
-  const skillStore = new SkillFS("skills");
-  const agent = new OracleAgent(taskStore, skillStore);
+  const agent = new OracleAgent(taskStore, new SkillFS("skills"));
 
-  const server = new A2AServer({
-    port: PORT,
-    card: { ...ORACLE_CARD, url: `http://localhost:${PORT}` },
-    async onTask(text: string): Promise<string> {
-      const taskId = crypto.randomUUID();
-      taskStore.create(taskId);
-      await agent.execute(taskId, text);
-      const task = taskStore.get(taskId);
-      const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
-      return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
-    },
+  runAgent({
+    port: 4001,
+    card: ORACLE_CARD,
+    execute: (taskId, text) => agent.execute(taskId, text),
+    taskStore,
   });
-
-  server.start();
 }
