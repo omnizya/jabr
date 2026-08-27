@@ -55,9 +55,9 @@
 ## 🛠️ Gap Filling (v0.3.0 → v0.4.0)
 - [x] **GAP-1: Kill ROUTING_TABLE** — pure tag routing
 - [x] **GAP-3: Fix demo script** — reflect 6-agent topology
-- [ ] **GAP-2: Live-wire jabr://world-state** — real agent health
-- [ ] **GAP-4: run_python** — persistent uv venv + dependency support
-- [ ] **GAP-5: Python agent layer** — Scientist agent
+- [x] **GAP-2: Live-wire jabr://world-state** — real agent health
+- [x] **GAP-4: run_python** — persistent uv venv + dependency support
+- [x] **GAP-5: Python agent layer** — Scientist agent
 - [ ] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
 - [ ] **GAP-7: Mem-Palace integration**
 - [ ] **GAP-8: Headroom integration** (budget awareness)

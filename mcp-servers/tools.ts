@@ -9,7 +9,17 @@ import pkg from "../package.json"
 
 const subscriptions = new SubscriptionManager();
 
+const PYTHON_ENV_DIR = join(process.cwd(), ".python_env");
+
+function ensurePythonEnv() {
+  if (!existsSync(PYTHON_ENV_DIR)) {
+    mkdirSync(PYTHON_ENV_DIR, { recursive: true });
+    Bun.spawnSync(["uv", "init", "--lib", PYTHON_ENV_DIR]);
+  }
+}
+
 const server = new McpServer(
+
   { name: "jabr-tools", version: pkg.version },
   {
     capabilities: { resources: { subscribe: true, listChanged: true } },
@@ -36,20 +46,39 @@ server.registerTool("write_file", {
   return { content: [{ type: "text", text: `Written ${content.length} chars to ${path}` }] };
 });
 
+server.registerTool("install_python_dependency", {
+  description: "Install a Python package into the persistent environment",
+  inputSchema: { package: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
+}, ({ package }) => {
+  ensurePythonEnv();
+  const proc = Bun.spawnSync(["uv", "add", package], {
+    cwd: PYTHON_ENV_DIR,
+  });
+  if (proc.exitCode !== 0) {
+    const stderr = new TextDecoder().decode(proc.stderr);
+    throw new Error(`Failed to install ${package}: ${stderr}`);
+  }
+  return { content: [{ type: "text", text: `Successfully installed ${package} into .python_env` }] };
+});
+
 server.registerTool("run_python", {
-  description: "Execute a Python snippet via uv — returns stdout",
+  description: "Execute a Python snippet via uv in a persistent environment with dependency support",
   inputSchema: { code: z.string().describe("Python code to run") },
 }, ({ code }) => {
-  const tmpPath = `/tmp/agent_lab_${Date.now()}.py`;
-  writeFileSync(tmpPath, code, "utf-8");
-  const proc = Bun.spawnSync(["uv", "run", "--quiet", tmpPath], {
+  ensurePythonEnv();
+  const mainPath = join(PYTHON_ENV_DIR, "main.py");
+  writeFileSync(mainPath, code, "utf-8");
+  
+  const proc = Bun.spawnSync(["uv", "run", "--project", PYTHON_ENV_DIR, "python", "main.py"], {
     timeout: 10_000,
   });
+  
   const stdout = new TextDecoder().decode(proc.stdout);
   const stderr = new TextDecoder().decode(proc.stderr);
   if (proc.exitCode !== 0) throw new Error(stderr || "Python error");
   return { content: [{ type: "text", text: stdout || "(no output)" }] };
 });
+
 
 server.registerTool("calculate", {
   description: "Safe arithmetic evaluator",
@@ -107,44 +136,17 @@ registerResources(server, {
   subscriptions,
   projectRoot: process.cwd(),
   getWorldState: async () => {
-    const memoryDir = join(process.cwd(), "memory");
-    const skillsDir = join(process.cwd(), "skills");
-    const memPath = join(memoryDir, "orchestrator.md");
-
-    let lastUpdated: string | undefined;
-    if (existsSync(memPath)) {
-      try {
-        lastUpdated = statSync(memPath).mtime.toISOString();
-      } catch {
-        lastUpdated = undefined;
-      }
+    try {
+      const res = await fetch("http://localhost:4000/.well-known/world-state");
+      if (!res.ok) throw new Error(`Orchestrator returned ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      return { 
+        timestamp: new Date().toISOString(), 
+        agents: [], 
+        error: `Could not fetch world state from Orchestrator: ${String(e)}` 
+      };
     }
-
-    let skillTotal = 0;
-    let recentSlugs: string[] = [];
-    if (existsSync(skillsDir)) {
-      const skillFiles = readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
-      skillTotal = skillFiles.length;
-      recentSlugs = skillFiles
-        .map((f) => f.replace(/\.json$/, ""))
-        .reverse()
-        .slice(0, 5);
-    }
-
-    let taskTotal = 0;
-    if (existsSync(memoryDir)) {
-      taskTotal = readdirSync(memoryDir).filter(
-        (f) => f.startsWith("task-") && f.endsWith(".json"),
-      ).length;
-    }
-
-    return {
-      timestamp: new Date().toISOString(),
-      agents: [],
-      tasks: { total: taskTotal, active: 0, completed: 0, failed: 0 },
-      memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
-      skills: { total: skillTotal, recentSlugs },
-    };
   },
   getTask: async (taskId: string) => {
     const taskPath = join(process.cwd(), "memory", `task-${taskId}.json`);

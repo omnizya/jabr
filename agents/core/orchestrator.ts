@@ -58,6 +58,47 @@ export class OrchestratorAgent {
     return { agentName: "librarian", label: "Librarian Agent" };
   }
 
+  async getWorldState(): Promise<any> {
+    const agents = await this.dynamicRegistry?.getAgentsHealth() ?? [];
+    
+    // Aggregate filesystem metrics (mirroring old tools.ts logic)
+    const memoryDir = "/home/m7r/Projects/Labs/agent-lab/memory";
+    const skillsDir = "/home/m7r/Projects/Labs/agent-lab/skills";
+    
+    let lastUpdated: string | undefined;
+    try {
+      const fs = await import("fs");
+      const memPath = `${memoryDir}/orchestrator.md`;
+      if (fs.existsSync(memPath)) {
+        lastUpdated = fs.statSync(memPath).mtime.toISOString();
+      }
+      
+      let skillTotal = 0;
+      let recentSlugs: string[] = [];
+      if (fs.existsSync(skillsDir)) {
+        const skillFiles = fs.readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
+        skillTotal = skillFiles.length;
+        recentSlugs = skillFiles.map(f => f.replace(".json", "")).reverse().slice(0, 5);
+      }
+
+      let taskTotal = 0;
+      if (fs.existsSync(memoryDir)) {
+        taskTotal = fs.readdirSync(memoryDir).filter(f => f.startsWith("task-") && f.endsWith(".json")).length;
+      }
+
+      return {
+        timestamp: new Date().toISOString(),
+        agents,
+        tasks: { total: taskTotal, active: 0, completed: 0, failed: 0 },
+        memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
+        skills: { total: skillTotal, recentSlugs },
+      };
+    } catch (e) {
+      console.error("Error gathering world state:", e);
+      return { timestamp: new Date().toISOString(), agents: [], error: "Filesystem access failed" };
+    }
+  }
+
   private getAgentUrl(agentName: string): string | undefined {
     if (this.dynamicRegistry) {
       return this.dynamicRegistry.getUrl(agentName);

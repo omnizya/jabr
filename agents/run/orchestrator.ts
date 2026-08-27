@@ -18,6 +18,7 @@ if (import.meta.main) {
     explorer: "http://localhost:4003",
     designer: "http://localhost:4004",
     fixer: "http://localhost:4005",
+    scientist: "http://localhost:4006",
   };
 
   const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
@@ -35,6 +36,9 @@ if (import.meta.main) {
       const task = taskStore.get(taskId);
       const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
       return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
+    },
+    async onWorldState() {
+      return agent.getWorldState();
     },
   });
 

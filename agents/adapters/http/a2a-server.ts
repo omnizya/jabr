@@ -11,12 +11,15 @@ export class A2AServer {
   private readonly config: A2AServerConfig;
   private server: ReturnType<typeof Bun.serve> | null = null;
 
-  constructor(config: A2AServerConfig) {
-    this.config = config;
+  constructor(config: A2AServerConfig & { 
+    onWorldState?: () => Promise<any> 
+  }) {
+    this.config = config as any;
   }
 
   start(): void {
-    const { port, card, onTask } = this.config;
+    const { port, card, onTask, onWorldState } = (this.config as any);
+
 
     this.server = Bun.serve({
       port,
@@ -29,10 +32,16 @@ export class A2AServer {
 
         if (
           req.method === "GET" &&
-          url.pathname === "/.well-known/agent-card.json"
+          (url.pathname === "/.well-known/agent-card.json" || url.pathname === "/.well-known/world-state")
         ) {
+          if (url.pathname === "/.well-known/world-state") {
+            if (!onWorldState) return new Response("Not found", { status: 404, headers: corsHeaders });
+            const state = await onWorldState();
+            return Response.json(state, { headers: corsHeaders });
+          }
           return Response.json(card, { headers: corsHeaders });
         }
+
 
         if (req.method === "POST" && url.pathname === "/") {
           let body: unknown;
