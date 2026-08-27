@@ -1,9 +1,8 @@
-import { A2AServer } from "../adapters/http/a2a-server.ts";
-import { TaskMemory } from "../adapters/task-memory.ts";
-import { SkillFS } from "../adapters/skill-fs.ts";
-import { FixerAgent, FIXER_CARD } from "../core/fixer.ts";
+import { A2AServer } from "@adapters/http/a2a-server";
+import { TaskMemory } from "@adapters/task-memory";
+import { SkillFS } from "@adapters/skill-fs";
+import { FixerAgent, FIXER_CARD } from "@core/fixer";
 
-// @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
   const PORT = 4005;
 
@@ -22,7 +21,6 @@ if (import.meta.main) {
       const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
       const textPart =
         lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
-      // Include artifact content if present
       const artifact = task?.artifacts[0];
       if (artifact) {
         const artText = artifact.parts.find((p) => p.kind === "text")?.text;

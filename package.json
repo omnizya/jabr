@@ -1,7 +1,7 @@
 {
   "name": "@omnizya/jabr",
   "description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "module": "index.ts",
   "type": "module",
   "private": true,

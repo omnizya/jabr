@@ -1,6 +1,4 @@
-import type { SearchPort, SearchResult } from "../ports/search-port.ts";
-
-// ─── 9Router wire format ───────────────────────────────────────────────────────
+import type { SearchPort, SearchResult } from "@ports/search-port";
 
 interface NineRouterSearchRequest {
   model: string;
@@ -18,13 +16,12 @@ interface NineRouterSearchResponse {
   }>;
 }
 
-// ─── 9Router search adapter ────────────────────────────────────────────────────
 
 /**
  * Adapter implementing SearchPort against the 9Router Web Search API.
  *
- * Endpoint: POST ${NINEROUTER_URL}/v1/search
- * Auth:     Authorization: Bearer ${NINEROUTER_KEY}
+ * @Endpoint: POST ${NINEROUTER_URL}/v1/search
+ * @Auth:     Authorization: Bearer ${NINEROUTER_KEY}
  */
 export class Search9Router implements SearchPort {
   private readonly baseUrl: string;

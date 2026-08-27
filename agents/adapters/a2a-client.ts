@@ -1,23 +1,6 @@
-import type { AgentRegistryPort } from "../ports/agent-registry.ts";
-import type { AgentCard } from "../types.ts";
-
-// ─── JSON-RPC wire format ──────────────────────────────────────────────────────
-
-interface JSONRPCRequest {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  method: string;
-  params?: unknown;
-}
-
-interface JSONRPCResponse {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-// ─── A2A HTTP client adapter ───────────────────────────────────────────────────
+import type { AgentRegistryPort } from "@ports/agent-registry";
+import type { AgentCard } from "@agents/types";
+import type { JSONRPCRequest, JSONRPCResponse } from "@agents/utils/rpc";
 
 export class A2AClient implements AgentRegistryPort {
   private cache: Map<string, AgentCard> = new Map();
@@ -109,9 +92,9 @@ export class A2AClient implements AgentRegistryPort {
 
       const result = data.result as
         | {
-            artifacts?: Array<{ parts?: Array<{ text?: string }> }>;
-            message?: { parts?: Array<{ text?: string }> };
-          }
+          artifacts?: Array<{ parts?: Array<{ text?: string }> }>;
+          message?: { parts?: Array<{ text?: string }> };
+        }
         | undefined;
 
       if (result?.artifacts?.[0]?.parts?.[0]?.text) {

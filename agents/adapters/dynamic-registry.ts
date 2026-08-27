@@ -1,22 +1,6 @@
-/**
- * Dynamic Agent Registry — replaces hardcoded agentUrls.
- *
- * Responsibilities:
- *  - Fetch and cache Agent Cards from seed URLs
- *  - Build a tag→agent index from AgentSkill.tags
- *  - Match incoming tasks against tags for routing
- *  - Support on-the-fly discovery of new agents
- */
+import type { AgentCard, RegistryEntry } from "@agents/types";
+import type { AgentRegistryPort } from "@ports/agent-registry";
 
-import type { AgentCard } from "../types.ts";
-import type { AgentRegistryPort } from "../ports/agent-registry.ts";
-
-interface RegistryEntry {
-  url: string;
-  card: AgentCard;
-  /** Flattened set of all skill tags for this agent */
-  tags: string[];
-}
 
 export class DynamicRegistry {
   private entries: Map<string, RegistryEntry> = new Map();
@@ -25,12 +9,8 @@ export class DynamicRegistry {
   constructor(
     private registry: AgentRegistryPort,
     private seedUrls: Record<string, string> = {},
-  ) {}
+  ) { }
 
-  /**
-   * Discover all seed URLs and build the tag index.
-   * Call once at startup. Safe to call again to refresh.
-   */
   async initialize(): Promise<void> {
     const urls = Object.values(this.seedUrls);
 

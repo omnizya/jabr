@@ -1,11 +1,10 @@
-import { A2AServer } from "../adapters/http/a2a-server.ts";
-import { A2AClient } from "../adapters/a2a-client.ts";
-import { DynamicRegistry } from "../adapters/dynamic-registry.ts";
-import { TaskMemory } from "../adapters/task-memory.ts";
-import { MemoryFS } from "../adapters/memory-fs.ts";
-import { OrchestratorAgent, ORCHESTRATOR_CARD } from "../core/orchestrator.ts";
+import { A2AServer } from "@adapters/http/a2a-server";
+import { A2AClient } from "@adapters/a2a-client";
+import { DynamicRegistry } from "@adapters/dynamic-registry";
+import { TaskMemory } from "@adapters/task-memory";
+import { MemoryFS } from "@adapters/memory-fs";
+import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
 
-// @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
   const PORT = 4000;
 

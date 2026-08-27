@@ -1,31 +1,9 @@
-/**
- * ACP stdio bridge adapter — HTTP variant
- *
- * Reads JSON-RPC lines from stdin (ACP, nd-JSON) and proxies tasks to the
- * orchestrator via A2A HTTP. This is a thin protocol translator: it does not
- * manage sessions or stream results.
- *
- * Wire in Zed settings.json:
- *   { "command": "bun", "args": ["agents/adapters/http/stdio-bridge.ts"] }
- *
- * Wire in JetBrains acp.json:
- *   { "jabr": { "command": "bun", "args": ["agents/adapters/http/stdio-bridge.ts"] } }
- *
- * ACP flow:
- *   IDE  →  initialize  →  bridge
- *   IDE  →  message     →  bridge  →  A2A orchestrator (tasks/send)
- *   bridge  →  message result  →  IDE
- */
-
-import type { ACPRequest, ACPResponse } from "../../types.ts";
 import {
   type JSONRPCRequest,
   type JSONRPCResponse,
   ok,
   err,
-} from "../../utils/rpc.ts";
-
-// ── StdioBridge ────────────────────────────────────────────────────────────────
+} from "@utils/rpc";
 
 export class StdioBridge {
   private readonly orchestratorUrl: string;
@@ -76,18 +54,15 @@ export class StdioBridge {
   }
 
   private async dispatch(req: JSONRPCRequest): Promise<JSONRPCResponse> {
-    // Validate JSON-RPC envelope
     if (req.jsonrpc !== "2.0" || typeof req.method !== "string") {
       return err(req.id ?? null, -32600, "Invalid Request");
     }
 
     switch (req.method) {
-      // ── ACP handshake ──────────────────────────────────────────────────────
       case "initialize": {
         return ok(req.id, { capabilities: {} });
       }
 
-      // ── Message — delegate to A2A orchestrator ─────────────────────────────
       case "message": {
         const params = (req.params ?? {}) as {
           content?: { text?: string };
@@ -133,16 +108,13 @@ export class StdioBridge {
         }
       }
 
-      // ── Anything else ───────────────────────────────────────────────────────
       default:
         return err(req.id, -32601, `Method not found: ${req.method}`);
     }
   }
 }
 
-// ── Entrypoint (run directly) ──────────────────────────────────────────────────
 
-// @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
   const bridge = new StdioBridge();
   bridge.start();

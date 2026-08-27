@@ -2,26 +2,29 @@
  * Shared JSON-RPC 2.0 types and helpers used by A2A server and ACP bridge.
  */
 
-export interface JSONRPCRequest {
-  jsonrpc: "2.0";
-  id: number | string | null;
+interface JSONRPCDefaults {
+  jsonrpc: "2.0"
+  id: SomeId
+}
+export type SomeId = number | string | null
+
+export interface JSONRPCRequest extends JSONRPCDefaults {
   method: string;
   params?: unknown;
 }
 
-export interface JSONRPCResponse {
-  jsonrpc: "2.0";
-  id: number | string | null;
+export interface JSONRPCResponse extends JSONRPCDefaults {
   result?: unknown;
   error?: { code: number; message: string };
 }
 
-export function ok(id: number | string | null, result: unknown): JSONRPCResponse {
+export function ok(id: SomeId,
+  result: unknown): JSONRPCResponse {
   return { jsonrpc: "2.0", id, result };
 }
 
 export function err(
-  id: number | string | null,
+  id: SomeId,
   code: number,
   message: string,
 ): JSONRPCResponse {

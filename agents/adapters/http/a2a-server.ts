@@ -1,30 +1,11 @@
-/**
- * A2A HTTP server adapter.
- *
- * Implements a Bun.serve-based A2A (Agent-to-Agent) HTTP endpoint:
- *  - CORS preflight handling
- *  - AgentCard serving at /.well-known/agent-card.json
- *  - JSON-RPC 2.0 dispatcher for tasks/send
- *
- * No class-level HTTP state — Bun.serve handles everything per request.
- */
-
-import type { AgentCard } from "../../types.ts";
+import type { A2AServerConfig } from "@agents/types";
 import {
   type JSONRPCRequest,
   ok,
   err,
   corsHeaders,
   corsPreflightHeaders,
-} from "../../utils/rpc.ts";
-
-interface A2AServerConfig {
-  port: number;
-  card: AgentCard;
-  onTask: (message: string) => Promise<string>;
-}
-
-// ── A2A server ─────────────────────────────────────────────────────────────────
+} from "@utils/rpc";
 
 export class A2AServer {
   private readonly config: A2AServerConfig;
@@ -42,12 +23,10 @@ export class A2AServer {
       async fetch(req) {
         const url = new URL(req.url);
 
-        // 1. CORS preflight
         if (req.method === "OPTIONS") {
           return new Response(null, { headers: corsPreflightHeaders });
         }
 
-        // 2. AgentCard serving
         if (
           req.method === "GET" &&
           url.pathname === "/.well-known/agent-card.json"
@@ -55,7 +34,6 @@ export class A2AServer {
           return Response.json(card, { headers: corsHeaders });
         }
 
-        // 3. JSON-RPC endpoint
         if (req.method === "POST" && url.pathname === "/") {
           let body: unknown;
           try {
@@ -69,7 +47,6 @@ export class A2AServer {
 
           const rpc = body as JSONRPCRequest;
 
-          // Validate JSON-RPC shape
           if (
             !rpc ||
             rpc.jsonrpc !== "2.0" ||

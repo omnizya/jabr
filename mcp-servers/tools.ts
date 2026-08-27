@@ -9,10 +9,20 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join } from "path";
+import { registerResources } from "@adapters/mcp-resources";
+import { SubscriptionManager } from "@adapters/subscription-manager";
+import pkg from "../package.json"
 
-const server = new McpServer({ name: "jabr-tools", version: "1.0.0" });
+const subscriptions = new SubscriptionManager();
+
+const server = new McpServer(
+  { name: "jabr-tools", version: pkg.version },
+  {
+    capabilities: { resources: { subscribe: true, listChanged: true } },
+  },
+);
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
@@ -102,6 +112,70 @@ server.registerTool("list_skills", {
   return {
     content: [{ type: "text", text: skills.length ? skills.join("\n") : "No skills yet." }],
   };
+});
+
+registerResources(server, {
+  subscriptions,
+  projectRoot: process.cwd(),
+  getWorldState: async () => {
+    const memoryDir = join(process.cwd(), "memory");
+    const skillsDir = join(process.cwd(), "skills");
+    const memPath = join(memoryDir, "orchestrator.md");
+
+    let lastUpdated: string | undefined;
+    if (existsSync(memPath)) {
+      try {
+        lastUpdated = statSync(memPath).mtime.toISOString();
+      } catch {
+        lastUpdated = undefined;
+      }
+    }
+
+    let skillTotal = 0;
+    let recentSlugs: string[] = [];
+    if (existsSync(skillsDir)) {
+      const skillFiles = readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
+      skillTotal = skillFiles.length;
+      recentSlugs = skillFiles
+        .map((f) => f.replace(/\.json$/, ""))
+        .reverse()
+        .slice(0, 5);
+    }
+
+    let taskTotal = 0;
+    if (existsSync(memoryDir)) {
+      taskTotal = readdirSync(memoryDir).filter(
+        (f) => f.startsWith("task-") && f.endsWith(".json"),
+      ).length;
+    }
+
+    return {
+      timestamp: new Date().toISOString(),
+      agents: [],
+      tasks: { total: taskTotal, active: 0, completed: 0, failed: 0 },
+      memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
+      skills: { total: skillTotal, recentSlugs },
+    };
+  },
+  getTask: async (taskId: string) => {
+    const taskPath = join(process.cwd(), "memory", `task-${taskId}.json`);
+    if (!existsSync(taskPath)) {
+      return {
+        id: taskId,
+        status: "not_found",
+        error: `No task found with id "${taskId}"`,
+      };
+    }
+    try {
+      return JSON.parse(readFileSync(taskPath, "utf-8"));
+    } catch {
+      return {
+        id: taskId,
+        status: "error",
+        error: "Failed to parse task file",
+      };
+    }
+  },
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

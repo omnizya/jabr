@@ -1,4 +1,4 @@
-import type { ImageGenPort } from "../ports/image-gen-port.ts";
+import type { ImageGenPort } from "@ports/image-gen-port";
 
 interface NineRouterImageResponse {
   data?: Array<{ url?: string; b64_json?: string }>;

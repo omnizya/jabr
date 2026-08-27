@@ -1,9 +1,8 @@
-import type { SkillStorePort } from "../ports/skill-store.ts";
-import type { SkillDocument } from "../types.ts";
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
+import type { SkillStorePort } from "@ports/skill-store";
+import type { SkillDocument } from "@agents/types";
+import { writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-/** Filesystem adapter for skill documents (skills/*.json). */
 export class SkillFS implements SkillStorePort {
   constructor(private dir: string = "skills") {
     mkdirSync(this.dir, { recursive: true });

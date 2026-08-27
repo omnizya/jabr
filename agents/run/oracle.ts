@@ -1,9 +1,8 @@
-import { A2AServer } from "../adapters/http/a2a-server.ts";
-import { TaskMemory } from "../adapters/task-memory.ts";
-import { SkillFS } from "../adapters/skill-fs.ts";
-import { OracleAgent, ORACLE_CARD } from "../core/oracle.ts";
+import { A2AServer } from "@adapters/http/a2a-server";
+import { TaskMemory } from "@adapters/task-memory";
+import { SkillFS } from "@adapters/skill-fs";
+import { OracleAgent, ORACLE_CARD } from "@core/oracle";
 
-// @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
   const PORT = 4001;
 

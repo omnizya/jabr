@@ -1,8 +1,6 @@
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { Task } from "../ports/task-store.ts";
-import type { A2AMessage, A2APart } from "../types.ts";
+import type { Task, TaskStorePort } from "@ports/task-store";
+import type { A2AMessage, A2APart } from "@agents/types";
 
-/** In-memory adapter for task state (swappable for a DB later). */
 export class TaskMemory implements TaskStorePort {
   private tasks = new Map<string, Task>();
 

@@ -1,5 +1,5 @@
 import type { TaskStorePort } from "../ports/task-store.ts";
-import type { AgentCard, A2AMessage } from "../types.ts";
+import type { AgentCard } from "../types.ts";
 
 export const EXPLORER_CARD: AgentCard = {
   name: "Explorer Agent",
@@ -15,7 +15,7 @@ export const EXPLORER_CARD: AgentCard = {
 };
 
 export class ExplorerAgent {
-  constructor(private taskStore: TaskStorePort) {}
+  constructor(private taskStore: TaskStorePort) { }
 
   get card(): AgentCard {
     return EXPLORER_CARD;

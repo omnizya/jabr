@@ -1,6 +1,6 @@
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { ImageGenPort } from "../ports/image-gen-port.ts";
-import type { AgentCard, A2AMessage } from "../types.ts";
+import type { TaskStorePort } from "@ports/task-store";
+import type { ImageGenPort } from "@ports/image-gen-port";
+import type { AgentCard } from "@agents/types";
 
 export const DESIGNER_CARD: AgentCard = {
   name: "Designer Agent",
@@ -19,7 +19,7 @@ export class DesignerAgent {
   constructor(
     private taskStore: TaskStorePort,
     private imageGen?: ImageGenPort,
-  ) {}
+  ) { }
 
   get card(): AgentCard {
     return DESIGNER_CARD;

@@ -10,8 +10,10 @@ export interface AgentConfig {
 
 // ─── A2A (Agent-to-Agent) v1.0 types ──────────────────────────────────────────
 
+export type AgentInterfaceType = "http" | "grpc"
+
 export interface AgentInterface {
-  type: string; // e.g. "http", "grpc"
+  type: AgentInterfaceType
   url: string;
 }
 
@@ -28,9 +30,9 @@ export interface AgentExtension {
 }
 
 export interface AgentSkill {
-  name: string; // Required
-  description: string; // Required
-  tags: string[]; // Required (non-empty in v1.0)
+  name: string
+  description: string
+  tags: string[];
   examples?: string[];
   inputModes?: string[];
   outputModes?: string[];
@@ -71,7 +73,7 @@ export interface A2ATask {
   metadata?: Record<string, unknown>;
 }
 
-export type A2AMessageRole = "user" | "agent";
+export type A2AMessageRole = "user" | "agent" | "assistant" | "tool";
 
 export interface A2AMessage {
   messageId: string;
@@ -98,7 +100,7 @@ export interface A2AArtifact {
 export const HANDOVER_MARKER = "%%HANDOVER%%";
 
 export interface HandoverRequest {
-  transferTo: string; // Agent name to transfer to
+  transferTo: string; // Agent name to transfer to. TODO: infer agent names to force and not to have unknown agent set.
   reason: string; // Why the transfer is needed
   context: string; // Relevant context for the next agent
 }
@@ -163,4 +165,72 @@ export interface MCPToolCall {
 export interface MCPToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+}
+
+// ── MCP Resource Types ──────────────────────────────────────────────────────
+
+/** A resource represents a read-only data endpoint exposed via MCP */
+export interface McpResource {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/** Result from reading an MCP resource */
+export interface McpResourceContent {
+  uri: string;
+  text?: string;
+  blob?: string;
+  mimeType?: string;
+}
+
+/** A subscription to resource changes */
+export interface ResourceSubscription {
+  id: string;
+  uri: string;
+  listenerId?: string;
+  createdAt: string;
+}
+
+/** World-state snapshot returned by the system resource */
+export type WordStateAgentStatus = "online" | "offline" | "unknown"
+export interface WordStateAgent {
+  name: string
+  port: number
+  status: WordStateAgentStatus
+  skills: string[]
+}
+export interface WordStateTasks {
+  total: number;
+  active: number;
+  completed: number;
+  failed: number;
+};
+
+export interface Memory {
+  totalEntries: number;
+  lastUpdated?: string;
+};
+export interface Skills {
+  total: number;
+  recentSlugs: string[];
+};
+export interface WorldState {
+  timestamp: string;
+  agents: Array<WordStateAgent>;
+  tasks: WordStateTasks;
+  memory: Memory;
+  skills: Skills;
+}
+
+export interface A2AServerConfig {
+  port: number;
+  card: AgentCard;
+  onTask: (message: string) => Promise<string>;
+}
+export interface RegistryEntry {
+  url: string;
+  card: AgentCard;
+  tags: string[];
 }

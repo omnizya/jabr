@@ -1,9 +1,8 @@
-import { A2AServer } from "../adapters/http/a2a-server.ts";
-import { TaskMemory } from "../adapters/task-memory.ts";
-import { ImageGen9Router } from "../adapters/image-gen-9router.ts";
-import { DesignerAgent, DESIGNER_CARD } from "../core/designer.ts";
+import { A2AServer } from "@adapters/http/a2a-server";
+import { TaskMemory } from "@adapters/task-memory";
+import { ImageGen9Router } from "@adapters/image-gen-9router";
+import { DesignerAgent, DESIGNER_CARD } from "@core/designer";
 
-// @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
   const PORT = 4004;
 

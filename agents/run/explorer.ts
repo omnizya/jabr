@@ -1,8 +1,7 @@
-import { A2AServer } from "../adapters/http/a2a-server.ts";
-import { TaskMemory } from "../adapters/task-memory.ts";
-import { ExplorerAgent, EXPLORER_CARD } from "../core/explorer.ts";
+import { A2AServer } from "@adapters/http/a2a-server";
+import { TaskMemory } from "@adapters/task-memory";
+import { ExplorerAgent, EXPLORER_CARD } from "@core/explorer";
 
-// @ts-ignore - Bun provides import.meta.main
 if (import.meta.main) {
   const PORT = 4003;
 
