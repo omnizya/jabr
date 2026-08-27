@@ -3,7 +3,7 @@ import { decodeHandover } from "@agents/types";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { TaskStorePort } from "@ports/task-store";
 import type { MemoryStorePort } from "@ports/memory-store";
-import type { DynamicRegistry } from "@adapters/dynamic-registry";
+import type { DiscoveryPort } from "@ports/discovery-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 
 export const ROUTING_TABLE: Array<{
@@ -77,7 +77,7 @@ export class OrchestratorAgent {
     private registry: AgentRegistryPort,
     private taskStore: TaskStorePort,
     private memory: MemoryStorePort,
-    private dynamicRegistry?: DynamicRegistry,
+    private dynamicRegistry?: DiscoveryPort,
     cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
   ) {
     this.cognitiveLoop = new CognitiveLoop(cognitiveConfig);

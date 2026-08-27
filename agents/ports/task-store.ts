@@ -1,4 +1,4 @@
-import type { A2AMessage, A2APart } from "../types.ts";
+import type { A2AMessage, A2APart } from "@agents/types";
 
 export interface Task {
   id: string;

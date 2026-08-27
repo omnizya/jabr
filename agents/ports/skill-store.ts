@@ -1,4 +1,4 @@
-import type { SkillDocument } from "../types.ts";
+import type { SkillDocument } from "@agents/types";
 
 export interface SkillStorePort {
   save(slug: string, doc: SkillDocument): boolean;

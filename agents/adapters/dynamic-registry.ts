@@ -1,8 +1,9 @@
 import type { AgentCard, RegistryEntry } from "@agents/types";
 import type { AgentRegistryPort } from "@ports/agent-registry";
+import type { DiscoveryPort } from "@ports/discovery-port";
 
 
-export class DynamicRegistry {
+export class DynamicRegistry implements DiscoveryPort {
   private entries: Map<string, RegistryEntry> = new Map();
   private cardCache: Map<string, AgentCard> = new Map();
 
