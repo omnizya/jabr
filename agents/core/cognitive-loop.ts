@@ -1,4 +1,5 @@
 import type { AgentCard } from "@agents/types";
+import type { LlmPort } from "@agents/ports/llm-port";
 
 export interface ConsensusInput {
   agentName: string;
@@ -27,7 +28,7 @@ const DEFAULTS: Required<CognitiveLoopConfig> = {
 export class CognitiveLoop {
   private config: Required<CognitiveLoopConfig>;
 
-  constructor(config?: CognitiveLoopConfig) {
+  constructor(config?: CognitiveLoopConfig, private llmPort?: LlmPort) {
     this.config = { ...DEFAULTS, ...config };
   }
 
@@ -69,10 +70,10 @@ export class CognitiveLoop {
     return { score: Math.min(score, 1), reasons };
   }
 
-  evaluate(
+  async evaluate(
     inputs: ConsensusInput[],
     taskText: string,
-  ): ConsensusResult {
+  ): Promise<ConsensusResult> {
     const scored = inputs.map((input) => {
       const { score, reasons } = this.scoreResponse(input, taskText);
       return {
@@ -96,7 +97,7 @@ export class CognitiveLoop {
     return {
       winner: winner.input,
       scores,
-      synthesized: this.buildSynthesis(winner, scored),
+      synthesized: await this.buildSynthesis(winner, scored, taskText),
     };
   }
 
@@ -111,7 +112,39 @@ export class CognitiveLoop {
     return this.config.judgeAgentName;
   }
 
-  private buildSynthesis(
+  private async buildSynthesis(
+    winner: { agentName: string; score: number; reason: string; input: ConsensusInput },
+    all: Array<{ agentName: string; score: number; reason: string; input: ConsensusInput }>,
+    taskText: string,
+  ): Promise<string> {
+    if (!this.llmPort) {
+      return this.buildSimpleSynthesis(winner, all);
+    }
+
+    const synthesisPrompt = `You are a consensus synthesizer. 
+Task: ${taskText}
+
+Agent Responses:
+${all.map(a => `Agent ${a.agentName} (Score ${a.score.toFixed(2)}): ${a.input.response}`).join("\n\n")}
+
+The winner is ${winner.agentName}. 
+Please synthesize a final, coherent response that incorporates the best parts of the winner's answer and any critical missing details from other agents. 
+Do not mention "Agent X" or "scores" in the output. Provide the final answer directly.`;
+
+    try {
+      const result = await this.llmPort.generate({
+        prompt: synthesisPrompt,
+        systemPrompt: "You are a high-fidelity synthesis engine. Your goal is to merge multiple technical responses into one authoritative answer.",
+        temperature: 0.3,
+      });
+      return result.text;
+    } catch (e) {
+      console.error("Synthesis LLM failure:", e);
+      return this.buildSimpleSynthesis(winner, all);
+    }
+  }
+
+  private buildSimpleSynthesis(
     winner: { agentName: string; score: number; reason: string; input: ConsensusInput },
     all: Array<{ agentName: string; score: number; reason: string; input: ConsensusInput }>,
   ): string {

@@ -5,6 +5,9 @@ export class ScientistAgent {
   public readonly card: AgentCard = {
     name: "Scientist Agent",
     description: "Specialist in data science, scripting, and technical analysis. Uses Python to execute code and analyze data.",
+    url: "http://localhost:4006",
+    version: "1.0.0",
+    capabilities: { streaming: false, pushNotifications: false },
     supportedInterfaces: ["a2a" as any],
     skills: [
       {

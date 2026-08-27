@@ -4,6 +4,7 @@ import { DynamicRegistry } from "@adapters/dynamic-registry";
 import { TaskMemory } from "@adapters/task-memory";
 import { MemoryFS } from "@adapters/memory-fs";
 import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
+import { OpenAiLlmAdapter } from "@adapters/llm/openai";
 
 if (import.meta.main) {
   const PORT = 4000;
@@ -11,6 +12,7 @@ if (import.meta.main) {
   const registryClient = new A2AClient();
   const taskStore = new TaskMemory();
   const memory = new MemoryFS("memory/orchestrator.md");
+  const llmPort = new OpenAiLlmAdapter();
 
   const seedUrls: Record<string, string> = {
     oracle: "http://localhost:4001",
@@ -24,7 +26,7 @@ if (import.meta.main) {
   const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
   await dynamicRegistry.initialize();
 
-  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry);
+  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort);
 
   const server = new A2AServer({
     port: PORT,

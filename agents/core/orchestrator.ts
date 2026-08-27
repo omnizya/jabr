@@ -5,6 +5,7 @@ import type { TaskStorePort } from "@ports/task-store";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { DiscoveryPort } from "@ports/discovery-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
+import type { LlmPort } from "@ports/llm-port";
 
 export const ORCHESTRATOR_CARD: AgentCard = {
   name: "Orchestrator",
@@ -41,9 +42,10 @@ export class OrchestratorAgent {
     private taskStore: TaskStorePort,
     private memory: MemoryStorePort,
     private dynamicRegistry?: DiscoveryPort,
+    private llmPort?: LlmPort,
     cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
   ) {
-    this.cognitiveLoop = new CognitiveLoop(cognitiveConfig);
+    this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
   }
 
   get card(): AgentCard {
@@ -148,7 +150,7 @@ export class OrchestratorAgent {
 
     if (inputs.length === 0) return "No agents responded";
 
-    const result = this.cognitiveLoop.evaluate(inputs, userText);
+    const result = await this.cognitiveLoop.evaluate(inputs, userText);
     const topScore = result.scores[0]?.score.toFixed(3) ?? "N/A";
     this.memory.append(
       `[consensus] Winner: ${result.winner.agentName} (score: ${topScore})`,
