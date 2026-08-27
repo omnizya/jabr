@@ -61,4 +61,4 @@
 - [x] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
 - [x] **GAP-7: Mem-Palace integration**
 - [x] **GAP-8: Headroom integration** (budget awareness)
-- [ ] **GAP-9: ROUTING_TABLE removal cleanup sweep**
+- [x] **GAP-9: ROUTING_TABLE removal cleanup sweep** — no code refs remain; only historical docs (TODO, ADR, AGENTS.md) reference the removal
