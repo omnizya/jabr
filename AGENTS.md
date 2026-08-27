@@ -167,7 +167,7 @@ Core modules use relative imports for ports/types only.
 
 ## Architecture notes
 
-- **Routing**: Orchestrator iterates `ROUTING_TABLE` in priority order — fixer (fix/bug/error/patch/repair/debug) → oracle (review/simplify/refactor/architecture/audit) → explorer (find/files/map/structure/grep/search) → designer (layout/responsive/component/button/color/palette/ui/ux) → librarian (research/doc/api/library/how-to/summarize) → fixer fallback (code/function/implement/algorithm/python/typescript/write). Unmatched → Librarian.
+- **Routing**: Pure tag-based routing. `OrchestratorAgent.routeTask()` delegates entirely to `DynamicRegistry.matchAgent(text)`, which scores each registered agent's `AgentSkill.tags` (seeded from every specialist's `AgentCard`) against the task text and returns the best match. No keyword table — `ROUTING_TABLE` was removed (GAP-1). Specialist tags: fixer (fix/bug/error/patch/repair/debug, code/implement/function/algorithm/typescript/write, python, review) → oracle (review/simplify/refactor/architecture/audit) → explorer (find/files/map/structure/grep/search) → designer (layout/responsive/ui, component/button/ux, color/palette) → librarian (research/doc/api/library/how-to/summarize). Unmatched → Librarian.
 - **Task polling**: A2A uses simple polling (200ms interval, 20 retries = ~4s max). Use SSE streaming in production.
 - **ACP bridge**: Reads `ORCHESTRATOR_URL` env var (default `http://localhost:4000`).
 - **MCP run_python**: Writes temp `.py` to `/tmp`, runs via `uv run --quiet`, 10s timeout. No persistent venv — each call is isolated.

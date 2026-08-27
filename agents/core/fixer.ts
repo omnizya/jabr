@@ -13,14 +13,14 @@ export const FIXER_CARD: AgentCard = {
     {
       name: "Fix bug",
       description: "Diagnoses and fixes bugs, errors, and broken behavior",
-      tags: ["fix", "bug", "error", "repair", "debug"],
+      tags: ["fix", "bug", "error", "patch", "repair", "debug"],
       inputModes: ["text"],
       outputModes: ["text", "data"],
     },
     {
       name: "Write code",
       description: "Generates code from a natural language description",
-      tags: ["code", "implement", "function", "algorithm", "write"],
+      tags: ["code", "implement", "function", "algorithm", "typescript", "write"],
       inputModes: ["text"],
       outputModes: ["text", "data"],
     },

@@ -6,43 +6,6 @@ import type { MemoryStorePort } from "@ports/memory-store";
 import type { DiscoveryPort } from "@ports/discovery-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 
-export const ROUTING_TABLE: Array<{
-  keywords: string[];
-  agentName: string;
-  label: string;
-}> = [
-  {
-    agentName: "fixer",
-    label: "Fixer Agent",
-    keywords: ["fix", "bug", "error", "patch", "repair", "debug"],
-  },
-  {
-    agentName: "oracle",
-    label: "Oracle Agent",
-    keywords: ["review", "simplify", "refactor", "architecture", "audit"],
-  },
-  {
-    agentName: "explorer",
-    label: "Explorer Agent",
-    keywords: ["find", "files", "map", "structure", "grep", "search"],
-  },
-  {
-    agentName: "designer",
-    label: "Designer Agent",
-    keywords: ["layout", "responsive", "component", "button", "color", "palette", "ui", "ux"],
-  },
-  {
-    agentName: "librarian",
-    label: "Librarian Agent",
-    keywords: ["research", "doc", "api", "library", "how-to", "summarize"],
-  },
-  {
-    agentName: "fixer",
-    label: "Fixer Agent",
-    keywords: ["code", "function", "implement", "algorithm", "python", "typescript", "write"],
-  },
-];
-
 export const ORCHESTRATOR_CARD: AgentCard = {
   name: "Orchestrator",
   description:
@@ -88,20 +51,10 @@ export class OrchestratorAgent {
   }
 
   routeTask(text: string): { agentName: string; label: string } {
-    const lower = text.toLowerCase();
-    for (const entry of ROUTING_TABLE) {
-      if (entry.keywords.some((k) => lower.includes(k))) {
-        return { agentName: entry.agentName, label: entry.label };
-      }
+    const match = this.dynamicRegistry?.matchAgent(text);
+    if (match) {
+      return { agentName: match.name, label: match.label };
     }
-
-    if (this.dynamicRegistry) {
-      const match = this.dynamicRegistry.matchAgent(text);
-      if (match) {
-        return { agentName: match.name, label: match.label };
-      }
-    }
-
     return { agentName: "librarian", label: "Librarian Agent" };
   }
 
