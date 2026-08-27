@@ -1,49 +1,90 @@
 # Jabr
 
-Experimental multi-agent system testing [ACP](https://github.com/anthropics/agent-communication-protocol) + [A2A](https://github.com/google/A2A) + [MCP](https://modelcontextprotocol.io/) together.
-
 *Jabr (جبر) — Arabic for "restoration of broken parts," the root of algebra.*
 
-Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` files directly.
+Experimental multi-agent system testing **ACP + A2A + MCP** together. Hexagonal architecture (Ports & Adapters). Version **0.3.0**.
+
+Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` directly.
+
+## Architecture — Hexagonal (Ports & Adapters)
+
+```
+agents/
+├── core/              # Domain logic — zero infrastructure imports
+│   ├── orchestrator.ts   # Keyword + tag routing, handover, consensus
+│   ├── cognitive-loop.ts # Consensus engine (weighted voting)
+│   ├── oracle.ts         # Review / simplification
+│   ├── fixer.ts          # Bug fixes / generation
+│   ├── librarian.ts      # Search + skill creation
+│   ├── explorer.ts       # Codebase recon
+│   └── designer.ts       # UI / image generation
+├── ports/             # Interfaces (type-only)
+├── adapters/          # Concrete implementations
+│   ├── http/a2a-server.ts, http/stdio-bridge.ts
+│   ├── dynamic-registry.ts, a2a-client.ts
+│   ├── mcp-resources.ts, subscription-manager.ts
+│   └── memory-fs.ts, skill-fs.ts, task-memory.ts
+├── run/               # Composition roots (wire ports → core)
+└── types.ts           # A2A v1.0 types
+
+mcp-servers/tools.ts   # MCP server (world-state, tasks, skills, memory)
+```
+
+**Rule:** `core` never imports `adapters`. `adapters` implement `ports`. `run` wires everything.
 
 ## Agents
 
 | Agent | Port | Protocol | Role |
 |---|---|---|---|
-| Orchestrator | 4000 | A2A server | Routes tasks, persists memory, self-improves |
-| Coder Agent | 4001 | A2A server | Code generation, review, Python execution |
-| Researcher Agent | 4002 | A2A server | Research, summarization, skill creation |
-| ACP Bridge | stdio | ACP server | IDE → Orchestrator |
-| MCP Tool Server | stdio | MCP server | fs, uv-python, calculate, skill store |
+| Orchestrator | 4000 | A2A | Routes, persists memory, self-improves, consensus |
+| Oracle | 4001 | A2A | Code review, simplification, architecture |
+| Librarian | 4002 | A2A | Web search (9Router), docs, skill synthesis |
+| Explorer | 4003 | A2A | Fast codebase recon, file search |
+| Designer | 4004 | A2A | UI/UX, image generation (9Router) |
+| Fixer | 4005 | A2A | Bug fixes, mechanical implementation |
+| ACP Bridge | stdio | ACP | IDE ↔ Orchestrator (diff + sessions) |
+| MCP Tool Server | stdio | MCP | `read_file`, `write_file`, `run_python`, `calculate`, `save_skill`, `list_skills` + resources |
+
+## Kits (Roadmap — all ✅ except roadmap tracking)
+
+- **PnP Kit (0.1.0)** — A2A v1.0 `AgentCard` (`supportedInterfaces`, `tags`), `DynamicRegistry` tag routing, `%%HANDOVER%%` recursive routing.
+- **Live Context Kit (0.2.0)** — MCP resources `jabr://world-state`, `jabr://tasks/{id}`, `jabr://skills`, `jabr://memory` + `SubscriptionManager` (`resources/subscribe` → `subscriptions/listen`), `runAgent()` DRY factory.
+- **Cognitive Loop Kit (0.2.0)** — `CognitiveLoop` weighted voting (`successRate`, relevance, tag hits), `delegateToMultiple` / `executeConsensus`.
+- **IDE-Native Kit (0.3.0)** — ACP `diff` content type + `tool_call_update` stream, `session/list|delete|resume` with `replayFrom`, `MemoryStorePort` `SessionData` → `memory/sessions/session-<id>.json`.
+- **Coherence** — aliased imports `@agents/@ports/@adapters/@utils/@run`, zero `//` slop, hexagonal `DiscoveryPort` isolation.
 
 ## Quick Start
 
 ```bash
 bun install
 
-# Start all agents
+# All agents in parallel
 bun run dev
 
 # Or individually
-bun run orchestrator
-bun run coder
-bun run researcher
+bun run orchestrator # 4000
+bun run oracle       # 4001
+bun run librarian    # 4002
+bun run explorer     # 4003
+bun run designer     # 4004
+bun run fixer        # 4005
 
-# Run integration test (requires all agents running)
+# Integration test (agents must run first)
 bun run demo
+
+# Typecheck
+bun run typecheck
 ```
 
 ## Protocol Layers
 
-- **ACP** (stdio) — IDE ↔ ACP bridge — JSON-RPC 2.0
-- **A2A** (HTTP) — Orchestrator ↔ Specialists — JSON-RPC over HTTP
-- **MCP** (stdio) — Agents ↔ Tools — `bun mcp-servers/tools.ts`
+- **ACP** (stdio nd-JSON) — IDE ↔ ACP bridge — JSON-RPC 2.0, one object per line; `diff` content, `tool_call_update`, `session/*`
+- **A2A** (HTTP JSON-RPC) — Orchestrator ↔ Specialists — Agent Cards at `/.well-known/agent-card.json`, polling 200 ms × 20
+- **MCP** (stdio) — Agents ↔ Tools — `bun mcp-servers/tools.ts` — tools + resources with subscriptions
 
-## IDE Integration
+## IDE Integration (ACP)
 
-### Zed
-
-Add to `~/.config/zed/settings.json` or project `.zed/settings.json`:
+**Zed** `~/.config/zed/settings.json`:
 
 ```json
 {
@@ -51,37 +92,57 @@ Add to `~/.config/zed/settings.json` or project `.zed/settings.json`:
     "jabr": {
       "type": "custom",
       "command": "bun",
-      "args": ["agents/acp-bridge.ts"],
+      "args": ["agents/run/acp-bridge.ts"],
       "default_mode": "base"
     }
   }
 }
 ```
 
-### JetBrains
-
-Create `acp.json` in project root:
+**JetBrains** `acp.json`:
 
 ```json
-{
-  "jabr": {
-    "command": "bun",
-    "args": ["agents/acp-bridge.ts"]
-  }
-}
+{ "jabr": { "command": "bun", "args": ["agents/run/acp-bridge.ts"] } }
 ```
 
-## MCP Tools
+`ORCHESTRATOR_URL` env overrides default `http://localhost:4000`.
+
+## MCP Tools & Resources
 
 | Tool | Description |
 |---|---|
-| `read_file` | Read a file from the workspace |
-| `write_file` | Write content to a file |
-| `run_python` | Execute Python via `uv run` (10s timeout) |
-| `calculate` | Safe arithmetic evaluator |
-| `save_skill` | Persist a Hermes-style skill document |
-| `list_skills` | List all saved skills |
+| `read_file` | Read workspace file |
+| `write_file` | Write workspace file |
+| `run_python` | `uv run` Python (10 s) |
+| `calculate` | Safe arithmetic |
+| `save_skill` | Persist skill JSON (idempotent) |
+| `list_skills` | List saved skills |
 
-## Self-Improvement
+| Resource | URI |
+|---|---|
+| World-state | `jabr://world-state` |
+| Task | `jabr://tasks/{taskId}` |
+| Skills | `jabr://skills` |
+| Memory | `jabr://memory` |
 
-After each novel task, the Researcher Agent writes `skills/<slug>.json` — Hermes-style skill documents with steps and success tracking. Skills are idempotent: same task type reuses the existing skill file.
+## Skills System
+
+`skills/builtin/*.md` (static, per-agent) + `skills/*.json` (auto-generated by Librarian, idempotent by slug). See `skills/` and `hermes.config.md`.
+
+## Self-Improvement Loop
+
+After each novel task, Librarian writes `skills/<slug>.json`. Same slug → skip.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
+
+## Aliased Imports
+
+`tsconfig.json` → `@agents/*` `./agents/*`, `@ports/*`, `@adapters/*`, `@run/*`, `@utils/*`, `@core/*`. Core uses only `type` imports from ports.
+
+## Notes
+
+- `bun run tsc --noEmit` for type checking — no separate lint/test scripts.
+- All A2A endpoints return `Access-Control-Allow-Origin: *`.
+- Unrecognized routing falls back to Librarian.
