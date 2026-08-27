@@ -1,14 +1,10 @@
-// ─── Domain types ─────────────────────────────────────────────────────────────
-
 export interface AgentConfig {
-  name: string;
-  description: string;
-  url: string;
-  version: string;
-  port: number;
+  name: string
+  description: string
+  url: string
+  version: string
+  port: number
 }
-
-// ─── A2A (Agent-to-Agent) v1.0 types ──────────────────────────────────────────
 
 export type AgentInterfaceType = "http" | "grpc"
 
@@ -46,7 +42,7 @@ export interface AgentCard {
   capabilities: AgentCardCapabilities;
   skills: AgentSkill[];
   supportedInterfaces?: AgentInterface[];
-  successRate?: number; // 0–1, used by CognitiveLoop for weighted voting
+  successRate?: number
 }
 
 export type TaskState =
@@ -96,22 +92,18 @@ export interface A2AArtifact {
   parts: A2APart[];
 }
 
-// ─── Handover Protocol ────────────────────────────────────────────────────────
-
 export const HANDOVER_MARKER = "%%HANDOVER%%";
 
 export interface HandoverRequest {
-  transferTo: string; // Agent name to transfer to. TODO: infer agent names to force and not to have unknown agent set.
-  reason: string; // Why the transfer is needed
-  context: string; // Relevant context for the next agent
+  transferTo: string
+  reason: string
+  context: string
 }
 
-/** Encode a handover signal into a text string. */
 export function encodeHandover(req: HandoverRequest): string {
   return `${HANDOVER_MARKER}${JSON.stringify(req)}`;
 }
 
-/** Decode a handover signal from text. Returns null if no marker found. */
 export function decodeHandover(text: string): HandoverRequest | null {
   const idx = text.indexOf(HANDOVER_MARKER);
   if (idx === -1) return null;
@@ -121,8 +113,6 @@ export function decodeHandover(text: string): HandoverRequest | null {
     return null;
   }
 }
-
-// ─── ACP (Agent Client Protocol) types ────────────────────────────────────────
 
 export interface ACPRequest {
   jsonrpc: "2.0";
@@ -144,8 +134,6 @@ export interface ACPResponse {
   error?: ErrorCard;
 }
 
-// ─── Skill types (self-improvement loop) ──────────────────────────────────────
-
 export interface SkillDocument {
   name: string;
   description: string;
@@ -155,8 +143,6 @@ export interface SkillDocument {
   usageCount: number;
   successRate: number;
 }
-
-// ─── MCP tool types ───────────────────────────────────────────────────────────
 
 export interface MCPToolCall {
   name: string;
@@ -168,9 +154,6 @@ export interface MCPToolResult {
   isError?: boolean;
 }
 
-// ── MCP Resource Types ──────────────────────────────────────────────────────
-
-/** A resource represents a read-only data endpoint exposed via MCP */
 export interface McpResource {
   uri: string;
   name: string;
@@ -178,7 +161,6 @@ export interface McpResource {
   mimeType?: string;
 }
 
-/** Result from reading an MCP resource */
 export interface McpResourceContent {
   uri: string;
   text?: string;
@@ -186,7 +168,6 @@ export interface McpResourceContent {
   mimeType?: string;
 }
 
-/** A subscription to resource changes */
 export interface ResourceSubscription {
   id: string;
   uri: string;
@@ -194,35 +175,34 @@ export interface ResourceSubscription {
   createdAt: string;
 }
 
-/** World-state snapshot returned by the system resource */
-export type WordStateAgentStatus = "online" | "offline" | "unknown"
-export interface WordStateAgent {
+export type WorldStateAgentStatus = "online" | "offline" | "unknown"
+export interface WorldStateAgent {
   name: string
   port: number
-  status: WordStateAgentStatus
+  status: WorldStateAgentStatus
   skills: string[]
 }
-export interface WordStateTasks {
+export interface WorldStateTasks {
   total: number;
   active: number;
   completed: number;
   failed: number;
-};
+}
 
-export interface Memory {
+export interface WorldStateMemory {
   totalEntries: number;
   lastUpdated?: string;
-};
-export interface Skills {
+}
+export interface WorldStateSkills {
   total: number;
   recentSlugs: string[];
-};
+}
 export interface WorldState {
   timestamp: string;
-  agents: Array<WordStateAgent>;
-  tasks: WordStateTasks;
-  memory: Memory;
-  skills: Skills;
+  agents: Array<WorldStateAgent>;
+  tasks: WorldStateTasks;
+  memory: WorldStateMemory;
+  skills: WorldStateSkills;
 }
 
 export interface A2AServerConfig {

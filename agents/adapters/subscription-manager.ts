@@ -8,7 +8,7 @@ export interface Subscription {
 
 export class SubscriptionManager {
   private subscriptions = new Map<string, Subscription>();
-  private uriListeners = new Map<string, Set<string>>(); // uri → set of subscription IDs
+  private uriListeners = new Map<string, Set<string>>();
 
   subscribe(uri: string): Subscription {
     const sub: Subscription = {

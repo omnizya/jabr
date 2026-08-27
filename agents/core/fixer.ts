@@ -1,12 +1,12 @@
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { SkillStorePort } from "../ports/skill-store.ts";
-import type { AgentCard, A2AMessage } from "../types.ts";
+import type { TaskStorePort } from "@ports/task-store";
+import type { SkillStorePort } from "@ports/skill-store";
+import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const FIXER_CARD: AgentCard = {
   name: "Fixer Agent",
   description:
     "Fixes bugs, generates code, runs reviews, executes Python. Bounded implementation specialist.",
-  url: "", // filled by run module
+  url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
   skills: [
@@ -51,7 +51,6 @@ export class FixerAgent {
     return FIXER_CARD;
   }
 
-  // Pure domain logic — pattern matching on user text
   executeTask(
     userText: string,
   ): { text: string; artifact?: { name: string; content: string } } {
@@ -64,7 +63,6 @@ export class FixerAgent {
     }
 
     if (lower.includes("fibonacci") || lower.includes("fib")) {
-      // Save skill (idempotent — skipped if slug already exists)
       this.skillStore.save("fibonacci-generation", {
         name: "Fibonacci Generation",
         description: "Generate a Fibonacci sequence implementation in TypeScript",
@@ -104,7 +102,6 @@ export class FixerAgent {
     };
   }
 
-  // High-level: execute and update task store
   async execute(taskId: string, userText: string): Promise<void> {
     const { text, artifact } = this.executeTask(userText);
     this.taskStore.updateState(taskId, "completed");

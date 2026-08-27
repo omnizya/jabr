@@ -1,6 +1,6 @@
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { SkillStorePort } from "../ports/skill-store.ts";
-import type { AgentCard, A2AMessage } from "../types.ts";
+import type { TaskStorePort } from "@ports/task-store";
+import type { SkillStorePort } from "@ports/skill-store";
+import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const ORACLE_CARD: AgentCard = {
   name: "Oracle Agent",

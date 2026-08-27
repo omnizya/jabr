@@ -1,13 +1,11 @@
-import type { AgentCard, A2AMessage, HandoverRequest } from "../types.ts";
-import { decodeHandover } from "../types.ts";
-import type { AgentRegistryPort } from "../ports/agent-registry.ts";
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { MemoryStorePort } from "../ports/memory-store.ts";
-import type { DynamicRegistry } from "../adapters/dynamic-registry.ts";
+import type { AgentCard, A2AMessage, HandoverRequest } from "@agents/types";
+import { decodeHandover } from "@agents/types";
+import type { AgentRegistryPort } from "@ports/agent-registry";
+import type { TaskStorePort } from "@ports/task-store";
+import type { MemoryStorePort } from "@ports/memory-store";
+import type { DynamicRegistry } from "@adapters/dynamic-registry";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 
-// Keyword routing — exported for testability.
-// Each agent has its own keyword list; orchestrator picks the first match.
 export const ROUTING_TABLE: Array<{
   keywords: string[];
   agentName: string;
@@ -39,18 +37,17 @@ export const ROUTING_TABLE: Array<{
     keywords: ["research", "doc", "api", "library", "how-to", "summarize"],
   },
   {
-    agentName: "fixer", // default for code tasks
+    agentName: "fixer",
     label: "Fixer Agent",
     keywords: ["code", "function", "implement", "algorithm", "python", "typescript", "write"],
   },
 ];
 
-// Agent card metadata
 export const ORCHESTRATOR_CARD: AgentCard = {
   name: "Orchestrator",
   description:
     "Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
-  url: "", // filled by run module with actual port
+  url: "",
   version: "1.0.0",
   capabilities: { streaming: false, pushNotifications: false },
   skills: [
@@ -71,7 +68,6 @@ export const ORCHESTRATOR_CARD: AgentCard = {
   ],
 };
 
-/** Max handover depth before the orchestrator forces completion. */
 export const MAX_HANDOVER_DEPTH = 3;
 
 export class OrchestratorAgent {
@@ -91,11 +87,7 @@ export class OrchestratorAgent {
     return ORCHESTRATOR_CARD;
   }
 
-  /**
-   * Route task — tries keyword table first, then falls back to DynamicRegistry tag matching.
-   */
   routeTask(text: string): { agentName: string; label: string } {
-    // 1. Try hardcoded keyword table (fast, deterministic)
     const lower = text.toLowerCase();
     for (const entry of ROUTING_TABLE) {
       if (entry.keywords.some((k) => lower.includes(k))) {
@@ -103,7 +95,6 @@ export class OrchestratorAgent {
       }
     }
 
-    // 2. Try DynamicRegistry tag-based matching (discoverable, extensible)
     if (this.dynamicRegistry) {
       const match = this.dynamicRegistry.matchAgent(text);
       if (match) {
@@ -111,13 +102,9 @@ export class OrchestratorAgent {
       }
     }
 
-    // 3. Fallback
     return { agentName: "librarian", label: "Librarian Agent" };
   }
 
-  /**
-   * Get URL for an agent — DynamicRegistry takes precedence over legacy map.
-   */
   private getAgentUrl(agentName: string): string | undefined {
     if (this.dynamicRegistry) {
       return this.dynamicRegistry.getUrl(agentName);
@@ -125,18 +112,12 @@ export class OrchestratorAgent {
     return undefined;
   }
 
-  /**
-   * Get all available agent names from the DynamicRegistry.
-   */
   private getAvailableAgentNames(): string[] {
     if (!this.dynamicRegistry) return [];
     const cards = this.dynamicRegistry.getAllCards();
     return Object.keys(cards);
   }
 
-  /**
-   * Delegate to multiple agents in parallel and return their responses.
-   */
   private async delegateToMultiple(
     agentNames: string[],
     userText: string,
@@ -160,10 +141,6 @@ export class OrchestratorAgent {
     return results.filter((r): r is ConsensusInput => r !== null);
   }
 
-  /**
-   * Execute consensus: delegate to multiple agents, evaluate responses, return best.
-   * Used for ambiguous or high-stakes tasks.
-   */
   async executeConsensus(taskId: string, userText: string): Promise<string> {
     const available = this.getAvailableAgentNames();
     if (available.length < 2) {
@@ -186,25 +163,10 @@ export class OrchestratorAgent {
     return result.synthesized;
   }
 
-  /**
-   * Main task execution entry point.
-   * Delegates to `executeWithDepth` with depth 0.
-   */
   async execute(taskId: string, userText: string): Promise<void> {
     return this.executeWithDepth(taskId, userText, 0);
   }
 
-  /**
-   * Core execution loop with handover support.
-   *
-   * 1. Route the task to a specialist.
-   * 2. Delegate and receive result.
-   * 3. If result contains a handover marker and depth < MAX:
-   *    - Create a new child task for the requested agent.
-   *    - Link via referenceTaskIds.
-   *    - Recurse.
-   * 4. Otherwise, complete the current task.
-   */
   private async executeWithDepth(
     taskId: string,
     userText: string,
@@ -222,7 +184,6 @@ export class OrchestratorAgent {
 
       const result = await this.registry.delegateTask(agentUrl, userText);
 
-      // ── Check for handover signal ──────────────────────────────────────
       const handover = decodeHandover(result);
 
       if (handover && depth < MAX_HANDOVER_DEPTH) {
@@ -230,7 +191,6 @@ export class OrchestratorAgent {
           `[depth=${depth}] Handover detected: ${agentName} → ${handover.transferTo} (${handover.reason})`,
         );
 
-        // Store the intermediate result in the current task
         this.taskStore.appendMessage(taskId, {
           messageId: crypto.randomUUID(),
           role: "agent",
@@ -239,12 +199,10 @@ export class OrchestratorAgent {
           contextId: taskId,
         } as A2AMessage);
 
-        // Create child task for the handover target
         const childTaskId = crypto.randomUUID();
         this.taskStore.create(childTaskId);
         this.taskStore.updateState(taskId, "working");
 
-        // Link tasks via referenceTaskIds
         const childUserText = handover.context || userText;
         this.taskStore.appendMessage(childTaskId, {
           messageId: crypto.randomUUID(),
@@ -255,7 +213,6 @@ export class OrchestratorAgent {
           referenceTaskIds: [taskId, ...referenceTaskIds],
         } as A2AMessage);
 
-        // Recurse into the handover target
         await this.executeWithDepth(
           childTaskId,
           childUserText,
@@ -263,7 +220,6 @@ export class OrchestratorAgent {
           [taskId, ...referenceTaskIds],
         );
 
-        // After child completes, collect its result and complete parent
         const childTask = this.taskStore.get(childTaskId);
         const childResult =
           childTask?.messages
@@ -286,7 +242,6 @@ export class OrchestratorAgent {
         return;
       }
 
-      // ── Max depth reached or no handover — complete normally ───────────
       if (handover && depth >= MAX_HANDOVER_DEPTH) {
         this.memory.append(
           `[depth=${depth}] Max handover depth (${MAX_HANDOVER_DEPTH}) reached. Completing with available result.`,

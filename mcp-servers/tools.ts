@@ -1,11 +1,3 @@
-/**
- * MCP Tool Server (Bun stdio transport)
- * Exposes: read_file · write_file · run_python · calculate · save_skill · list_skills
- *
- * Wire into opencode.json or hermes config:
- *   { "type": "stdio", "command": "bun", "args": ["mcp-servers/tools.ts"] }
- */
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -23,8 +15,6 @@ const server = new McpServer(
     capabilities: { resources: { subscribe: true, listChanged: true } },
   },
 );
-
-// ── Tools ─────────────────────────────────────────────────────────────────────
 
 server.registerTool("read_file", {
   description: "Read a file from the project workspace",
@@ -67,7 +57,6 @@ server.registerTool("calculate", {
 }, ({ expression }) => {
   if (!/^[\d\s+\-*/.()%^]+$/.test(expression))
     throw new Error("Unsafe expression");
-  // eslint-disable-next-line no-eval
   const result = eval(expression);
   return { content: [{ type: "text", text: String(result) }] };
 });
@@ -178,7 +167,6 @@ registerResources(server, {
   },
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("MCP tool server running on stdio");

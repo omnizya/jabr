@@ -1,12 +1,12 @@
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { SkillStorePort } from "../ports/skill-store.ts";
-import type { SearchPort, SearchResult } from "../ports/search-port.ts";
-import type { AgentCard, A2AMessage } from "../types.ts";
+import type { TaskStorePort } from "@ports/task-store";
+import type { SkillStorePort } from "@ports/skill-store";
+import type { SearchPort, SearchResult } from "@ports/search-port";
+import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const LIBRARIAN_CARD: AgentCard = {
   name: "Librarian Agent",
   description: "Researches documentation, looks up library APIs, summarizes findings, and manages skills. External knowledge specialist.",
-  url: "", // filled by run module
+  url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
   skills: [
@@ -27,7 +27,6 @@ export class LibrarianAgent {
     return LIBRARIAN_CARD;
   }
 
-  // Helper: persist skill via port (idempotent)
   private persistSkill(taskType: string, userText: string, steps: string[]): void {
     const slug = taskType.toLowerCase().replace(/\s+/g, "-");
     if (this.skillStore.exists(slug)) return;
@@ -43,7 +42,6 @@ export class LibrarianAgent {
     console.log(`📚 Skill saved: skills/${slug}.json`);
   }
 
-  // Gather external knowledge via the search port before responding.
   async research(query: string): Promise<SearchResult[]> {
     try {
       return await this.search.search(query);
@@ -53,7 +51,6 @@ export class LibrarianAgent {
     }
   }
 
-  // Format search results into a markdown citation block.
   private formatResults(results: SearchResult[]): string {
     if (results.length === 0) {
       return "_No external results found._";
@@ -63,7 +60,6 @@ export class LibrarianAgent {
       .join("\n");
   }
 
-  // Pure domain logic — pattern matching on user text
   async executeTask(userText: string): Promise<string> {
     const lower = userText.toLowerCase();
 
@@ -121,7 +117,6 @@ export class LibrarianAgent {
     return `Librarian agent processed: "${userText}"\n\nFindings: topic processed by Librarian Agent.\nNo cached skill found — created \`skills/general-research.json\` for next time.\n\n### External sources\n${this.formatResults(results)}\n\nTip: delegate specific subtasks to Coder Agent via the orchestrator.`;
   }
 
-  // High-level: execute and update task store
   async execute(taskId: string, userText: string): Promise<void> {
     const responseText = await this.executeTask(userText);
     this.taskStore.updateState(taskId, "completed");

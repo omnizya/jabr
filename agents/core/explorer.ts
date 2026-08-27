@@ -1,5 +1,5 @@
-import type { TaskStorePort } from "../ports/task-store.ts";
-import type { AgentCard } from "../types.ts";
+import type { TaskStorePort } from "@ports/task-store";
+import type { AgentCard } from "@agents/types";
 
 export const EXPLORER_CARD: AgentCard = {
   name: "Explorer Agent",

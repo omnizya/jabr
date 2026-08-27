@@ -6,7 +6,6 @@ export class A2AClient implements AgentRegistryPort {
   private cache: Map<string, AgentCard> = new Map();
 
   constructor() {
-    // Client with optional card cache keyed by base URL.
   }
 
   async fetchCard(baseUrl: string): Promise<AgentCard | null> {

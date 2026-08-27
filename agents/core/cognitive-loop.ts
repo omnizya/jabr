@@ -1,4 +1,4 @@
-import type { AgentCard } from "../types.ts";
+import type { AgentCard } from "@agents/types";
 
 export interface ConsensusInput {
   agentName: string;

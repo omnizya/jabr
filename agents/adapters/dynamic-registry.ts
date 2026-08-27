@@ -14,7 +14,6 @@ export class DynamicRegistry {
   async initialize(): Promise<void> {
     const urls = Object.values(this.seedUrls);
 
-    // Fetch all cards in parallel
     const cards = await this.registry.discoverAgents(urls);
 
     for (const [name, card] of Object.entries(cards)) {
@@ -32,10 +31,6 @@ export class DynamicRegistry {
     );
   }
 
-  /**
-   * Register an additional agent at runtime (e.g. discovered via A2A).
-   * Returns true if the agent was newly added, false if already known.
-   */
   async addAgent(url: string): Promise<boolean> {
     if (this.cardCache.has(url)) return false;
 
@@ -52,15 +47,6 @@ export class DynamicRegistry {
     return true;
   }
 
-  /**
-   * Match a task description against agent skill tags.
-   * Returns { name, url, label } for the best match, or null.
-   *
-   * Matching strategy:
-   *  1. Exact tag match (highest confidence)
-   *  2. Partial tag overlap (fuzzy)
-   *  3. Fallback to first registered agent
-   */
   matchAgent(taskText: string): { name: string; url: string; label: string } | null {
     const lower = taskText.toLowerCase();
     const words = this.extractKeywords(lower);
@@ -73,11 +59,11 @@ export class DynamicRegistry {
       for (const tag of entry.tags) {
         const tagLower = tag.toLowerCase();
         if (lower.includes(tagLower)) {
-          score += 2; // exact tag in task text
+          score += 2;
         }
         for (const word of words) {
           if (tagLower.includes(word) || word.includes(tagLower)) {
-            score += 1; // partial overlap
+            score += 1;
           }
         }
       }
@@ -96,7 +82,6 @@ export class DynamicRegistry {
       return { name: bestMatch.name, url: bestMatch.url, label: bestMatch.label };
     }
 
-    // Fallback: return first agent
     const first = this.entries.values().next().value;
     if (first) {
       const name = this.findNameByUrl(first.url);
@@ -106,30 +91,18 @@ export class DynamicRegistry {
     return null;
   }
 
-  /**
-   * Get the URL for a specific agent by name.
-   */
   getUrl(agentName: string): string | undefined {
     return this.entries.get(agentName)?.url;
   }
 
-  /**
-   * Get the card for a specific agent by name.
-   */
   getCard(agentName: string): AgentCard | undefined {
     return this.entries.get(agentName)?.card;
   }
 
-  /**
-   * Get all registered agent names.
-   */
   getAgentNames(): string[] {
     return [...this.entries.keys()];
   }
 
-  /**
-   * Get all registered agent cards.
-   */
   getAllCards(): Record<string, AgentCard> {
     const cards: Record<string, AgentCard> = {};
     for (const [name, entry] of this.entries) {
@@ -138,9 +111,6 @@ export class DynamicRegistry {
     return cards;
   }
 
-  /**
-   * Get the full URL map for backwards compatibility.
-   */
   toUrlMap(): Record<string, string> {
     const map: Record<string, string> = {};
     for (const [name, entry] of this.entries) {
@@ -148,8 +118,6 @@ export class DynamicRegistry {
     }
     return map;
   }
-
-  // ── Internal ───────────────────────────────────────────────────────────────
 
   private extractTags(card: AgentCard): string[] {
     const tags: string[] = [];
@@ -164,7 +132,6 @@ export class DynamicRegistry {
   }
 
   private extractKeywords(text: string): string[] {
-    // Split on non-alphanumeric and filter short/common words
     const stop = new Set(["the", "a", "an", "is", "are", "was", "be", "to", "of", "in", "for", "and", "or", "it", "that", "this"]);
     return text
       .split(/[^a-z0-9]+/)

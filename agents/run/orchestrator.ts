@@ -33,7 +33,6 @@ if (import.meta.main) {
       taskStore.create(taskId);
       await agent.execute(taskId, text);
       const task = taskStore.get(taskId);
-      // Return the last agent message text
       const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
       return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
     },

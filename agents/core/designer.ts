@@ -43,10 +43,6 @@ export class DesignerAgent {
     return `Designer ready. Ask me to:\n- Design a page layout or responsive grid\n- Create a UI component with interaction patterns\n- Generate a color palette or style guide`;
   }
 
-  /**
-   * Generate a visual for the given prompt using the image-generation port.
-   * Returns the image URL, or a fallback message if no image-gen port is wired.
-   */
   async render(prompt: string): Promise<string> {
     if (!this.imageGen) {
       return "Image generation is not configured for this Designer agent.";
