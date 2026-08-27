@@ -20,11 +20,18 @@ interface JSONRPCResponse {
 // ─── A2A HTTP client adapter ───────────────────────────────────────────────────
 
 export class A2AClient implements AgentRegistryPort {
+  private cache: Map<string, AgentCard> = new Map();
+
   constructor() {
-    // Stateless client — no state needed.
+    // Client with optional card cache keyed by base URL.
   }
 
   async fetchCard(baseUrl: string): Promise<AgentCard | null> {
+    const cached = this.cache.get(baseUrl);
+    if (cached) {
+      return cached;
+    }
+
     try {
       const res = await fetch(`${baseUrl}/.well-known/agent-card.json`);
       if (!res.ok) {
@@ -32,11 +39,38 @@ export class A2AClient implements AgentRegistryPort {
         return null;
       }
       const card = (await res.json()) as AgentCard;
+      this.cache.set(baseUrl, card);
       return card;
     } catch (err) {
       console.error(`[A2AClient] fetchCard error for ${baseUrl}:`, err);
       return null;
     }
+  }
+
+  async discoverAgents(urls: string[]): Promise<Record<string, AgentCard>> {
+    const entries = await Promise.all(
+      urls.map(async (url) => {
+        try {
+          const card = await this.fetchCard(url);
+          if (!card) {
+            console.error(`[A2AClient] discoverAgents: no card for ${url}`);
+            return null;
+          }
+          return [card.name, card] as const;
+        } catch (err) {
+          console.error(`[A2AClient] discoverAgents: failed to fetch card for ${url}:`, err);
+          return null;
+        }
+      }),
+    );
+
+    const result: Record<string, AgentCard> = {};
+    for (const entry of entries) {
+      if (entry) {
+        result[entry[0]] = entry[1];
+      }
+    }
+    return result;
   }
 
   async delegateTask(agentUrl: string, text: string): Promise<string> {

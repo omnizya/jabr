@@ -1,6 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "ollama-cloud/gemma4:31b",
+  "env": {
+    "NINEROUTER_URL": "http://localhost:20128",
+    "NINEROUTER_KEY": "sk-your-key-here"
+  },
   "agents": {
     "orchestrator": {
       "mode": "primary",

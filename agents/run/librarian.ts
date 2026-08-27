@@ -1,6 +1,7 @@
 import { A2AServer } from "../adapters/http/a2a-server.ts";
 import { TaskMemory } from "../adapters/task-memory.ts";
 import { SkillFS } from "../adapters/skill-fs.ts";
+import { Search9Router } from "../adapters/search-9router.ts";
 import { LibrarianAgent, LIBRARIAN_CARD } from "../core/librarian.ts";
 
 // @ts-ignore - Bun provides import.meta.main
@@ -9,7 +10,8 @@ if (import.meta.main) {
 
   const taskStore = new TaskMemory();
   const skillStore = new SkillFS("skills");
-  const agent = new LibrarianAgent(taskStore, skillStore);
+  const search = new Search9Router();
+  const agent = new LibrarianAgent(taskStore, skillStore, search);
 
   const server = new A2AServer({
     port: PORT,

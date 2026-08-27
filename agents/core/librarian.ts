@@ -1,5 +1,6 @@
 import type { TaskStorePort } from "../ports/task-store.ts";
 import type { SkillStorePort } from "../ports/skill-store.ts";
+import type { SearchPort, SearchResult } from "../ports/search-port.ts";
 import type { AgentCard, A2AMessage } from "../types.ts";
 
 export const LIBRARIAN_CARD: AgentCard = {
@@ -19,6 +20,7 @@ export class LibrarianAgent {
   constructor(
     private taskStore: TaskStorePort,
     private skillStore: SkillStorePort,
+    private search: SearchPort,
   ) {}
 
   get card(): AgentCard {
@@ -41,6 +43,26 @@ export class LibrarianAgent {
     console.log(`📚 Skill saved: skills/${slug}.json`);
   }
 
+  // Gather external knowledge via the search port before responding.
+  async research(query: string): Promise<SearchResult[]> {
+    try {
+      return await this.search.search(query);
+    } catch (err) {
+      console.error("[LibrarianAgent] research failed:", err);
+      return [];
+    }
+  }
+
+  // Format search results into a markdown citation block.
+  private formatResults(results: SearchResult[]): string {
+    if (results.length === 0) {
+      return "_No external results found._";
+    }
+    return results
+      .map((r, i) => `${i + 1}. [${r.title}](${r.url}) — ${r.snippet}`)
+      .join("\n");
+  }
+
   // Pure domain logic — pattern matching on user text
   async executeTask(userText: string): Promise<string> {
     const lower = userText.toLowerCase();
@@ -53,7 +75,8 @@ export class LibrarianAgent {
         "List key use cases",
         "Return structured findings",
       ]);
-      return `## Protocol Research: ${userText}\n\n**MCP** — Model Context Protocol (Anthropic)\n• JSON-RPC 2.0 over stdio or HTTP\n• Connects agents to tools and data sources\n\n**A2A** — Agent-to-Agent (Linux Foundation)\n• HTTP + JSON-RPC, Agent Cards for discovery\n• Task lifecycle: submitted → working → completed\n\n**ACP** — Agent Client Protocol (Zed / JetBrains)\n• JSON-RPC over stdio (nd-JSON)\n• Bridges IDEs to coding agents\n\nSkill saved to \`skills/protocol-research.json\` ✓`;
+      const results = await this.research(userText);
+      return `## Protocol Research: ${userText}\n\n**MCP** — Model Context Protocol (Anthropic)\n• JSON-RPC 2.0 over stdio or HTTP\n• Connects agents to tools and data sources\n\n**A2A** — Agent-to-Agent (Linux Foundation)\n• HTTP + JSON-RPC, Agent Cards for discovery\n• Task lifecycle: submitted → working → completed\n\n**ACP** — Agent Client Protocol (Zed / JetBrains)\n• JSON-RPC over stdio (nd-JSON)\n• Bridges IDEs to coding agents\n\n### External sources\n${this.formatResults(results)}\n\nSkill saved to \`skills/protocol-research.json\` ✓`;
     }
 
     if (lower.includes("doc") || lower.includes("api") || lower.includes("library") || lower.includes("how to")) {
@@ -64,7 +87,8 @@ export class LibrarianAgent {
         "Summarize key patterns",
         "Return structured findings",
       ]);
-      return `## Docs Lookup: ${userText}\n\n• Library/API identified: "${userText.slice(0, 50)}…"\n• Relevant documentation located\n• Key signatures and usage patterns extracted\n• Summary of integration steps provided\n\nSkill saved → \`skills/docs-lookup.json\` ✓`;
+      const results = await this.research(userText);
+      return `## Docs Lookup: ${userText}\n\n• Library/API identified: "${userText.slice(0, 50)}…"\n• Relevant documentation located\n• Key signatures and usage patterns extracted\n• Summary of integration steps provided\n\n### External sources\n${this.formatResults(results)}\n\nSkill saved → \`skills/docs-lookup.json\` ✓`;
     }
 
     if (lower.includes("summarize") || lower.includes("summary")) {
@@ -93,7 +117,8 @@ export class LibrarianAgent {
       "Structure findings",
       "Return with citations",
     ]);
-    return `Librarian agent processed: "${userText}"\n\nFindings: topic processed by Librarian Agent.\nNo cached skill found — created \`skills/general-research.json\` for next time.\n\nTip: delegate specific subtasks to Coder Agent via the orchestrator.`;
+    const results = await this.research(userText);
+    return `Librarian agent processed: "${userText}"\n\nFindings: topic processed by Librarian Agent.\nNo cached skill found — created \`skills/general-research.json\` for next time.\n\n### External sources\n${this.formatResults(results)}\n\nTip: delegate specific subtasks to Coder Agent via the orchestrator.`;
   }
 
   // High-level: execute and update task store

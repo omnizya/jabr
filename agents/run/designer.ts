@@ -1,5 +1,6 @@
 import { A2AServer } from "../adapters/http/a2a-server.ts";
 import { TaskMemory } from "../adapters/task-memory.ts";
+import { ImageGen9Router } from "../adapters/image-gen-9router.ts";
 import { DesignerAgent, DESIGNER_CARD } from "../core/designer.ts";
 
 // @ts-ignore - Bun provides import.meta.main
@@ -7,7 +8,8 @@ if (import.meta.main) {
   const PORT = 4004;
 
   const taskStore = new TaskMemory();
-  const agent = new DesignerAgent(taskStore);
+  const imageGen = new ImageGen9Router();
+  const agent = new DesignerAgent(taskStore, imageGen);
 
   const server = new A2AServer({
     port: PORT,

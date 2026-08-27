@@ -1,4 +1,5 @@
 import type { TaskStorePort } from "../ports/task-store.ts";
+import type { ImageGenPort } from "../ports/image-gen-port.ts";
 import type { AgentCard, A2AMessage } from "../types.ts";
 
 export const DESIGNER_CARD: AgentCard = {
@@ -15,7 +16,10 @@ export const DESIGNER_CARD: AgentCard = {
 };
 
 export class DesignerAgent {
-  constructor(private taskStore: TaskStorePort) {}
+  constructor(
+    private taskStore: TaskStorePort,
+    private imageGen?: ImageGenPort,
+  ) {}
 
   get card(): AgentCard {
     return DESIGNER_CARD;
@@ -37,6 +41,22 @@ export class DesignerAgent {
     }
 
     return `Designer ready. Ask me to:\n- Design a page layout or responsive grid\n- Create a UI component with interaction patterns\n- Generate a color palette or style guide`;
+  }
+
+  /**
+   * Generate a visual for the given prompt using the image-generation port.
+   * Returns the image URL, or a fallback message if no image-gen port is wired.
+   */
+  async render(prompt: string): Promise<string> {
+    if (!this.imageGen) {
+      return "Image generation is not configured for this Designer agent.";
+    }
+    try {
+      const url = await this.imageGen.generate(prompt);
+      return `![Generated visual](${url})\n\nPrompt: ${prompt}`;
+    } catch (err) {
+      return `Image generation failed: ${String(err)}`;
+    }
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
