@@ -1,11 +1,12 @@
 import type { LlmPort, LlmRequest, LlmResponse } from "@agents/ports/llm-port";
+import type { BudgetPort } from "@ports/budget-port";
 
 export class OpenAiLlmAdapter implements LlmPort {
   private apiKey: string;
   private baseUrl: string;
   private model: string;
 
-  constructor() {
+  constructor(private budget?: BudgetPort) {
     this.apiKey = process.env.JABR_OPENAI_API_KEY || "";
     this.baseUrl = process.env.JABR_OPENAI_BASE_URL || "https://api.openai.com/v1";
     this.model = process.env.JABR_OPENAI_MODEL || "gpt-4o";
@@ -36,6 +37,10 @@ export class OpenAiLlmAdapter implements LlmPort {
 
     const data = await response.json() as any;
     const choice = data.choices[0];
+
+    if (this.budget) {
+      await this.budget.consume("openai", data.usage.total_tokens);
+    }
 
     return {
       text: choice.message.content,
@@ -101,6 +106,10 @@ export class OpenAiLlmAdapter implements LlmPort {
           // Ignore partial JSON chunks
         }
       }
+    }
+
+    if (this.budget) {
+      await this.budget.consume("openai", usage.total_tokens || 0);
     }
 
     return {

@@ -7,6 +7,9 @@ import type { DiscoveryPort } from "@ports/discovery-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 import type { LlmPort } from "@ports/llm-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
+import { A2AClient } from "@adapters/a2a-client";
+import { BudgetExhaustedError } from "@ports/budget-port";
+
 
 export const ORCHESTRATOR_CARD: AgentCard = {
   name: "Orchestrator",
@@ -195,6 +198,19 @@ export class OrchestratorAgent {
 
       const agentUrl = this.getAgentUrl(agentName);
       if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
+
+      if (this.registry instanceof A2AClient && this.registry.budget) {
+        const url = agentUrl;
+        const agentName = url.includes("scientist") ? "scientist" : 
+                          url.includes("fixer") ? "fixer" :
+                          url.includes("oracle") ? "oracle" :
+                          url.includes("designer") ? "designer" :
+                          url.includes("librarian") ? "librarian" : "unknown";
+        
+        if (this.registry.budget.isExhausted(agentName)) {
+          throw new BudgetExhaustedError(agentName, await this.registry.budget.remaining(agentName));
+        }
+      }
 
       const result = await this.registry.delegateTask(agentUrl, augmentedText);
 

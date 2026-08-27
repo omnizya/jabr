@@ -60,5 +60,5 @@
 - [x] **GAP-5: Python agent layer** — Scientist agent
 - [x] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
 - [x] **GAP-7: Mem-Palace integration**
-- [ ] **GAP-8: Headroom integration** (budget awareness)
+- [x] **GAP-8: Headroom integration** (budget awareness)
 - [ ] **GAP-9: ROUTING_TABLE removal cleanup sweep**

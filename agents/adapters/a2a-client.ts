@@ -1,12 +1,15 @@
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { AgentCard } from "@agents/types";
 import type { JSONRPCRequest, JSONRPCResponse } from "@agents/utils/rpc";
+import { BudgetExhaustedError } from "@ports/budget-port";
+import type { BudgetPort } from "@ports/budget-port";
 
 export class A2AClient implements AgentRegistryPort {
   private cache: Map<string, AgentCard> = new Map();
 
-  constructor() {
+  constructor(public readonly budget?: BudgetPort) {
   }
+
 
   async fetchCard(baseUrl: string): Promise<AgentCard | null> {
     const cached = this.cache.get(baseUrl);
@@ -56,6 +59,20 @@ export class A2AClient implements AgentRegistryPort {
   }
 
   async delegateTask(agentUrl: string, text: string): Promise<string> {
+    // Budget check before dispatch
+    if (this.budget) {
+      const url = new URL(agentUrl);
+      const agentName = url.pathname.includes("scientist") ? "scientist" : 
+                        url.pathname.includes("fixer") ? "fixer" :
+                        url.pathname.includes("oracle") ? "oracle" :
+                        url.pathname.includes("designer") ? "designer" :
+                        url.pathname.includes("librarian") ? "librarian" : "unknown";
+      
+      if (this.budget.isExhausted(agentName)) {
+        throw new BudgetExhaustedError(agentName, await this.budget.remaining(agentName));
+      }
+    }
+
     const body: JSONRPCRequest = {
       jsonrpc: "2.0",
       id: 1,
