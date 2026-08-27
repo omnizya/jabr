@@ -45,10 +45,14 @@ agents/
     http/
       a2a-server.ts
       stdio-bridge.ts
+    llm/
+      openai.ts
     a2a-client.ts
     dynamic-registry.ts
     image-gen-9router.ts
+    mcp-client.ts
     mcp-resources.ts
+    mem-palace.ts
     memory-fs.ts
     search-9router.ts
     skill-fs.ts
@@ -62,10 +66,14 @@ agents/
     librarian.ts
     oracle.ts
     orchestrator.ts
+    scientist.ts
   ports/
     agent-registry.ts
     discovery-port.ts
     image-gen-port.ts
+    knowledge-port.ts
+    llm-port.ts
+    mcp-tool-port.ts
     memory-store.ts
     resource-port.ts
     search-port.ts
@@ -79,6 +87,7 @@ agents/
     librarian.ts
     oracle.ts
     orchestrator.ts
+    scientist.ts
     serve.ts
   utils/
     rpc.ts
@@ -120,261 +129,307 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="jabr-TODO.md">
-# Jabr — Gap Tasks (v0.3.0 → v0.4.0)
+<file path="agents/adapters/mem-palace.ts">
+import { existsSync, mkdirSync, readdirSync } from "fs";
+import { join } from "path";
+import type { KnowledgeEntry, KnowledgePort } from "@ports/knowledge-port";
 
-## GAP-1 · Kill `ROUTING_TABLE` — pure tag routing
-**File**: `agents/core/orchestrator.ts`
-**Problem**: `routeTask()` checks `ROUTING_TABLE` first, only falls through to `DynamicRegistry.matchAgent()` on miss. Keyword table is dead weight — `DynamicRegistry` already has tag-matching from PnP kit.
-**Task**:
-- Delete `ROUTING_TABLE` export and the `for` loop in `routeTask()`
-- `routeTask()` becomes: `dynamicRegistry.matchAgent(text) ?? { agentName: "librarian", label: "Librarian Agent" }`
-- Add `tags` to every `AgentSkill` in each specialist `run/*.ts` entry point (they seed the registry)
-- Confirm `bun run typecheck` passes
-- Update `AGENTS.md` routing section
+export class MemPalaceAdapter implements KnowledgePort {
+  private baseDir: string;
 
----
-
-## GAP-2 · Live-wire `jabr://world-state` — real agent health ✅
-**File**: `mcp-servers/tools.ts`
-**File**: `mcp-servers/tools.ts`
-**Problem**: `getWorldState` callback returns `agents: []` — no live data from the running orchestrator. Tasks count from `memory/task-*.json` files (stale on disk), not in-memory `TaskStorePort`.
-**Task**:
-- Expose a lightweight HTTP endpoint on Orchestrator (e.g. `GET /state`) returning `{ agents, tasks }` from live in-memory stores
-- `getWorldState` in `tools.ts` fetches `ORCHESTRATOR_URL/state` (with 1s timeout + fallback empty)
-- `agents[]` shape: `{ name, port, status: "up"|"down", lastSeen: ISO }`
-- Wire health-check pings in `DynamicRegistry` → update `lastSeen` on each successful card fetch
-- `tasks` counts from live `TaskStorePort` snapshot (pass callback into `registerResources`)
-
----
-
-## GAP-3 · Demo script — reflect 6-agent topology
-**File**: `scripts/demo.ts`
-**Problem**: Demo still tests 3-agent layout (Coder / Researcher / Orchestrator). Agents renamed and split into Oracle / Librarian / Explorer / Designer / Fixer.
-**Task**:
-- Replace all references: Coder→Fixer (4005), Researcher→Librarian (4002)
-- Add card-discovery checks for Explorer (4003), Oracle (4001), Designer (4004)
-- Add routing test: "find all TODO comments" → must route to Explorer
-- Add routing test: "review this function for edge cases" → must route to Oracle
-- Add consensus test: `discover` method → returns all 5 specialist cards
-- Add handover test: send task with `%%HANDOVER%%` in mock response, verify depth counter
-- Keep skill-persistence and memory checks
-
----
-
-## GAP-4 · `run_python` — persistent uv venv + dependency support
-**File**: `mcp-servers/tools.ts`
-**Problem**: Each `run_python` call writes a temp `.py` and runs `uv run --quiet`. No way to install packages — `import numpy` fails silently. Each call is fully isolated (good for security, bad for data science tasks).
-**Task**:
-- Add `packages` param: `{ code: string, packages?: string[] }`
-- When `packages` present: `uv run --with numpy,pandas --quiet tmpPath`
-- Add `run_python_file` tool: `{ path: string, packages?: string[] }` — runs a workspace `.py` file directly (no tmp copy)
-- Add `python_repl` tool: persists a `uv` venv at `./tmp/jabr-venv/`, runs code inside it, shares state across calls in the same session
-- 30s timeout for package installs, 10s for plain code
-- Sanitize `packages` list: alphanumeric + `-_.` only
-
----
-
-## GAP-5 · Python agent layer — `agents/run/scientist.ts`
-**File**: new `agents/run/scientist.ts` + `agents/core/scientist.ts`
-**Problem**: Python capability exists only as an MCP tool (`run_python`). No dedicated A2A agent for data science / scripting tasks. Fixer handles Python requests via keyword match — wrong specialist.
-**Task**:
-- New Scientist Agent on port 4006
-- Skills: `data-analysis`, `script-generation`, `statistical-modeling`, `visualization`
-- Tags: `python`, `data`, `analysis`, `pandas`, `numpy`, `plot`, `csv`, `statistics`
-- `core/scientist.ts`: generates Python scripts for data tasks, delegates execution to MCP `run_python` (via `AgentRegistryPort.callMcpTool`)
-- Add port `McpToolPort` interface: `callTool(name, args): Promise<string>`
-- Adapter: `adapters/mcp-client.ts` — MCP client that connects to `jabr-tools` stdio server
-- Add `scientist` to `dev` script: `bun run --parallel ... scientist`
-- Add Scientist routing keywords to `DynamicRegistry` seed
-
----
-
-## GAP-6 · Sampling → provider-agnostic LLM port (SEP-2577 migration)
-**Files**: `agents/core/cognitive-loop.ts`, `agents/core/orchestrator.ts`, new `agents/ports/llm-port.ts`, new `agents/adapters/llm/`
-**Problem**: ADR flags `sampling/createMessage` deprecated (SEP-2577, 12-month grace from 2026-07-28). Cognitive loop uses simulated scoring — no real LLM call for consensus synthesis. Must be fully provider-agnostic — no vendor lock-in.
-
-**Design — `LlmPort` (Vercel AI SDK compatible)**:
-```ts
-// agents/ports/llm-port.ts
-export interface LlmMessage { role: "user" | "assistant"; content: string }
-export interface LlmUsage { inputTokens: number; outputTokens: number }
-export interface LlmResult { text: string; usage: LlmUsage }
-
-export interface LlmPort {
-  complete(messages: LlmMessage[], opts?: { maxTokens?: number; system?: string }): Promise<LlmResult>
-  readonly providerName: string  // "openai" | "google" | "ollama" | "openrouter" | ...
-}
-```
-
-**Adapters** — one file per provider, all implement `LlmPort`:
-- `agents/adapters/llm/openai.ts` — `JABR_OPENAI_BASE_URL` + `JABR_OPENAI_API_KEY` + `JABR_OPENAI_MODEL` (covers OpenAI, OpenRouter, any OpenAI-compatible endpoint)
-- `agents/adapters/llm/google.ts` — `JABR_GOOGLE_API_KEY` + `JABR_GOOGLE_MODEL` (Gemini via `@google/generative-ai`)
-- `agents/adapters/llm/ollama.ts` — `JABR_OLLAMA_URL` (default `http://localhost:11434`) + `JABR_OLLAMA_MODEL` — fully local, zero API key
-- `agents/adapters/llm/openrouter.ts` — thin wrapper over `openai.ts` with `JABR_OPENROUTER_API_KEY`, base URL `https://openrouter.ai/api/v1`
-
-**Factory** `agents/adapters/llm/factory.ts`:
-```ts
-// JABR_LLM_PROVIDER=ollama|openai|google|openrouter  (default: ollama)
-export function createLlmAdapter(): LlmPort { ... }
-```
-
-**Wire**:
-- `CognitiveLoop` constructor accepts `llm?: LlmPort` — when present, uses it for Judge synthesis step
-- `executeConsensus()` passes `llm` from composition root (`run/orchestrator.ts`)
-- Gate behind `JABR_CONSENSUS_LLM=true` — default off (weighted scoring still works without LLM)
-- Remove all `sampling/createMessage` references
-
-**Default recommended**: `ollama` adapter + `qwen2.5-coder:7b` — zero cost, works offline, runs on same machine as Bun agents
-
----
-
-## GAP-7 · Mem-Palace integration
-**What it is**: Mem-Palace is a structured long-term memory layer — hierarchical knowledge graph stored as markdown + JSON, queryable by embedding similarity or tag intersection. Distinct from Hermes `memory.md` (append-only log).
-**Files**: new `agents/adapters/mem-palace.ts`, `agents/ports/knowledge-port.ts`
-**Task**:
-- `KnowledgePort` interface: `store(key, content, tags): Promise<void>`, `query(text, topK?): Promise<KnowledgeEntry[]>`, `relate(keyA, keyB, relation): Promise<void>`
-- `MemPalaceAdapter`: stores entries as `memory/palace/<slug>.json` with `{ content, tags, embedding?: number[], createdAt, relations: string[] }`
-- Embedding: call `run_python` MCP tool with `sentence-transformers` (uv inline) to compute cosine-similar retrieval — or stub with BM25 tag overlap until embeddings land
-- Wire into `OrchestratorAgent`: before routing, `query(userText, 3)` → prepend top results as context to the delegated task
-- Wire into Librarian: after research task, `store(slug, summary, tags)` → persistent knowledge node
-- Expose as MCP resource: `jabr://palace/{slug}` and `jabr://palace/query?q={text}`
-- CLI tool `scripts/palace.ts`: `bun scripts/palace.ts query "A2A handover"` for manual inspection
-
----
-
-## GAP-8 · Headroom integration
-**What it is**: Headroom is a rate-limit + budget-awareness layer for LLM calls — tracks token usage per agent, enforces per-session caps, emits warnings before hitting provider limits. Prevents runaway consensus loops from burning quota.
-**Files**: new `agents/adapters/headroom.ts`, `agents/ports/budget-port.ts`
-**Task**:
-- `BudgetPort` interface: `consume(agentName, tokens): Promise<void>`, `remaining(agentName): Promise<number>`, `isExhausted(agentName): boolean`, `reset(): void`
-- `HeadroomAdapter`: in-memory per-agent token counters, configurable caps via `JABR_TOKEN_CAP_<AGENT>=<n>` env vars (default 100k/session)
-- Integrate into `LlmPort` adapters (GAP-6): each adapter returns `LlmUsage` with `inputTokens + outputTokens` → call `budget.consume()` after every `complete()` call
-- Integrate into `AgentRegistryPort.delegateTask()`: check `budget.isExhausted()` before HTTP call → throw `BudgetExhaustedError` with agent name + remaining
-- Orchestrator catches `BudgetExhaustedError`: reroutes to next best agent via `DynamicRegistry` tag match (skip exhausted agent)
-- Expose budget state in `jabr://world-state` resource: add `budget: { [agentName]: { used, cap, pct } }`
-- Add `GET /budget` endpoint on Orchestrator for live inspection
-
----
-
-## GAP-9 · `ROUTING_TABLE` removal cleanup sweep
-**Depends on**: GAP-1
-**Files**: `AGENTS.md`, `README.md`, `opencode.json`, `agents/run/orchestrator.ts`
-**Task**:
-- After GAP-1 lands, grep for any remaining `ROUTING_TABLE` references
-- Update `AGENTS.md` notes section (currently documents keyword routing)
-- Update `README.md` routing description
-- Ensure `run/orchestrator.ts` seeds `DynamicRegistry` with all 6 specialist ports on startup
-
----
-
-## Priority order
-
-| # | Task | Effort | Blocks |
-|---|------|--------|--------|
-| GAP-1 | Kill ROUTING_TABLE | S | GAP-9 |
-| GAP-3 | Fix demo script | S | — |
-| GAP-2 | Live world-state | M | — |
-| GAP-4 | uv packages support | M | GAP-5 |
-| GAP-5 | Scientist agent | M | GAP-4 |
-| GAP-6 | Provider-agnostic LlmPort + consensus | M | GAP-8 |
-| GAP-7 | Mem-Palace | L | — |
-| GAP-8 | Headroom | M | GAP-6 |
-| GAP-9 | Cleanup sweep | S | GAP-1 |
-</file>
-
-<file path="opencode.json.need_fix">
-{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "ollama-cloud/gemma4:31b",
-  "env": {
-    "NINEROUTER_URL": "http://localhost:20128",
-    "NINEROUTER_KEY": "sk-your-key-here"
-  },
-  "agents": {
-    "orchestrator": {
-      "mode": "primary",
-      "skills": [
-        "deepwork",
-        "verification-planning",
-        "reflect",
-        "worktrees",
-        "codemap"
-      ]
-    },
-    "oracle": {
-      "mode": "subagent",
-      "skills": [
-        "simplify"
-      ]
-    },
-    "librarian": {
-      "mode": "subagent",
-      "skills": []
-    },
-    "explorer": {
-      "mode": "subagent",
-      "skills": [
-        "codemap"
-      ]
-    },
-    "designer": {
-      "mode": "subagent",
-      "skills": []
-    },
-    "fixer": {
-      "mode": "subagent",
-      "skills": []
+  constructor(baseDir = "memory/palace") {
+    this.baseDir = baseDir;
+    if (!existsSync(this.baseDir)) {
+      mkdirSync(this.baseDir, { recursive: true });
     }
-  },
-  "mcp": {
-    "servers": {
-      "jabr-tools": {
-        "type": "local",
-        "command": [
-          "bun",
-          "mcp-servers/tools.ts"
-        ]
+  }
+
+  async store(slug: string, content: string, tags: string[], relations: string[] = []): Promise<void> {
+    const filePath = join(this.baseDir, `${slug}.json`);
+    let existingRelations = relations;
+    let createdAt = new Date().toISOString();
+
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      try {
+        const existing = await file.json() as KnowledgeEntry;
+        createdAt = existing.createdAt || createdAt;
+        existingRelations = Array.from(new Set([...(existing.relations || []), ...relations]));
+      } catch {
+        // overwrite corrupted file
+      }
+    }
+
+    const entry: KnowledgeEntry = {
+      slug,
+      content,
+      tags,
+      createdAt,
+      relations: existingRelations,
+    };
+
+    await Bun.write(filePath, JSON.stringify(entry, null, 2));
+  }
+
+  async get(slug: string): Promise<KnowledgeEntry | null> {
+    const filePath = join(this.baseDir, `${slug}.json`);
+    const file = Bun.file(filePath);
+    if (!(await file.exists())) return null;
+    try {
+      return (await file.json()) as KnowledgeEntry;
+    } catch {
+      return null;
+    }
+  }
+
+  async list(): Promise<KnowledgeEntry[]> {
+    if (!existsSync(this.baseDir)) return [];
+    const files = readdirSync(this.baseDir).filter((f) => f.endsWith(".json"));
+    const entries: KnowledgeEntry[] = [];
+    for (const fileName of files) {
+      try {
+        const file = Bun.file(join(this.baseDir, fileName));
+        entries.push(await file.json() as KnowledgeEntry);
+      } catch {
+        // Skip unparseable entry
+      }
+    }
+    return entries;
+  }
+
+  async relate(slugA: string, slugB: string, relation: string): Promise<void> {
+    const entryA = await this.get(slugA);
+    const entryB = await this.get(slugB);
+
+    if (entryA) {
+      const rel = `${relation}:${slugB}`;
+      if (!entryA.relations.includes(rel)) {
+        entryA.relations.push(rel);
+        await this.store(entryA.slug, entryA.content, entryA.tags, entryA.relations);
+      }
+    }
+
+    if (entryB) {
+      const relInverse = `inverse_${relation}:${slugA}`;
+      if (!entryB.relations.includes(relInverse)) {
+        entryB.relations.push(relInverse);
+        await this.store(entryB.slug, entryB.content, entryB.tags, entryB.relations);
       }
     }
   }
+
+  async query(text: string, topK = 3): Promise<KnowledgeEntry[]> {
+    const all = await this.list();
+    if (all.length === 0) return [];
+
+    const tokens = text.toLowerCase().split(/\W+/).filter(Boolean);
+    if (tokens.length === 0) return all.slice(0, topK);
+
+    // BM25-like / token overlap scoring
+    const scored = all.map((entry) => {
+      let score = 0;
+      const contentLower = entry.content.toLowerCase();
+      const tagsLower = entry.tags.map((t) => t.toLowerCase());
+
+      for (const token of tokens) {
+        if (tagsLower.includes(token)) {
+          score += 5;
+        }
+        if (entry.slug.toLowerCase().includes(token)) {
+          score += 3;
+        }
+        const matches = (contentLower.match(new RegExp(`\\b${token}\\b`, "g")) || []).length;
+        score += matches;
+      }
+
+      return { entry, score };
+    });
+
+    return scored
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
+      .map((s) => s.entry);
+  }
 }
 </file>
 
-<file path="route-test.ts">
-import { DynamicRegistry } from "@adapters/dynamic-registry";
-import type { AgentCard, AgentRegistryPort } from "@agents/types";
-
-class MockRegistry implements AgentRegistryPort {
-  constructor(private seed: Record<string,string>) {}
-  async discoverAgents(urls: string[]): Promise<Record<string, AgentCard>> {
-    const inv: Record<string,string> = {};
-    for (const [k,v] of Object.entries(this.seed)) inv[v]=k;
-    const out: Record<string, AgentCard> = {};
-    for (const url of urls) {
-      const name = inv[url]!;
-      out[name] = { name: `${name} Agent`, description:"", url, version:"1.0.0", capabilities:{}, skills: MOCK_SKILLS[name] } as AgentCard;
-    }
-    return out;
-  }
-  async fetchCard(url: string): Promise<AgentCard|null> { return null; }
-  async delegateTask(): Promise<string> { return ""; }
+<file path="agents/ports/knowledge-port.ts">
+export interface KnowledgeEntry {
+  slug: string;
+  content: string;
+  tags: string[];
+  embedding?: number[];
+  createdAt: string;
+  relations: string[];
 }
 
-const MOCK_SKILLS: Record<string, AgentCard["skills"]> = {
-  oracle: [{name:"",description:"",tags:["review","simplify","refactor","architecture","audit"]}],
-  librarian: [{name:"",description:"",tags:["research","doc","api","library","how-to","summarize"]}],
-  explorer: [{name:"",description:"",tags:["find","files","map","structure","grep","search"]}],
-  designer: [{name:"",description:"",tags:["layout","responsive","ui","component","button","ux","color","palette"]}],
-  fixer: [{name:"",description:"",tags:["fix","bug","error","patch","repair","debug","code","implement","function","algorithm","typescript","write","python","review"]}],
-};
+export interface KnowledgePort {
+  store(slug: string, content: string, tags: string[], relations?: string[]): Promise<void>;
+  query(text: string, topK?: number): Promise<KnowledgeEntry[]>;
+  relate(slugA: string, slugB: string, relation: string): Promise<void>;
+  get(slug: string): Promise<KnowledgeEntry | null>;
+  list(): Promise<KnowledgeEntry[]>;
+}
+</file>
 
-const seed = { oracle:"http://localhost:4001", librarian:"http://localhost:4002", explorer:"http://localhost:4003", designer:"http://localhost:4004", fixer:"http://localhost:4005" };
-const dyn = new DynamicRegistry(new MockRegistry(seed), seed);
-await dyn.initialize();
-for (const t of ["find all TODO comments", "review this function for edge cases", "review this module for architecture concerns", "review the edge cases in this design"]) {
-  const m = dyn.matchAgent(t);
-  console.log(JSON.stringify(t), "->", m?.name, m?.label);
+<file path="agents/adapters/llm/openai.ts">
+import type { LlmPort, LlmRequest, LlmResponse } from "@agents/ports/llm-port";
+
+export class OpenAiLlmAdapter implements LlmPort {
+  private apiKey: string;
+  private baseUrl: string;
+  private model: string;
+
+  constructor() {
+    this.apiKey = process.env.JABR_OPENAI_API_KEY || "";
+    this.baseUrl = process.env.JABR_OPENAI_BASE_URL || "https://api.openai.com/v1";
+    this.model = process.env.JABR_OPENAI_MODEL || "gpt-4o";
+  }
+
+  async generate(request: LlmRequest): Promise<LlmResponse> {
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [
+          { role: "system", content: request.systemPrompt || "" },
+          { role: "user", content: request.prompt },
+        ],
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.maxTokens,
+        stop: request.stopSequences,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM API Error: ${response.status} ${await response.text()}`);
+    }
+
+    const data = await response.json() as any;
+    const choice = data.choices[0];
+
+    return {
+      text: choice.message.content,
+      usage: {
+        promptTokens: data.usage.prompt_tokens,
+        completionTokens: data.usage.completion_tokens,
+        totalTokens: data.usage.total_tokens,
+      },
+    };
+  }
+
+  async streamGenerate(request: LlmRequest, onChunk: (chunk: string) => void): Promise<LlmResponse> {
+    // Stream implementation for provider-agnostic support
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [
+          { role: "system", content: request.systemPrompt || "" },
+          { role: "user", content: request.prompt },
+        ],
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.maxTokens,
+        stop: request.stopSequences,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM API Error: ${response.status} ${await response.text()}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let fullText = "";
+    let usage: any = {};
+
+    if (!reader) throw new Error("No response body");
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n").filter((line) => line.trim());
+      
+      for (const line of lines) {
+        const trimmed = line.replace(/^data: /, "").trim();
+        if (trimmed === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          const content = parsed.choices[0]?.delta?.content;
+          if (content) {
+            fullText += content;
+            onChunk(content);
+          }
+          if (parsed.usage) usage = parsed.usage;
+        } catch (e) {
+          // Ignore partial JSON chunks
+        }
+      }
+    }
+
+    return {
+      text: fullText,
+      usage: {
+        promptTokens: usage.prompt_tokens || 0,
+        completionTokens: usage.completion_tokens || 0,
+        totalTokens: usage.total_tokens || 0,
+      },
+    };
+  }
+}
+</file>
+
+<file path="agents/adapters/mcp-client.ts">
+import { spawn } from "node:child_process";
+import type { McpToolPort, McpToolResult } from "@agents/ports/mcp-tool-port";
+
+export class McpClientAdapter implements McpToolPort {
+  private process: any = null;
+
+  private async ensureProcess() {
+    if (this.process) return;
+
+    // Spawns the MCP tool server using bun
+    this.process = spawn("bun", ["mcp-servers/tools.ts"]);
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+    await this.ensureProcess();
+
+    return new Promise((resolve) => {
+      // Simple JSON-RPC style message for the stdio MCP server
+      const request = {
+        jsonrpc: "2.0",
+        id: Date.now(),
+        method: "tools/call",
+        params: { name, arguments: args },
+      };
+
+      this.process.stdout.once("data", (data: Buffer) => {
+        try {
+          const response = JSON.parse(data.toString());
+          const content = response.result?.content?.[0]?.text || "No output";
+          resolve({ content });
+        } catch (e) {
+          resolve({ content: `Error parsing MCP response: ${e}`, isError: true });
+        }
+      });
+
+      this.process.stdin.write(JSON.stringify(request) + "\n");
+    });
+  }
 }
 </file>
 
@@ -492,11 +547,67 @@ export interface DiscoveryPort {
 }
 </file>
 
+<file path="agents/ports/llm-port.ts">
+export interface LlmRequest {
+  prompt: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  stopSequences?: string[];
+}
+
+export interface LlmResponse {
+  text: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
+export interface LlmPort {
+  generate(request: LlmRequest): Promise<LlmResponse>;
+  streamGenerate(request: LlmRequest, onChunk: (chunk: string) => void): Promise<LlmResponse>;
+}
+</file>
+
+<file path="agents/ports/mcp-tool-port.ts">
+export interface McpToolResult {
+  content: string;
+  isError?: boolean;
+}
+
+export interface McpToolPort {
+  callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult>;
+}
+</file>
+
 <file path="agents/ports/resource-port.ts">
 export interface ResourcePort {
   listResources(): Promise<Array<{ uri: string; name: string; description?: string; mimeType?: string }>>;
   readResource(uri: string): Promise<Array<{ uri: string; text?: string; blob?: string; mimeType?: string }>>;
 }
+</file>
+
+<file path="agents/run/scientist.ts">
+import { McpClientAdapter } from "@agents/adapters/mcp-client";
+import { ScientistAgent } from "@agents/core/scientist";
+import { A2AServer } from "@agents/adapters/http/a2a-server";
+
+const port = 4006;
+const mcpClient = new McpClientAdapter();
+const scientist = new ScientistAgent(mcpClient);
+
+const server = new A2AServer({
+  port,
+  card: scientist.card,
+  async onTask(message: string): Promise<string> {
+    const result = await scientist.handleTask(message);
+    return result;
+  },
+});
+
+server.start();
 </file>
 
 <file path="agents/run/serve.ts">
@@ -880,6 +991,170 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 </file>
 
+<file path="jabr-TODO.md">
+# Jabr — Gap Tasks (v0.3.0 → v0.4.0)
+
+## GAP-1 · Kill `ROUTING_TABLE` — pure tag routing
+**File**: `agents/core/orchestrator.ts`
+**Problem**: `routeTask()` checks `ROUTING_TABLE` first, only falls through to `DynamicRegistry.matchAgent()` on miss. Keyword table is dead weight — `DynamicRegistry` already has tag-matching from PnP kit.
+**Task**:
+- Delete `ROUTING_TABLE` export and the `for` loop in `routeTask()`
+- `routeTask()` becomes: `dynamicRegistry.matchAgent(text) ?? { agentName: "librarian", label: "Librarian Agent" }`
+- Add `tags` to every `AgentSkill` in each specialist `run/*.ts` entry point (they seed the registry)
+- Confirm `bun run typecheck` passes
+- Update `AGENTS.md` routing section
+
+---
+
+## GAP-2 · Live-wire `jabr://world-state` — real agent health ✅
+**File**: `mcp-servers/tools.ts`
+**File**: `mcp-servers/tools.ts`
+**Problem**: `getWorldState` callback returns `agents: []` — no live data from the running orchestrator. Tasks count from `memory/task-*.json` files (stale on disk), not in-memory `TaskStorePort`.
+**Task**:
+- Expose a lightweight HTTP endpoint on Orchestrator (e.g. `GET /state`) returning `{ agents, tasks }` from live in-memory stores
+- `getWorldState` in `tools.ts` fetches `ORCHESTRATOR_URL/state` (with 1s timeout + fallback empty)
+- `agents[]` shape: `{ name, port, status: "up"|"down", lastSeen: ISO }`
+- Wire health-check pings in `DynamicRegistry` → update `lastSeen` on each successful card fetch
+- `tasks` counts from live `TaskStorePort` snapshot (pass callback into `registerResources`)
+
+---
+
+## GAP-3 · Demo script — reflect 6-agent topology
+**File**: `scripts/demo.ts`
+**Problem**: Demo still tests 3-agent layout (Coder / Researcher / Orchestrator). Agents renamed and split into Oracle / Librarian / Explorer / Designer / Fixer.
+**Task**:
+- Replace all references: Coder→Fixer (4005), Researcher→Librarian (4002)
+- Add card-discovery checks for Explorer (4003), Oracle (4001), Designer (4004)
+- Add routing test: "find all TODO comments" → must route to Explorer
+- Add routing test: "review this function for edge cases" → must route to Oracle
+- Add consensus test: `discover` method → returns all 5 specialist cards
+- Add handover test: send task with `%%HANDOVER%%` in mock response, verify depth counter
+- Keep skill-persistence and memory checks
+
+---
+
+## GAP-4 · `run_python` — persistent uv venv + dependency support ✅
+**File**: `mcp-servers/tools.ts`
+**File**: `mcp-servers/tools.ts`
+**Problem**: Each `run_python` call writes a temp `.py` and runs `uv run --quiet`. No way to install packages — `import numpy` fails silently. Each call is fully isolated (good for security, bad for data science tasks).
+**Task**:
+- Add `packages` param: `{ code: string, packages?: string[] }`
+- When `packages` present: `uv run --with numpy,pandas --quiet tmpPath`
+- Add `run_python_file` tool: `{ path: string, packages?: string[] }` — runs a workspace `.py` file directly (no tmp copy)
+- Add `python_repl` tool: persists a `uv` venv at `./tmp/jabr-venv/`, runs code inside it, shares state across calls in the same session
+- 30s timeout for package installs, 10s for plain code
+- Sanitize `packages` list: alphanumeric + `-_.` only
+
+---
+
+## GAP-5 · Python agent layer — `agents/run/scientist.ts`
+**File**: new `agents/run/scientist.ts` + `agents/core/scientist.ts`
+**Problem**: Python capability exists only as an MCP tool (`run_python`). No dedicated A2A agent for data science / scripting tasks. Fixer handles Python requests via keyword match — wrong specialist.
+**Task**:
+- New Scientist Agent on port 4006
+- Skills: `data-analysis`, `script-generation`, `statistical-modeling`, `visualization`
+- Tags: `python`, `data`, `analysis`, `pandas`, `numpy`, `plot`, `csv`, `statistics`
+- `core/scientist.ts`: generates Python scripts for data tasks, delegates execution to MCP `run_python` (via `AgentRegistryPort.callMcpTool`)
+- Add port `McpToolPort` interface: `callTool(name, args): Promise<string>`
+- Adapter: `adapters/mcp-client.ts` — MCP client that connects to `jabr-tools` stdio server
+- Add `scientist` to `dev` script: `bun run --parallel ... scientist`
+- Add Scientist routing keywords to `DynamicRegistry` seed
+
+---
+
+## GAP-6 · Sampling → provider-agnostic LLM port (SEP-2577 migration)
+**Files**: `agents/core/cognitive-loop.ts`, `agents/core/orchestrator.ts`, new `agents/ports/llm-port.ts`, new `agents/adapters/llm/`
+**Problem**: ADR flags `sampling/createMessage` deprecated (SEP-2577, 12-month grace from 2026-07-28). Cognitive loop uses simulated scoring — no real LLM call for consensus synthesis. Must be fully provider-agnostic — no vendor lock-in.
+
+**Design — `LlmPort` (Vercel AI SDK compatible)**:
+```ts
+// agents/ports/llm-port.ts
+export interface LlmMessage { role: "user" | "assistant"; content: string }
+export interface LlmUsage { inputTokens: number; outputTokens: number }
+export interface LlmResult { text: string; usage: LlmUsage }
+
+export interface LlmPort {
+  complete(messages: LlmMessage[], opts?: { maxTokens?: number; system?: string }): Promise<LlmResult>
+  readonly providerName: string  // "openai" | "google" | "ollama" | "openrouter" | ...
+}
+```
+
+**Adapters** — one file per provider, all implement `LlmPort`:
+- `agents/adapters/llm/openai.ts` — `JABR_OPENAI_BASE_URL` + `JABR_OPENAI_API_KEY` + `JABR_OPENAI_MODEL` (covers OpenAI, OpenRouter, any OpenAI-compatible endpoint)
+- `agents/adapters/llm/google.ts` — `JABR_GOOGLE_API_KEY` + `JABR_GOOGLE_MODEL` (Gemini via `@google/generative-ai`)
+- `agents/adapters/llm/ollama.ts` — `JABR_OLLAMA_URL` (default `http://localhost:11434`) + `JABR_OLLAMA_MODEL` — fully local, zero API key
+- `agents/adapters/llm/openrouter.ts` — thin wrapper over `openai.ts` with `JABR_OPENROUTER_API_KEY`, base URL `https://openrouter.ai/api/v1`
+
+**Factory** `agents/adapters/llm/factory.ts`:
+```ts
+// JABR_LLM_PROVIDER=ollama|openai|google|openrouter  (default: ollama)
+export function createLlmAdapter(): LlmPort { ... }
+```
+
+**Wire**:
+- `CognitiveLoop` constructor accepts `llm?: LlmPort` — when present, uses it for Judge synthesis step
+- `executeConsensus()` passes `llm` from composition root (`run/orchestrator.ts`)
+- Gate behind `JABR_CONSENSUS_LLM=true` — default off (weighted scoring still works without LLM)
+- Remove all `sampling/createMessage` references
+
+**Default recommended**: `ollama` adapter + `qwen2.5-coder:7b` — zero cost, works offline, runs on same machine as Bun agents
+
+---
+
+## GAP-7 · Mem-Palace integration
+**What it is**: Mem-Palace is a structured long-term memory layer — hierarchical knowledge graph stored as markdown + JSON, queryable by embedding similarity or tag intersection. Distinct from Hermes `memory.md` (append-only log).
+**Files**: new `agents/adapters/mem-palace.ts`, `agents/ports/knowledge-port.ts`
+**Task**:
+- `KnowledgePort` interface: `store(key, content, tags): Promise<void>`, `query(text, topK?): Promise<KnowledgeEntry[]>`, `relate(keyA, keyB, relation): Promise<void>`
+- `MemPalaceAdapter`: stores entries as `memory/palace/<slug>.json` with `{ content, tags, embedding?: number[], createdAt, relations: string[] }`
+- Embedding: call `run_python` MCP tool with `sentence-transformers` (uv inline) to compute cosine-similar retrieval — or stub with BM25 tag overlap until embeddings land
+- Wire into `OrchestratorAgent`: before routing, `query(userText, 3)` → prepend top results as context to the delegated task
+- Wire into Librarian: after research task, `store(slug, summary, tags)` → persistent knowledge node
+- Expose as MCP resource: `jabr://palace/{slug}` and `jabr://palace/query?q={text}`
+- CLI tool `scripts/palace.ts`: `bun scripts/palace.ts query "A2A handover"` for manual inspection
+
+---
+
+## GAP-8 · Headroom integration
+**What it is**: Headroom is a rate-limit + budget-awareness layer for LLM calls — tracks token usage per agent, enforces per-session caps, emits warnings before hitting provider limits. Prevents runaway consensus loops from burning quota.
+**Files**: new `agents/adapters/headroom.ts`, `agents/ports/budget-port.ts`
+**Task**:
+- `BudgetPort` interface: `consume(agentName, tokens): Promise<void>`, `remaining(agentName): Promise<number>`, `isExhausted(agentName): boolean`, `reset(): void`
+- `HeadroomAdapter`: in-memory per-agent token counters, configurable caps via `JABR_TOKEN_CAP_<AGENT>=<n>` env vars (default 100k/session)
+- Integrate into `LlmPort` adapters (GAP-6): each adapter returns `LlmUsage` with `inputTokens + outputTokens` → call `budget.consume()` after every `complete()` call
+- Integrate into `AgentRegistryPort.delegateTask()`: check `budget.isExhausted()` before HTTP call → throw `BudgetExhaustedError` with agent name + remaining
+- Orchestrator catches `BudgetExhaustedError`: reroutes to next best agent via `DynamicRegistry` tag match (skip exhausted agent)
+- Expose budget state in `jabr://world-state` resource: add `budget: { [agentName]: { used, cap, pct } }`
+- Add `GET /budget` endpoint on Orchestrator for live inspection
+
+---
+
+## GAP-9 · `ROUTING_TABLE` removal cleanup sweep
+**Depends on**: GAP-1
+**Files**: `AGENTS.md`, `README.md`, `opencode.json`, `agents/run/orchestrator.ts`
+**Task**:
+- After GAP-1 lands, grep for any remaining `ROUTING_TABLE` references
+- Update `AGENTS.md` notes section (currently documents keyword routing)
+- Update `README.md` routing description
+- Ensure `run/orchestrator.ts` seeds `DynamicRegistry` with all 6 specialist ports on startup
+
+---
+
+## Priority order
+
+| # | Task | Effort | Blocks |
+|---|------|--------|--------|
+| GAP-1 | Kill ROUTING_TABLE | S | GAP-9 |
+| GAP-3 | Fix demo script | S | — |
+| GAP-2 | Live world-state | M | — |
+| GAP-4 | uv packages support | M | GAP-5 |
+| GAP-5 | Scientist agent | M | GAP-4 |
+| GAP-6 | Provider-agnostic LlmPort + consensus | M | GAP-8 |
+| GAP-7 | Mem-Palace | L | — |
+| GAP-8 | Headroom | M | GAP-6 |
+| GAP-9 | Cleanup sweep | S | GAP-1 |
+</file>
+
 <file path="LICENSE">
 MIT License
 
@@ -902,6 +1177,101 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+</file>
+
+<file path="opencode.json.need_fix">
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ollama-cloud/gemma4:31b",
+  "env": {
+    "NINEROUTER_URL": "http://localhost:20128",
+    "NINEROUTER_KEY": "sk-your-key-here"
+  },
+  "agents": {
+    "orchestrator": {
+      "mode": "primary",
+      "skills": [
+        "deepwork",
+        "verification-planning",
+        "reflect",
+        "worktrees",
+        "codemap"
+      ]
+    },
+    "oracle": {
+      "mode": "subagent",
+      "skills": [
+        "simplify"
+      ]
+    },
+    "librarian": {
+      "mode": "subagent",
+      "skills": []
+    },
+    "explorer": {
+      "mode": "subagent",
+      "skills": [
+        "codemap"
+      ]
+    },
+    "designer": {
+      "mode": "subagent",
+      "skills": []
+    },
+    "fixer": {
+      "mode": "subagent",
+      "skills": []
+    }
+  },
+  "mcp": {
+    "servers": {
+      "jabr-tools": {
+        "type": "local",
+        "command": [
+          "bun",
+          "mcp-servers/tools.ts"
+        ]
+      }
+    }
+  }
+}
+</file>
+
+<file path="route-test.ts">
+import { DynamicRegistry } from "@adapters/dynamic-registry";
+import type { AgentCard, AgentRegistryPort } from "@agents/types";
+
+class MockRegistry implements AgentRegistryPort {
+  constructor(private seed: Record<string,string>) {}
+  async discoverAgents(urls: string[]): Promise<Record<string, AgentCard>> {
+    const inv: Record<string,string> = {};
+    for (const [k,v] of Object.entries(this.seed)) inv[v]=k;
+    const out: Record<string, AgentCard> = {};
+    for (const url of urls) {
+      const name = inv[url]!;
+      out[name] = { name: `${name} Agent`, description:"", url, version:"1.0.0", capabilities:{}, skills: MOCK_SKILLS[name] } as AgentCard;
+    }
+    return out;
+  }
+  async fetchCard(url: string): Promise<AgentCard|null> { return null; }
+  async delegateTask(): Promise<string> { return ""; }
+}
+
+const MOCK_SKILLS: Record<string, AgentCard["skills"]> = {
+  oracle: [{name:"",description:"",tags:["review","simplify","refactor","architecture","audit"]}],
+  librarian: [{name:"",description:"",tags:["research","doc","api","library","how-to","summarize"]}],
+  explorer: [{name:"",description:"",tags:["find","files","map","structure","grep","search"]}],
+  designer: [{name:"",description:"",tags:["layout","responsive","ui","component","button","ux","color","palette"]}],
+  fixer: [{name:"",description:"",tags:["fix","bug","error","patch","repair","debug","code","implement","function","algorithm","typescript","write","python","review"]}],
+};
+
+const seed = { oracle:"http://localhost:4001", librarian:"http://localhost:4002", explorer:"http://localhost:4003", designer:"http://localhost:4004", fixer:"http://localhost:4005" };
+const dyn = new DynamicRegistry(new MockRegistry(seed), seed);
+await dyn.initialize();
+for (const t of ["find all TODO comments", "review this function for edge cases", "review this module for architecture concerns", "review the edge cases in this design"]) {
+  const m = dyn.matchAgent(t);
+  console.log(JSON.stringify(t), "->", m?.name, m?.label);
+}
 </file>
 
 <file path="agents/adapters/image-gen-9router.ts">
@@ -1210,144 +1580,47 @@ export class TaskMemory implements TaskStorePort {
 }
 </file>
 
-<file path="agents/core/cognitive-loop.ts">
-import type { AgentCard } from "@agents/types";
+<file path="agents/core/scientist.ts">
+import type { AgentCard, AgentSkill } from "@agents/types";
+import type { McpToolPort } from "@agents/ports/mcp-tool-port";
 
-export interface ConsensusInput {
-  agentName: string;
-  card: AgentCard;
-  response: string;
-}
-
-export interface ConsensusResult {
-  winner: ConsensusInput;
-  scores: Array<{ agentName: string; score: number; reason: string }>;
-  synthesized: string;
-}
-
-export interface CognitiveLoopConfig {
-  judgeAgentName?: string;
-  minAgents?: number;
-  confidenceThreshold?: number;
-}
-
-const DEFAULTS: Required<CognitiveLoopConfig> = {
-  judgeAgentName: "oracle",
-  minAgents: 2,
-  confidenceThreshold: 0.7,
-};
-
-export class CognitiveLoop {
-  private config: Required<CognitiveLoopConfig>;
-
-  constructor(config?: CognitiveLoopConfig) {
-    this.config = { ...DEFAULTS, ...config };
-  }
-
-  scoreResponse(
-    agent: ConsensusInput,
-    taskText: string,
-  ): { score: number; reasons: string[] } {
-    const reasons: string[] = [];
-    let score = 0;
-
-    const card = agent.card;
-    if (card.successRate != null) {
-      score += card.successRate * 0.4;
-      reasons.push(`successRate=${card.successRate.toFixed(2)}`);
-    }
-
-    const responseLength = agent.response.length;
-    if (responseLength > 100) {
-      score += 0.2;
-      reasons.push("substantive response");
-    }
-
-    const taskLower = taskText.toLowerCase();
-    const responseLower = agent.response.toLowerCase();
-    const taskWords = taskLower.split(/\s+/);
-    const overlap = taskWords.filter((w) => responseLower.includes(w)).length;
-    const relevance = taskWords.length > 0 ? overlap / taskWords.length : 0;
-    score += Math.min(relevance, 1) * 0.3;
-    reasons.push(`relevance=${relevance.toFixed(2)}`);
-
-    const tags = card.skills.flatMap((s) => s.tags);
-    const tagHits = tags.filter((t) => responseLower.includes(t)).length;
-    if (tags.length > 0) {
-      const tagScore = Math.min(tagHits / tags.length, 1) * 0.1;
-      score += tagScore;
-      reasons.push(`tagHits=${tagHits}/${tags.length}`);
-    }
-
-    return { score: Math.min(score, 1), reasons };
-  }
-
-  evaluate(
-    inputs: ConsensusInput[],
-    taskText: string,
-  ): ConsensusResult {
-    const scored = inputs.map((input) => {
-      const { score, reasons } = this.scoreResponse(input, taskText);
-      return {
-        agentName: input.agentName,
-        score,
-        reason: reasons.join(", "),
-        input,
-      };
-    });
-
-    scored.sort((a, b) => b.score - a.score);
-
-    const scores = scored.map((s) => ({
-      agentName: s.agentName,
-      score: s.score,
-      reason: s.reason,
-    }));
-
-    const winner = scored[0]!;
-
-    return {
-      winner: winner.input,
-      scores,
-      synthesized: this.buildSynthesis(winner, scored),
-    };
-  }
-
-  shouldUseConsensus(agentCards: Map<string, AgentCard>): boolean {
-    const available = Array.from(agentCards.values()).filter(
-      (c) => c.skills.length > 0,
-    );
-    return available.length >= this.config.minAgents;
-  }
-
-  getJudgeAgentName(): string {
-    return this.config.judgeAgentName;
-  }
-
-  private buildSynthesis(
-    winner: { agentName: string; score: number; reason: string; input: ConsensusInput },
-    all: Array<{ agentName: string; score: number; reason: string; input: ConsensusInput }>,
-  ): string {
-    const lines: string[] = [];
-
-    lines.push(`## Consensus Result`);
-    lines.push(`**Winner**: ${winner.agentName} (score: ${winner.score.toFixed(3)})`);
-    lines.push(`**Reasoning**: ${winner.reason}`);
-    lines.push("");
-
-    if (all.length > 1) {
-      lines.push(`### Score Ranking`);
-      for (const s of all) {
-        const marker = s.agentName === winner.agentName ? " →" : "  ";
-        lines.push(`${marker} ${s.agentName}: ${s.score.toFixed(3)} — ${s.reason}`);
+export class ScientistAgent {
+  public readonly card: AgentCard = {
+    name: "Scientist Agent",
+    description: "Specialist in data science, scripting, and technical analysis. Uses Python to execute code and analyze data.",
+    url: "http://localhost:4006",
+    version: "1.0.0",
+    capabilities: { streaming: false, pushNotifications: false },
+    supportedInterfaces: ["a2a" as any],
+    skills: [
+      {
+        name: "Data Analysis",
+        description: "Write and execute Python scripts to analyze datasets, perform statistics, and generate insights.",
+        tags: ["python", "data", "analysis", "script", "scientist", "stats", "csv", "json"],
+      },
+      {
+        name: "Technical Scripting",
+        description: "Create utility scripts for automation or technical validation.",
+        tags: ["automation", "scripting", "python", "utility"],
       }
-      lines.push("");
+    ],
+  };
+
+  constructor(private mcpTools: McpToolPort) {}
+
+  async handleTask(text: string): Promise<string> {
+    if (text.toLowerCase().includes("python") || text.toLowerCase().includes("analyze")) {
+      const script = `print("Scientist analyzing: ${text}")\n# Logic would go here\nprint("Analysis complete: Result is 42")`;
+      
+      try {
+        const result = await this.mcpTools.callTool("run_python", { code: script });
+        return `Scientist executed analysis:\n\n${result.content}`;
+      } catch (e) {
+        return `Scientist failed to execute script: ${e}`;
+      }
     }
 
-    lines.push(`### Selected Response`);
-    lines.push(winner.input.response);
-
-    return lines.join("\n");
+    return "I can help with Python scripts and data analysis. Please describe the data or script you need.";
   }
 }
 </file>
@@ -1695,128 +1968,6 @@ export interface SearchPort {
 }
 </file>
 
-<file path="agents/adapters/http/a2a-server.ts">
-import type { A2AServerConfig } from "@agents/types";
-import {
-  type JSONRPCRequest,
-  ok,
-  err,
-  corsHeaders,
-  corsPreflightHeaders,
-} from "@utils/rpc";
-
-export class A2AServer {
-  private readonly config: A2AServerConfig;
-  private server: ReturnType<typeof Bun.serve> | null = null;
-
-  constructor(config: A2AServerConfig & { 
-    onWorldState?: () => Promise<any> 
-  }) {
-    this.config = config as any;
-  }
-
-  start(): void {
-    const { port, card, onTask, onWorldState } = (this.config as any);
-
-
-    this.server = Bun.serve({
-      port,
-      async fetch(req) {
-        const url = new URL(req.url);
-
-        if (req.method === "OPTIONS") {
-          return new Response(null, { headers: corsPreflightHeaders });
-        }
-
-        if (
-          req.method === "GET" &&
-          (url.pathname === "/.well-known/agent-card.json" || url.pathname === "/.well-known/world-state")
-        ) {
-          if (url.pathname === "/.well-known/world-state") {
-            if (!onWorldState) return new Response("Not found", { status: 404, headers: corsHeaders });
-            const state = await onWorldState();
-            return Response.json(state, { headers: corsHeaders });
-          }
-          return Response.json(card, { headers: corsHeaders });
-        }
-
-
-        if (req.method === "POST" && url.pathname === "/") {
-          let body: unknown;
-          try {
-            body = await req.json();
-          } catch {
-            return Response.json(
-              err(null, -32700, "Parse error"),
-              { headers: corsHeaders },
-            );
-          }
-
-          const rpc = body as JSONRPCRequest;
-
-          if (
-            !rpc ||
-            rpc.jsonrpc !== "2.0" ||
-            typeof rpc.method !== "string"
-          ) {
-            return Response.json(
-              err(rpc?.id ?? null, -32600, "Invalid Request"),
-              { headers: corsHeaders },
-            );
-          }
-
-          const { id, method, params } = rpc;
-
-          if (method !== "tasks/send") {
-            return Response.json(
-              err(id, -32601, `Method not found: ${method}`),
-              { headers: corsHeaders },
-            );
-          }
-
-          try {
-            const message = params as {
-              message?: { parts?: Array<{ kind: string; text?: string }> };
-            };
-            const parts = message?.message?.parts ?? [];
-            const text =
-              parts.find((p) => p.kind === "text")?.text ?? "";
-
-            const result = await onTask(text);
-            return Response.json(ok(id, { text: result }), {
-              headers: corsHeaders,
-            });
-          } catch (e) {
-            return Response.json(
-              err(id, -32603, `Internal error: ${String(e)}`),
-              { headers: corsHeaders },
-            );
-          }
-        }
-
-        return new Response("Not found", {
-          status: 404,
-          headers: corsHeaders,
-        });
-      },
-    });
-
-    console.log(
-      `\n🚀 A2A Server → http://localhost:${port}`,
-    );
-    console.log(
-      `   Card:       http://localhost:${port}/.well-known/agent-card.json`,
-    );
-    console.log(`   Agent:      ${card.name} v${card.version}\n`);
-  }
-
-  stop(): void {
-    this.server?.stop();
-    this.server = null;
-  }
-}
-</file>
-
 <file path="agents/adapters/memory-fs.ts">
 import type {
   MemoryStorePort,
@@ -1884,6 +2035,181 @@ export class MemoryFS implements MemoryStorePort {
     const p = this.sessionPath(id);
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, JSON.stringify(data, null, 2), "utf-8");
+  }
+}
+</file>
+
+<file path="agents/core/cognitive-loop.ts">
+import type { AgentCard } from "@agents/types";
+import type { LlmPort } from "@agents/ports/llm-port";
+
+export interface ConsensusInput {
+  agentName: string;
+  card: AgentCard;
+  response: string;
+}
+
+export interface ConsensusResult {
+  winner: ConsensusInput;
+  scores: Array<{ agentName: string; score: number; reason: string }>;
+  synthesized: string;
+}
+
+export interface CognitiveLoopConfig {
+  judgeAgentName?: string;
+  minAgents?: number;
+  confidenceThreshold?: number;
+}
+
+const DEFAULTS: Required<CognitiveLoopConfig> = {
+  judgeAgentName: "oracle",
+  minAgents: 2,
+  confidenceThreshold: 0.7,
+};
+
+export class CognitiveLoop {
+  private config: Required<CognitiveLoopConfig>;
+
+  constructor(config?: CognitiveLoopConfig, private llmPort?: LlmPort) {
+    this.config = { ...DEFAULTS, ...config };
+  }
+
+  scoreResponse(
+    agent: ConsensusInput,
+    taskText: string,
+  ): { score: number; reasons: string[] } {
+    const reasons: string[] = [];
+    let score = 0;
+
+    const card = agent.card;
+    if (card.successRate != null) {
+      score += card.successRate * 0.4;
+      reasons.push(`successRate=${card.successRate.toFixed(2)}`);
+    }
+
+    const responseLength = agent.response.length;
+    if (responseLength > 100) {
+      score += 0.2;
+      reasons.push("substantive response");
+    }
+
+    const taskLower = taskText.toLowerCase();
+    const responseLower = agent.response.toLowerCase();
+    const taskWords = taskLower.split(/\s+/);
+    const overlap = taskWords.filter((w) => responseLower.includes(w)).length;
+    const relevance = taskWords.length > 0 ? overlap / taskWords.length : 0;
+    score += Math.min(relevance, 1) * 0.3;
+    reasons.push(`relevance=${relevance.toFixed(2)}`);
+
+    const tags = card.skills.flatMap((s) => s.tags);
+    const tagHits = tags.filter((t) => responseLower.includes(t)).length;
+    if (tags.length > 0) {
+      const tagScore = Math.min(tagHits / tags.length, 1) * 0.1;
+      score += tagScore;
+      reasons.push(`tagHits=${tagHits}/${tags.length}`);
+    }
+
+    return { score: Math.min(score, 1), reasons };
+  }
+
+  async evaluate(
+    inputs: ConsensusInput[],
+    taskText: string,
+  ): Promise<ConsensusResult> {
+    const scored = inputs.map((input) => {
+      const { score, reasons } = this.scoreResponse(input, taskText);
+      return {
+        agentName: input.agentName,
+        score,
+        reason: reasons.join(", "),
+        input,
+      };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    const scores = scored.map((s) => ({
+      agentName: s.agentName,
+      score: s.score,
+      reason: s.reason,
+    }));
+
+    const winner = scored[0]!;
+
+    return {
+      winner: winner.input,
+      scores,
+      synthesized: await this.buildSynthesis(winner, scored, taskText),
+    };
+  }
+
+  shouldUseConsensus(agentCards: Map<string, AgentCard>): boolean {
+    const available = Array.from(agentCards.values()).filter(
+      (c) => c.skills.length > 0,
+    );
+    return available.length >= this.config.minAgents;
+  }
+
+  getJudgeAgentName(): string {
+    return this.config.judgeAgentName;
+  }
+
+  private async buildSynthesis(
+    winner: { agentName: string; score: number; reason: string; input: ConsensusInput },
+    all: Array<{ agentName: string; score: number; reason: string; input: ConsensusInput }>,
+    taskText: string,
+  ): Promise<string> {
+    if (!this.llmPort) {
+      return this.buildSimpleSynthesis(winner, all);
+    }
+
+    const synthesisPrompt = `You are a consensus synthesizer. 
+Task: ${taskText}
+
+Agent Responses:
+${all.map(a => `Agent ${a.agentName} (Score ${a.score.toFixed(2)}): ${a.input.response}`).join("\n\n")}
+
+The winner is ${winner.agentName}. 
+Please synthesize a final, coherent response that incorporates the best parts of the winner's answer and any critical missing details from other agents. 
+Do not mention "Agent X" or "scores" in the output. Provide the final answer directly.`;
+
+    try {
+      const result = await this.llmPort.generate({
+        prompt: synthesisPrompt,
+        systemPrompt: "You are a high-fidelity synthesis engine. Your goal is to merge multiple technical responses into one authoritative answer.",
+        temperature: 0.3,
+      });
+      return result.text;
+    } catch (e) {
+      console.error("Synthesis LLM failure:", e);
+      return this.buildSimpleSynthesis(winner, all);
+    }
+  }
+
+  private buildSimpleSynthesis(
+    winner: { agentName: string; score: number; reason: string; input: ConsensusInput },
+    all: Array<{ agentName: string; score: number; reason: string; input: ConsensusInput }>,
+  ): string {
+    const lines: string[] = [];
+
+    lines.push(`## Consensus Result`);
+    lines.push(`**Winner**: ${winner.agentName} (score: ${winner.score.toFixed(3)})`);
+    lines.push(`**Reasoning**: ${winner.reason}`);
+    lines.push("");
+
+    if (all.length > 1) {
+      lines.push(`### Score Ranking`);
+      for (const s of all) {
+        const marker = s.agentName === winner.agentName ? " →" : "  ";
+        lines.push(`${marker} ${s.agentName}: ${s.score.toFixed(3)} — ${s.reason}`);
+      }
+      lines.push("");
+    }
+
+    lines.push(`### Selected Response`);
+    lines.push(winner.input.response);
+
+    return lines.join("\n");
   }
 }
 </file>
@@ -2728,6 +3054,128 @@ console.log("Jabr — run `bun run dev` to start all agents");
 }
 </file>
 
+<file path="agents/adapters/http/a2a-server.ts">
+import type { A2AServerConfig } from "@agents/types";
+import {
+  type JSONRPCRequest,
+  ok,
+  err,
+  corsHeaders,
+  corsPreflightHeaders,
+} from "@utils/rpc";
+
+export class A2AServer {
+  private readonly config: A2AServerConfig;
+  private server: ReturnType<typeof Bun.serve> | null = null;
+
+  constructor(config: A2AServerConfig & { 
+    onWorldState?: () => Promise<any> 
+  }) {
+    this.config = config as any;
+  }
+
+  start(): void {
+    const { port, card, onTask, onWorldState } = (this.config as any);
+
+
+    this.server = Bun.serve({
+      port,
+      async fetch(req) {
+        const url = new URL(req.url);
+
+        if (req.method === "OPTIONS") {
+          return new Response(null, { headers: corsPreflightHeaders });
+        }
+
+        if (
+          req.method === "GET" &&
+          (url.pathname === "/.well-known/agent-card.json" || url.pathname === "/.well-known/world-state")
+        ) {
+          if (url.pathname === "/.well-known/world-state") {
+            if (!onWorldState) return new Response("Not found", { status: 404, headers: corsHeaders });
+            const state = await onWorldState();
+            return Response.json(state, { headers: corsHeaders });
+          }
+          return Response.json(card, { headers: corsHeaders });
+        }
+
+
+        if (req.method === "POST" && url.pathname === "/") {
+          let body: unknown;
+          try {
+            body = await req.json();
+          } catch {
+            return Response.json(
+              err(null, -32700, "Parse error"),
+              { headers: corsHeaders },
+            );
+          }
+
+          const rpc = body as JSONRPCRequest;
+
+          if (
+            !rpc ||
+            rpc.jsonrpc !== "2.0" ||
+            typeof rpc.method !== "string"
+          ) {
+            return Response.json(
+              err(rpc?.id ?? null, -32600, "Invalid Request"),
+              { headers: corsHeaders },
+            );
+          }
+
+          const { id, method, params } = rpc;
+
+          if (method !== "tasks/send") {
+            return Response.json(
+              err(id, -32601, `Method not found: ${method}`),
+              { headers: corsHeaders },
+            );
+          }
+
+          try {
+            const message = params as {
+              message?: { parts?: Array<{ kind: string; text?: string }> };
+            };
+            const parts = message?.message?.parts ?? [];
+            const text =
+              parts.find((p) => p.kind === "text")?.text ?? "";
+
+            const result = await onTask(text);
+            return Response.json(ok(id, { text: result }), {
+              headers: corsHeaders,
+            });
+          } catch (e) {
+            return Response.json(
+              err(id, -32603, `Internal error: ${String(e)}`),
+              { headers: corsHeaders },
+            );
+          }
+        }
+
+        return new Response("Not found", {
+          status: 404,
+          headers: corsHeaders,
+        });
+      },
+    });
+
+    console.log(
+      `\n🚀 A2A Server → http://localhost:${port}`,
+    );
+    console.log(
+      `   Card:       http://localhost:${port}/.well-known/agent-card.json`,
+    );
+    console.log(`   Agent:      ${card.name} v${card.version}\n`);
+  }
+
+  stop(): void {
+    this.server?.stop();
+    this.server = null;
+  }
+}
+</file>
+
 <file path="agents/adapters/a2a-client.ts">
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { AgentCard } from "@agents/types";
@@ -3031,6 +3479,7 @@ export class FixerAgent {
 import type { TaskStorePort } from "@ports/task-store";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { SearchPort, SearchResult } from "@ports/search-port";
+import type { KnowledgePort } from "@ports/knowledge-port";
 import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const LIBRARIAN_CARD: AgentCard = {
@@ -3051,10 +3500,21 @@ export class LibrarianAgent {
     private taskStore: TaskStorePort,
     private skillStore: SkillStorePort,
     private search: SearchPort,
+    private knowledge?: KnowledgePort,
   ) {}
 
   get card(): AgentCard {
     return LIBRARIAN_CARD;
+  }
+
+  private async persistKnowledge(slug: string, content: string, tags: string[]): Promise<void> {
+    if (this.knowledge) {
+      try {
+        await this.knowledge.store(slug, content, tags);
+      } catch (err) {
+        console.error("[LibrarianAgent] Knowledge store failed:", err);
+      }
+    }
   }
 
   private persistSkill(taskType: string, userText: string, steps: string[]): void {
@@ -3102,7 +3562,9 @@ export class LibrarianAgent {
         "Return structured findings",
       ]);
       const results = await this.research(userText);
-      return `## Protocol Research: ${userText}\n\n**MCP** — Model Context Protocol (Anthropic)\n• JSON-RPC 2.0 over stdio or HTTP\n• Connects agents to tools and data sources\n\n**A2A** — Agent-to-Agent (Linux Foundation)\n• HTTP + JSON-RPC, Agent Cards for discovery\n• Task lifecycle: submitted → working → completed\n\n**ACP** — Agent Client Protocol (Zed / JetBrains)\n• JSON-RPC over stdio (nd-JSON)\n• Bridges IDEs to coding agents\n\n### External sources\n${this.formatResults(results)}\n\nSkill saved to \`skills/protocol-research.json\` ✓`;
+      const summary = `## Protocol Research: ${userText}\n\n**MCP** — Model Context Protocol (Anthropic)\n• JSON-RPC 2.0 over stdio or HTTP\n• Connects agents to tools and data sources\n\n**A2A** — Agent-to-Agent (Linux Foundation)\n• HTTP + JSON-RPC, Agent Cards for discovery\n• Task lifecycle: submitted → working → completed\n\n**ACP** — Agent Client Protocol (Zed / JetBrains)\n• JSON-RPC over stdio (nd-JSON)\n• Bridges IDEs to coding agents\n\n### External sources\n${this.formatResults(results)}\n\nSkill saved to \`skills/protocol-research.json\` ✓`;
+      await this.persistKnowledge("protocol-research", summary, ["protocol", "mcp", "a2a", "acp"]);
+      return summary;
     }
 
     if (lower.includes("doc") || lower.includes("api") || lower.includes("library") || lower.includes("how to")) {
@@ -3114,7 +3576,9 @@ export class LibrarianAgent {
         "Return structured findings",
       ]);
       const results = await this.research(userText);
-      return `## Docs Lookup: ${userText}\n\n• Library/API identified: "${userText.slice(0, 50)}…"\n• Relevant documentation located\n• Key signatures and usage patterns extracted\n• Summary of integration steps provided\n\n### External sources\n${this.formatResults(results)}\n\nSkill saved → \`skills/docs-lookup.json\` ✓`;
+      const summary = `## Docs Lookup: ${userText}\n\n• Library/API identified: "${userText.slice(0, 50)}…"\n• Relevant documentation located\n• Key signatures and usage patterns extracted\n• Summary of integration steps provided\n\n### External sources\n${this.formatResults(results)}\n\nSkill saved → \`skills/docs-lookup.json\` ✓`;
+      await this.persistKnowledge("docs-lookup", summary, ["docs", "api", "library"]);
+      return summary;
     }
 
     if (lower.includes("summarize") || lower.includes("summary")) {
@@ -3123,7 +3587,9 @@ export class LibrarianAgent {
         "Group by theme",
         "Produce bullet summary",
       ]);
-      return `## Summary\n\n• Topic identified: "${userText.slice(0, 50)}…"\n• Key finding 1: core concept extracted\n• Key finding 2: implications noted\n• Key finding 3: action items surfaced\n\nSkill saved → \`skills/text-summarization.json\` ✓`;
+      const summary = `## Summary\n\n• Topic identified: "${userText.slice(0, 50)}…"\n• Key finding 1: core concept extracted\n• Key finding 2: implications noted\n• Key finding 3: action items surfaced\n\nSkill saved → \`skills/text-summarization.json\` ✓`;
+      await this.persistKnowledge("text-summarization", summary, ["summary", "summarize"]);
+      return summary;
     }
 
     if (lower.includes("skill") || lower.includes("self-improv")) {
@@ -3134,7 +3600,9 @@ export class LibrarianAgent {
         "Save to skills/ directory",
         "Increment usageCount on reuse",
       ]);
-      return `## Self-improvement loop\n\nHermes-style skill creation:\n1. Agent completes task\n2. Extracts reusable pattern → \`skills/<slug>.json\`\n3. Next time same task arrives → load skill, run faster\n4. After 20+ uses → successRate tracked\n\nSkill saved → \`skills/skill-creation.json\` ✓`;
+      const summary = `## Self-improvement loop\n\nHermes-style skill creation:\n1. Agent completes task\n2. Extracts reusable pattern → \`skills/<slug>.json\`\n3. Next time same task arrives → load skill, run faster\n4. After 20+ uses → successRate tracked\n\nSkill saved → \`skills/skill-creation.json\` ✓`;
+      await this.persistKnowledge("skill-creation", summary, ["skill", "self-improvement"]);
+      return summary;
     }
 
     this.persistSkill("general-research", userText, [
@@ -3144,7 +3612,9 @@ export class LibrarianAgent {
       "Return with citations",
     ]);
     const results = await this.research(userText);
-    return `Librarian agent processed: "${userText}"\n\nFindings: topic processed by Librarian Agent.\nNo cached skill found — created \`skills/general-research.json\` for next time.\n\n### External sources\n${this.formatResults(results)}\n\nTip: delegate specific subtasks to Coder Agent via the orchestrator.`;
+    const summary = `Librarian agent processed: "${userText}"\n\nFindings: topic processed by Librarian Agent.\nNo cached skill found — created \`skills/general-research.json\` for next time.\n\n### External sources\n${this.formatResults(results)}\n\nTip: delegate specific subtasks to Coder Agent via the orchestrator.`;
+    await this.persistKnowledge("general-research", summary, ["general", "research"]);
+    return summary;
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
@@ -3362,73 +3832,6 @@ MIT — see [LICENSE](./LICENSE).
 - `bun run tsc --noEmit` for type checking — no separate lint/test scripts.
 - All A2A endpoints return `Access-Control-Allow-Origin: *`.
 - Unrecognized routing falls back to Librarian.
-</file>
-
-<file path="TODO.md">
-# TODO: Jabr Enhancement Roadmap
-
-## 🚀 Priority 1: Plug-and-Play (PnP) Kit ✅
-- [x] **Type System Migration** (720c1dd)
-  - [x] Updated `agents/types.ts` to A2A v1.0 `AgentCard` schema (`supportedInterfaces`, `tags`, `extensions`, `HandoverRequest`, etc.)
-- [x] **Dynamic Agent Registry** (720c1dd)
-  - [x] Implemented `DynamicRegistry` class in `agents/adapters/dynamic-registry.ts`
-  - [x] Seed URL scanning and `/.well-known/agent-card.json` fetching via `AgentRegistryPort`
-  - [x] Tag-based routing in Orchestrator matching tasks against `AgentSkill.tags`
-- [x] **A2A Handover Protocol** (720c1dd)
-  - [x] `HandoverRequest` type + `encodeHandover`/`decodeHandover` helpers in types.ts
-  - [x] `%%HANDOVER%%` sentinel marker for specialist→orchestrator transfer signals
-  - [x] Recursive routing in Orchestrator (`MAX_HANDOVER_DEPTH = 3`)
-
-## 📡 Priority 2: Live Context Kit (MCP Evolution) ✅
-- [x] **MCP Resource Infrastructure** (a671161)
-  - [x] Resource types in `agents/types.ts` (`McpResource`, `McpResourceContent`, `ResourceSubscription`, `WorldState`)
-  - [x] `ResourcePort` interface in `agents/ports/resource-port.ts`
-  - [x] Resource adapter in `agents/adapters/mcp-resources.ts` — registers 4 resources on McpServer
-  - [x] Resources wired in `mcp-servers/tools.ts` with default context
-  - [x] Declare `subscribe` and `listChanged` capabilities in the MCP server
-- [x] **Subscription Management**
-  - [x] `SubscriptionManager` class in `agents/adapters/subscription-manager.ts`
-  - [x] `subscribe()`/`unsubscribe()`/`hasSubscribers()`/`getSubscriberIds()` methods
-  - [x] Integrate `subscriptions/listen` flow and handle `notifications/resources/updated`
-- [x] **World-State Resource**
-  - [x] `jabr://world-state` — JSON system snapshot (agents, tasks, memory, skills)
-  - [x] `jabr://tasks/{taskId}` — individual task state (URI template)
-  - [x] `jabr://skills` — saved skill catalog
-  - [x] `jabr://memory` — session memory markdown
-  - [x] Wire live data callbacks from Orchestrator's task store and agent registry
-- [x] **DRY Specialist Runners** (dc0a798) — `runAgent()` factory in `agents/run/serve.ts`
-
-## 🧹 Maintenance: Coherence & Hexagonal ✅
-- [x] Aliased imports sweep — all cross-module imports use `@agents/*`, `@ports/*`, `@adapters/*` (fix-6, 3f15a81)
-- [x] Deslop — removed decorative headers, restating JSDoc, inline narration (fix-8/9, 3f15a81)
-- [x] Hexagonal boundary — `DiscoveryPort` isolates core from adapter (`agents/ports/discovery-port.ts`, e1981b5) — tsc clean
-
-## 🧠 Priority 4: Cognitive Loop Kit (Reasoning Evolution) ✅
-- [x] **Consensus Engine** (26f9e0a)
-  - [x] `CognitiveLoop` class with weighted scoring (successRate, relevance, tag hits)
-  - [x] `DynamicRegistry.getAllCards()` + `Orchestrator.delegateToMultiple()` / `executeConsensus()`
-  - [x] Judge pattern via `cognitiveConfig` (oracle)
-- [x] **Recursive Reasoning** — `TaskStorePort` + `MemoryStorePort` persistence supports loop recovery
-
-## 🖥️ Priority 3: IDE-Native Kit (ACP Evolution) ✅
-- [x] **Diff Streaming** (fix-10)
-  - [x] Extend `stdio-bridge.ts` to support native ACP `diff` content type (`path`/`oldText`/`newText` + `unified` fallback)
-  - [x] Implement `tool_call_update` notification stream via `notification()` helper in `utils/rpc.ts`
-- [x] **Stateful Session Management** (fix-10)
-  - [x] Implement `session/list` and `session/delete` in ACP adapter
-  - [x] Implement session migration via `session/resume` with `replayFrom: {type:"start"}`
-  - [x] Persist session metadata via extended `MemoryStorePort` (`SessionData`, `SessionEntry`) + `memory-fs` (`memory/sessions/session-<id>.json`)
-
-## 🛠️ Gap Filling (v0.3.0 → v0.4.0)
-- [x] **GAP-1: Kill ROUTING_TABLE** — pure tag routing
-- [x] **GAP-3: Fix demo script** — reflect 6-agent topology
-- [x] **GAP-2: Live-wire jabr://world-state** — real agent health
-- [x] **GAP-4: run_python** — persistent uv venv + dependency support
-- [ ] **GAP-5: Python agent layer** — Scientist agent
-- [ ] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
-- [ ] **GAP-7: Mem-Palace integration**
-- [ ] **GAP-8: Headroom integration** (budget awareness)
-- [ ] **GAP-9: ROUTING_TABLE removal cleanup sweep**
 </file>
 
 <file path="agents/adapters/http/stdio-bridge.ts">
@@ -3946,231 +4349,6 @@ export class DynamicRegistry implements DiscoveryPort {
 }
 </file>
 
-<file path="agents/run/orchestrator.ts">
-import { A2AServer } from "@adapters/http/a2a-server";
-import { A2AClient } from "@adapters/a2a-client";
-import { DynamicRegistry } from "@adapters/dynamic-registry";
-import { TaskMemory } from "@adapters/task-memory";
-import { MemoryFS } from "@adapters/memory-fs";
-import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
-
-if (import.meta.main) {
-  const PORT = 4000;
-
-  const registryClient = new A2AClient();
-  const taskStore = new TaskMemory();
-  const memory = new MemoryFS("memory/orchestrator.md");
-
-  const seedUrls: Record<string, string> = {
-    oracle: "http://localhost:4001",
-    librarian: "http://localhost:4002",
-    explorer: "http://localhost:4003",
-    designer: "http://localhost:4004",
-    fixer: "http://localhost:4005",
-  };
-
-  const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
-  await dynamicRegistry.initialize();
-
-  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry);
-
-  const server = new A2AServer({
-    port: PORT,
-    card: { ...ORCHESTRATOR_CARD, url: `http://localhost:${PORT}` },
-    async onTask(text: string): Promise<string> {
-      const taskId = crypto.randomUUID();
-      taskStore.create(taskId);
-      await agent.execute(taskId, text);
-      const task = taskStore.get(taskId);
-      const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
-      return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
-    },
-    async onWorldState() {
-      return agent.getWorldState();
-    },
-  });
-
-  server.start();
-}
-</file>
-
-<file path="mcp-servers/tools.ts">
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
-import { join } from "path";
-import { registerResources } from "@adapters/mcp-resources";
-import { SubscriptionManager } from "@adapters/subscription-manager";
-import pkg from "../package.json"
-
-const subscriptions = new SubscriptionManager();
-
-const PYTHON_ENV_DIR = join(process.cwd(), ".python_env");
-
-function ensurePythonEnv() {
-  if (!existsSync(PYTHON_ENV_DIR)) {
-    mkdirSync(PYTHON_ENV_DIR, { recursive: true });
-    Bun.spawnSync(["uv", "init", "--lib", PYTHON_ENV_DIR]);
-  }
-}
-
-const server = new McpServer(
-
-  { name: "jabr-tools", version: pkg.version },
-  {
-    capabilities: { resources: { subscribe: true, listChanged: true } },
-  },
-);
-
-server.registerTool("read_file", {
-  description: "Read a file from the project workspace",
-  inputSchema: { path: z.string().describe("Relative file path") },
-}, ({ path }) => {
-  const full = join(process.cwd(), path);
-  if (!existsSync(full)) throw new Error(`File not found: ${path}`);
-  const content = readFileSync(full, "utf-8");
-  return { content: [{ type: "text", text: `File: ${path}\n\n${content}` }] };
-});
-
-server.registerTool("write_file", {
-  description: "Write content to a file in the project workspace",
-  inputSchema: { path: z.string(), content: z.string() },
-}, ({ path, content }) => {
-  const full = join(process.cwd(), path);
-  mkdirSync(join(full, ".."), { recursive: true });
-  writeFileSync(full, content, "utf-8");
-  return { content: [{ type: "text", text: `Written ${content.length} chars to ${path}` }] };
-});
-
-server.registerTool("install_python_dependency", {
-  description: "Install a Python package into the persistent environment",
-  inputSchema: { package: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
-}, ({ package }) => {
-  ensurePythonEnv();
-  const proc = Bun.spawnSync(["uv", "add", package], {
-    cwd: PYTHON_ENV_DIR,
-  });
-  if (proc.exitCode !== 0) {
-    const stderr = new TextDecoder().decode(proc.stderr);
-    throw new Error(`Failed to install ${package}: ${stderr}`);
-  }
-  return { content: [{ type: "text", text: `Successfully installed ${package} into .python_env` }] };
-});
-
-server.registerTool("run_python", {
-  description: "Execute a Python snippet via uv in a persistent environment with dependency support",
-  inputSchema: { code: z.string().describe("Python code to run") },
-}, ({ code }) => {
-  ensurePythonEnv();
-  const mainPath = join(PYTHON_ENV_DIR, "main.py");
-  writeFileSync(mainPath, code, "utf-8");
-  
-  const proc = Bun.spawnSync(["uv", "run", "--project", PYTHON_ENV_DIR, "python", "main.py"], {
-    timeout: 10_000,
-  });
-  
-  const stdout = new TextDecoder().decode(proc.stdout);
-  const stderr = new TextDecoder().decode(proc.stderr);
-  if (proc.exitCode !== 0) throw new Error(stderr || "Python error");
-  return { content: [{ type: "text", text: stdout || "(no output)" }] };
-});
-
-
-server.registerTool("calculate", {
-  description: "Safe arithmetic evaluator",
-  inputSchema: { expression: z.string().describe("Math expression") },
-}, ({ expression }) => {
-  if (!/^[\d\s+\-*/.()%^]+$/.test(expression))
-    throw new Error("Unsafe expression");
-  const result = eval(expression);
-  return { content: [{ type: "text", text: String(result) }] };
-});
-
-server.registerTool("save_skill", {
-  description: "Persist a Hermes-style skill document to the skill store",
-  inputSchema: {
-    name: z.string(),
-    description: z.string(),
-    steps: z.array(z.string()),
-    tags: z.array(z.string()).optional().default([]),
-  },
-}, ({ name: skillName, description, steps, tags }) => {
-  const skillDir = join(process.cwd(), "skills");
-  mkdirSync(skillDir, { recursive: true });
-  const slug = skillName.toLowerCase().replace(/\s+/g, "-");
-  const doc = {
-    name: skillName,
-    description,
-    tags,
-    steps,
-    createdAt: new Date().toISOString(),
-    usageCount: 0,
-    successRate: 1.0,
-  };
-  writeFileSync(join(skillDir, `${slug}.json`), JSON.stringify(doc, null, 2));
-  return { content: [{ type: "text", text: `Skill "${skillName}" saved → skills/${slug}.json` }] };
-});
-
-server.registerTool("list_skills", {
-  description: "List all saved skills from the skill store",
-  inputSchema: {},
-}, () => {
-  const skillDir = join(process.cwd(), "skills");
-  if (!existsSync(skillDir))
-    return { content: [{ type: "text", text: "No skills yet." }] };
-  const files = readdirSync(skillDir).filter((f) => f.endsWith(".json"));
-  const skills = files.map((f) => {
-    const doc = JSON.parse(readFileSync(join(skillDir, f), "utf-8"));
-    return `• ${doc.name} — ${doc.description} [${doc.tags.join(", ")}]`;
-  });
-  return {
-    content: [{ type: "text", text: skills.length ? skills.join("\n") : "No skills yet." }],
-  };
-});
-
-registerResources(server, {
-  subscriptions,
-  projectRoot: process.cwd(),
-  getWorldState: async () => {
-    try {
-      const res = await fetch("http://localhost:4000/.well-known/world-state");
-      if (!res.ok) throw new Error(`Orchestrator returned ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      return { 
-        timestamp: new Date().toISOString(), 
-        agents: [], 
-        error: `Could not fetch world state from Orchestrator: ${String(e)}` 
-      };
-    }
-  },
-  getTask: async (taskId: string) => {
-    const taskPath = join(process.cwd(), "memory", `task-${taskId}.json`);
-    if (!existsSync(taskPath)) {
-      return {
-        id: taskId,
-        status: "not_found",
-        error: `No task found with id "${taskId}"`,
-      };
-    }
-    try {
-      return JSON.parse(readFileSync(taskPath, "utf-8"));
-    } catch {
-      return {
-        id: taskId,
-        status: "error",
-        error: "Failed to parse task file",
-      };
-    }
-  },
-});
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error("MCP tool server running on stdio");
-</file>
-
 <file path="agents/core/designer.ts">
 import type { TaskStorePort } from "@ports/task-store";
 import type { ImageGenPort } from "@ports/image-gen-port";
@@ -4464,271 +4642,298 @@ export interface RegistryEntry {
 }
 </file>
 
-<file path="agents/core/orchestrator.ts">
-import type { AgentCard, A2AMessage, HandoverRequest } from "@agents/types";
-import { decodeHandover } from "@agents/types";
-import type { AgentRegistryPort } from "@ports/agent-registry";
-import type { TaskStorePort } from "@ports/task-store";
-import type { MemoryStorePort } from "@ports/memory-store";
-import type { DiscoveryPort } from "@ports/discovery-port";
-import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
+<file path="mcp-servers/tools.ts">
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
+import { join } from "path";
+import { registerResources } from "@adapters/mcp-resources";
+import { SubscriptionManager } from "@adapters/subscription-manager";
+import pkg from "../package.json"
 
-export const ORCHESTRATOR_CARD: AgentCard = {
-  name: "Orchestrator",
-  description:
-    "Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
-  url: "",
-  version: "1.0.0",
-  capabilities: { streaming: false, pushNotifications: false },
-  skills: [
-    {
-      name: "Route task",
-      description: "Classifies and delegates any task to the best specialist agent",
-      tags: ["routing", "delegation", "orchestration"],
-      inputModes: ["text"],
-      outputModes: ["text"],
-    },
-    {
-      name: "Discover agents",
-      description: "Fetches Agent Cards from known sub-agents",
-      tags: ["discovery", "agent-card", "registry"],
-      inputModes: ["text"],
-      outputModes: ["data"],
-    },
-  ],
-};
+const subscriptions = new SubscriptionManager();
 
-export const MAX_HANDOVER_DEPTH = 3;
+const PYTHON_ENV_DIR = join(process.cwd(), ".python_env");
 
-export class OrchestratorAgent {
-  private cognitiveLoop: CognitiveLoop;
-
-  constructor(
-    private registry: AgentRegistryPort,
-    private taskStore: TaskStorePort,
-    private memory: MemoryStorePort,
-    private dynamicRegistry?: DiscoveryPort,
-    cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
-  ) {
-    this.cognitiveLoop = new CognitiveLoop(cognitiveConfig);
+function ensurePythonEnv() {
+  if (!existsSync(PYTHON_ENV_DIR)) {
+    mkdirSync(PYTHON_ENV_DIR, { recursive: true });
+    Bun.spawnSync(["uv", "init", "--lib", PYTHON_ENV_DIR]);
   }
+}
 
-  get card(): AgentCard {
-    return ORCHESTRATOR_CARD;
+const server = new McpServer(
+
+  { name: "jabr-tools", version: pkg.version },
+  {
+    capabilities: { resources: { subscribe: true, listChanged: true } },
+  },
+);
+
+server.registerTool("read_file", {
+  description: "Read a file from the project workspace",
+  inputSchema: { path: z.string().describe("Relative file path") },
+}, ({ path }) => {
+  const full = join(process.cwd(), path);
+  if (!existsSync(full)) throw new Error(`File not found: ${path}`);
+  const content = readFileSync(full, "utf-8");
+  return { content: [{ type: "text", text: `File: ${path}\n\n${content}` }] };
+});
+
+server.registerTool("write_file", {
+  description: "Write content to a file in the project workspace",
+  inputSchema: { path: z.string(), content: z.string() },
+}, ({ path, content }) => {
+  const full = join(process.cwd(), path);
+  mkdirSync(join(full, ".."), { recursive: true });
+  writeFileSync(full, content, "utf-8");
+  return { content: [{ type: "text", text: `Written ${content.length} chars to ${path}` }] };
+});
+
+server.registerTool("install_python_dependency", {
+  description: "Install a Python package into the persistent environment",
+  inputSchema: { package: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
+}, ({ package }) => {
+  ensurePythonEnv();
+  const proc = Bun.spawnSync(["uv", "add", package], {
+    cwd: PYTHON_ENV_DIR,
+  });
+  if (proc.exitCode !== 0) {
+    const stderr = new TextDecoder().decode(proc.stderr);
+    throw new Error(`Failed to install ${package}: ${stderr}`);
   }
+  return { content: [{ type: "text", text: `Successfully installed ${package} into .python_env` }] };
+});
 
-  routeTask(text: string): { agentName: string; label: string } {
-    const match = this.dynamicRegistry?.matchAgent(text);
-    if (match) {
-      return { agentName: match.name, label: match.label };
-    }
-    return { agentName: "librarian", label: "Librarian Agent" };
-  }
+server.registerTool("run_python", {
+  description: "Execute a Python snippet via uv in a persistent environment with dependency support",
+  inputSchema: { code: z.string().describe("Python code to run") },
+}, ({ code }) => {
+  ensurePythonEnv();
+  const mainPath = join(PYTHON_ENV_DIR, "main.py");
+  writeFileSync(mainPath, code, "utf-8");
+  
+  const proc = Bun.spawnSync(["uv", "run", "--project", PYTHON_ENV_DIR, "python", "main.py"], {
+    timeout: 10_000,
+  });
+  
+  const stdout = new TextDecoder().decode(proc.stdout);
+  const stderr = new TextDecoder().decode(proc.stderr);
+  if (proc.exitCode !== 0) throw new Error(stderr || "Python error");
+  return { content: [{ type: "text", text: stdout || "(no output)" }] };
+});
 
-  async getWorldState(): Promise<any> {
-    const agents = await this.dynamicRegistry?.getAgentsHealth() ?? [];
-    
-    // Aggregate filesystem metrics (mirroring old tools.ts logic)
-    const memoryDir = "/home/m7r/Projects/Labs/agent-lab/memory";
-    const skillsDir = "/home/m7r/Projects/Labs/agent-lab/skills";
-    
-    let lastUpdated: string | undefined;
+
+server.registerTool("calculate", {
+  description: "Safe arithmetic evaluator",
+  inputSchema: { expression: z.string().describe("Math expression") },
+}, ({ expression }) => {
+  if (!/^[\d\s+\-*/.()%^]+$/.test(expression))
+    throw new Error("Unsafe expression");
+  const result = eval(expression);
+  return { content: [{ type: "text", text: String(result) }] };
+});
+
+server.registerTool("save_skill", {
+  description: "Persist a Hermes-style skill document to the skill store",
+  inputSchema: {
+    name: z.string(),
+    description: z.string(),
+    steps: z.array(z.string()),
+    tags: z.array(z.string()).optional().default([]),
+  },
+}, ({ name: skillName, description, steps, tags }) => {
+  const skillDir = join(process.cwd(), "skills");
+  mkdirSync(skillDir, { recursive: true });
+  const slug = skillName.toLowerCase().replace(/\s+/g, "-");
+  const doc = {
+    name: skillName,
+    description,
+    tags,
+    steps,
+    createdAt: new Date().toISOString(),
+    usageCount: 0,
+    successRate: 1.0,
+  };
+  writeFileSync(join(skillDir, `${slug}.json`), JSON.stringify(doc, null, 2));
+  return { content: [{ type: "text", text: `Skill "${skillName}" saved → skills/${slug}.json` }] };
+});
+
+server.registerTool("list_skills", {
+  description: "List all saved skills from the skill store",
+  inputSchema: {},
+}, () => {
+  const skillDir = join(process.cwd(), "skills");
+  if (!existsSync(skillDir))
+    return { content: [{ type: "text", text: "No skills yet." }] };
+  const files = readdirSync(skillDir).filter((f) => f.endsWith(".json"));
+  const skills = files.map((f) => {
+    const doc = JSON.parse(readFileSync(join(skillDir, f), "utf-8"));
+    return `• ${doc.name} — ${doc.description} [${doc.tags.join(", ")}]`;
+  });
+  return {
+    content: [{ type: "text", text: skills.length ? skills.join("\n") : "No skills yet." }],
+  };
+});
+
+registerResources(server, {
+  subscriptions,
+  projectRoot: process.cwd(),
+  getWorldState: async () => {
     try {
-      const fs = await import("fs");
-      const memPath = `${memoryDir}/orchestrator.md`;
-      if (fs.existsSync(memPath)) {
-        lastUpdated = fs.statSync(memPath).mtime.toISOString();
-      }
-      
-      let skillTotal = 0;
-      let recentSlugs: string[] = [];
-      if (fs.existsSync(skillsDir)) {
-        const skillFiles = fs.readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
-        skillTotal = skillFiles.length;
-        recentSlugs = skillFiles.map(f => f.replace(".json", "")).reverse().slice(0, 5);
-      }
-
-      let taskTotal = 0;
-      if (fs.existsSync(memoryDir)) {
-        taskTotal = fs.readdirSync(memoryDir).filter(f => f.startsWith("task-") && f.endsWith(".json")).length;
-      }
-
-      return {
-        timestamp: new Date().toISOString(),
-        agents,
-        tasks: { total: taskTotal, active: 0, completed: 0, failed: 0 },
-        memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
-        skills: { total: skillTotal, recentSlugs },
+      const res = await fetch("http://localhost:4000/.well-known/world-state");
+      if (!res.ok) throw new Error(`Orchestrator returned ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      return { 
+        timestamp: new Date().toISOString(), 
+        agents: [], 
+        error: `Could not fetch world state from Orchestrator: ${String(e)}` 
       };
-    } catch (e) {
-      console.error("Error gathering world state:", e);
-      return { timestamp: new Date().toISOString(), agents: [], error: "Filesystem access failed" };
     }
-  }
-
-  private getAgentUrl(agentName: string): string | undefined {
-    if (this.dynamicRegistry) {
-      return this.dynamicRegistry.getUrl(agentName);
+  },
+  getTask: async (taskId: string) => {
+    const taskPath = join(process.cwd(), "memory", `task-${taskId}.json`);
+    if (!existsSync(taskPath)) {
+      return {
+        id: taskId,
+        status: "not_found",
+        error: `No task found with id "${taskId}"`,
+      };
     }
-    return undefined;
-  }
-
-  private getAvailableAgentNames(): string[] {
-    if (!this.dynamicRegistry) return [];
-    const cards = this.dynamicRegistry.getAllCards();
-    return Object.keys(cards);
-  }
-
-  private async delegateToMultiple(
-    agentNames: string[],
-    userText: string,
-  ): Promise<ConsensusInput[]> {
-    const tasks = agentNames
-      .filter((name) => name !== "orchestrator")
-      .map(async (name) => {
-        const url = this.getAgentUrl(name);
-        if (!url) return null;
-        try {
-          const response = await this.registry.delegateTask(url, userText);
-          const card = this.dynamicRegistry?.getCard(name);
-          if (!card) return null;
-          return { agentName: name, card, response } satisfies ConsensusInput;
-        } catch {
-          return null;
-        }
-      });
-
-    const results = await Promise.all(tasks);
-    return results.filter((r): r is ConsensusInput => r !== null);
-  }
-
-  async executeConsensus(taskId: string, userText: string): Promise<string> {
-    const available = this.getAvailableAgentNames();
-    if (available.length < 2) {
-      const url = this.getAgentUrl(available[0] ?? "librarian");
-      if (!url) return "No agents available for consensus";
-      return this.registry.delegateTask(url, userText);
-    }
-
-    this.memory.append(`[consensus] Delegating to ${available.length} agents`);
-    const inputs = await this.delegateToMultiple(available, userText);
-
-    if (inputs.length === 0) return "No agents responded";
-
-    const result = this.cognitiveLoop.evaluate(inputs, userText);
-    const topScore = result.scores[0]?.score.toFixed(3) ?? "N/A";
-    this.memory.append(
-      `[consensus] Winner: ${result.winner.agentName} (score: ${topScore})`,
-    );
-
-    return result.synthesized;
-  }
-
-  async execute(taskId: string, userText: string): Promise<void> {
-    return this.executeWithDepth(taskId, userText, 0);
-  }
-
-  private async executeWithDepth(
-    taskId: string,
-    userText: string,
-    depth: number,
-    referenceTaskIds: string[] = [],
-  ): Promise<void> {
     try {
-      const { agentName, label } = this.routeTask(userText);
-      this.memory.append(
-        `[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}`,
-      );
-
-      const agentUrl = this.getAgentUrl(agentName);
-      if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
-
-      const result = await this.registry.delegateTask(agentUrl, userText);
-
-      const handover = decodeHandover(result);
-
-      if (handover && depth < MAX_HANDOVER_DEPTH) {
-        this.memory.append(
-          `[depth=${depth}] Handover detected: ${agentName} → ${handover.transferTo} (${handover.reason})`,
-        );
-
-        this.taskStore.appendMessage(taskId, {
-          messageId: crypto.randomUUID(),
-          role: "agent",
-          kind: "message",
-          parts: [{ kind: "text", text: result.replace(/%%HANDOVER%%.*$/, "").trim() }],
-          contextId: taskId,
-        } as A2AMessage);
-
-        const childTaskId = crypto.randomUUID();
-        this.taskStore.create(childTaskId);
-        this.taskStore.updateState(taskId, "working");
-
-        const childUserText = handover.context || userText;
-        this.taskStore.appendMessage(childTaskId, {
-          messageId: crypto.randomUUID(),
-          role: "user",
-          kind: "message",
-          parts: [{ kind: "text", text: childUserText }],
-          contextId: childTaskId,
-          referenceTaskIds: [taskId, ...referenceTaskIds],
-        } as A2AMessage);
-
-        await this.executeWithDepth(
-          childTaskId,
-          childUserText,
-          depth + 1,
-          [taskId, ...referenceTaskIds],
-        );
-
-        const childTask = this.taskStore.get(childTaskId);
-        const childResult =
-          childTask?.messages
-            .filter((m) => m.role === "agent")
-            .map((m) => m.parts.filter((p) => p.kind === "text").map((p) => p.text).join(""))
-            .join("\n") ?? "";
-
-        this.taskStore.updateState(taskId, "completed");
-        this.taskStore.appendMessage(taskId, {
-          messageId: crypto.randomUUID(),
-          role: "agent",
-          kind: "message",
-          parts: [{ kind: "text", text: childResult }],
-          contextId: taskId,
-          referenceTaskIds: [childTaskId],
-        } as A2AMessage);
-        this.memory.append(
-          `[depth=${depth}] Handover chain completed. Result length: ${childResult.length} chars`,
-        );
-        return;
-      }
-
-      if (handover && depth >= MAX_HANDOVER_DEPTH) {
-        this.memory.append(
-          `[depth=${depth}] Max handover depth (${MAX_HANDOVER_DEPTH}) reached. Completing with available result.`,
-        );
-      }
-
-      this.taskStore.updateState(taskId, "completed");
-      this.taskStore.appendMessage(taskId, {
-        messageId: crypto.randomUUID(),
-        role: "agent",
-        kind: "message",
-        parts: [{ kind: "text", text: result }],
-        contextId: taskId,
-      } as A2AMessage);
-      this.memory.append(`Completed task. Result length: ${result.length} chars`);
-    } catch (e) {
-      this.taskStore.updateState(taskId, "failed");
-      this.taskStore.appendMessage(taskId, {
-        messageId: crypto.randomUUID(),
-        role: "agent",
-        kind: "message",
-        parts: [{ kind: "text", text: `Error: ${String(e)}` }],
-        contextId: taskId,
-      } as A2AMessage);
+      return JSON.parse(readFileSync(taskPath, "utf-8"));
+    } catch {
+      return {
+        id: taskId,
+        status: "error",
+        error: "Failed to parse task file",
+      };
     }
-  }
+  },
+});
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+console.error("MCP tool server running on stdio");
+</file>
+
+<file path="TODO.md">
+# TODO: Jabr Enhancement Roadmap
+
+## 🚀 Priority 1: Plug-and-Play (PnP) Kit ✅
+- [x] **Type System Migration** (720c1dd)
+  - [x] Updated `agents/types.ts` to A2A v1.0 `AgentCard` schema (`supportedInterfaces`, `tags`, `extensions`, `HandoverRequest`, etc.)
+- [x] **Dynamic Agent Registry** (720c1dd)
+  - [x] Implemented `DynamicRegistry` class in `agents/adapters/dynamic-registry.ts`
+  - [x] Seed URL scanning and `/.well-known/agent-card.json` fetching via `AgentRegistryPort`
+  - [x] Tag-based routing in Orchestrator matching tasks against `AgentSkill.tags`
+- [x] **A2A Handover Protocol** (720c1dd)
+  - [x] `HandoverRequest` type + `encodeHandover`/`decodeHandover` helpers in types.ts
+  - [x] `%%HANDOVER%%` sentinel marker for specialist→orchestrator transfer signals
+  - [x] Recursive routing in Orchestrator (`MAX_HANDOVER_DEPTH = 3`)
+
+## 📡 Priority 2: Live Context Kit (MCP Evolution) ✅
+- [x] **MCP Resource Infrastructure** (a671161)
+  - [x] Resource types in `agents/types.ts` (`McpResource`, `McpResourceContent`, `ResourceSubscription`, `WorldState`)
+  - [x] `ResourcePort` interface in `agents/ports/resource-port.ts`
+  - [x] Resource adapter in `agents/adapters/mcp-resources.ts` — registers 4 resources on McpServer
+  - [x] Resources wired in `mcp-servers/tools.ts` with default context
+  - [x] Declare `subscribe` and `listChanged` capabilities in the MCP server
+- [x] **Subscription Management**
+  - [x] `SubscriptionManager` class in `agents/adapters/subscription-manager.ts`
+  - [x] `subscribe()`/`unsubscribe()`/`hasSubscribers()`/`getSubscriberIds()` methods
+  - [x] Integrate `subscriptions/listen` flow and handle `notifications/resources/updated`
+- [x] **World-State Resource**
+  - [x] `jabr://world-state` — JSON system snapshot (agents, tasks, memory, skills)
+  - [x] `jabr://tasks/{taskId}` — individual task state (URI template)
+  - [x] `jabr://skills` — saved skill catalog
+  - [x] `jabr://memory` — session memory markdown
+  - [x] Wire live data callbacks from Orchestrator's task store and agent registry
+- [x] **DRY Specialist Runners** (dc0a798) — `runAgent()` factory in `agents/run/serve.ts`
+
+## 🧹 Maintenance: Coherence & Hexagonal ✅
+- [x] Aliased imports sweep — all cross-module imports use `@agents/*`, `@ports/*`, `@adapters/*` (fix-6, 3f15a81)
+- [x] Deslop — removed decorative headers, restating JSDoc, inline narration (fix-8/9, 3f15a81)
+- [x] Hexagonal boundary — `DiscoveryPort` isolates core from adapter (`agents/ports/discovery-port.ts`, e1981b5) — tsc clean
+
+## 🧠 Priority 4: Cognitive Loop Kit (Reasoning Evolution) ✅
+- [x] **Consensus Engine** (26f9e0a)
+  - [x] `CognitiveLoop` class with weighted scoring (successRate, relevance, tag hits)
+  - [x] `DynamicRegistry.getAllCards()` + `Orchestrator.delegateToMultiple()` / `executeConsensus()`
+  - [x] Judge pattern via `cognitiveConfig` (oracle)
+- [x] **Recursive Reasoning** — `TaskStorePort` + `MemoryStorePort` persistence supports loop recovery
+
+## 🖥️ Priority 3: IDE-Native Kit (ACP Evolution) ✅
+- [x] **Diff Streaming** (fix-10)
+  - [x] Extend `stdio-bridge.ts` to support native ACP `diff` content type (`path`/`oldText`/`newText` + `unified` fallback)
+  - [x] Implement `tool_call_update` notification stream via `notification()` helper in `utils/rpc.ts`
+- [x] **Stateful Session Management** (fix-10)
+  - [x] Implement `session/list` and `session/delete` in ACP adapter
+  - [x] Implement session migration via `session/resume` with `replayFrom: {type:"start"}`
+  - [x] Persist session metadata via extended `MemoryStorePort` (`SessionData`, `SessionEntry`) + `memory-fs` (`memory/sessions/session-<id>.json`)
+
+## 🛠️ Gap Filling (v0.3.0 → v0.4.0)
+- [x] **GAP-1: Kill ROUTING_TABLE** — pure tag routing
+- [x] **GAP-3: Fix demo script** — reflect 6-agent topology
+- [x] **GAP-2: Live-wire jabr://world-state** — real agent health
+- [x] **GAP-4: run_python** — persistent uv venv + dependency support
+- [x] **GAP-5: Python agent layer** — Scientist agent
+- [x] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
+- [ ] **GAP-7: Mem-Palace integration**
+- [ ] **GAP-8: Headroom integration** (budget awareness)
+- [ ] **GAP-9: ROUTING_TABLE removal cleanup sweep**
+</file>
+
+<file path="agents/run/orchestrator.ts">
+import { A2AServer } from "@adapters/http/a2a-server";
+import { A2AClient } from "@adapters/a2a-client";
+import { DynamicRegistry } from "@adapters/dynamic-registry";
+import { TaskMemory } from "@adapters/task-memory";
+import { MemoryFS } from "@adapters/memory-fs";
+import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
+import { OpenAiLlmAdapter } from "@adapters/llm/openai";
+
+if (import.meta.main) {
+  const PORT = 4000;
+
+  const registryClient = new A2AClient();
+  const taskStore = new TaskMemory();
+  const memory = new MemoryFS("memory/orchestrator.md");
+  const llmPort = new OpenAiLlmAdapter();
+
+  const seedUrls: Record<string, string> = {
+    oracle: "http://localhost:4001",
+    librarian: "http://localhost:4002",
+    explorer: "http://localhost:4003",
+    designer: "http://localhost:4004",
+    fixer: "http://localhost:4005",
+    scientist: "http://localhost:4006",
+  };
+
+  const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
+  await dynamicRegistry.initialize();
+
+  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort);
+
+  const server = new A2AServer({
+    port: PORT,
+    card: { ...ORCHESTRATOR_CARD, url: `http://localhost:${PORT}` },
+    async onTask(text: string): Promise<string> {
+      const taskId = crypto.randomUUID();
+      taskStore.create(taskId);
+      await agent.execute(taskId, text);
+      const task = taskStore.get(taskId);
+      const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
+      return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
+    },
+    async onWorldState() {
+      return agent.getWorldState();
+    },
+  });
+
+  server.start();
 }
 </file>
 
@@ -4957,6 +5162,294 @@ Core modules use relative imports for ports/types only.
     "@a2a-js/sdk": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.4.3"
+  }
+}
+</file>
+
+<file path="agents/core/orchestrator.ts">
+import type { AgentCard, A2AMessage, HandoverRequest } from "@agents/types";
+import { decodeHandover } from "@agents/types";
+import type { AgentRegistryPort } from "@ports/agent-registry";
+import type { TaskStorePort } from "@ports/task-store";
+import type { MemoryStorePort } from "@ports/memory-store";
+import type { DiscoveryPort } from "@ports/discovery-port";
+import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
+import type { LlmPort } from "@ports/llm-port";
+import type { KnowledgePort } from "@ports/knowledge-port";
+
+export const ORCHESTRATOR_CARD: AgentCard = {
+  name: "Orchestrator",
+  description:
+    "Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
+  url: "",
+  version: "1.0.0",
+  capabilities: { streaming: false, pushNotifications: false },
+  skills: [
+    {
+      name: "Route task",
+      description: "Classifies and delegates any task to the best specialist agent",
+      tags: ["routing", "delegation", "orchestration"],
+      inputModes: ["text"],
+      outputModes: ["text"],
+    },
+    {
+      name: "Discover agents",
+      description: "Fetches Agent Cards from known sub-agents",
+      tags: ["discovery", "agent-card", "registry"],
+      inputModes: ["text"],
+      outputModes: ["data"],
+    },
+  ],
+};
+
+export const MAX_HANDOVER_DEPTH = 3;
+
+export class OrchestratorAgent {
+  private cognitiveLoop: CognitiveLoop;
+
+  constructor(
+    private registry: AgentRegistryPort,
+    private taskStore: TaskStorePort,
+    private memory: MemoryStorePort,
+    private dynamicRegistry?: DiscoveryPort,
+    private llmPort?: LlmPort,
+    cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
+    private knowledge?: KnowledgePort,
+  ) {
+    this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
+  }
+
+  get card(): AgentCard {
+    return ORCHESTRATOR_CARD;
+  }
+
+  routeTask(text: string): { agentName: string; label: string } {
+    const match = this.dynamicRegistry?.matchAgent(text);
+    if (match) {
+      return { agentName: match.name, label: match.label };
+    }
+    return { agentName: "librarian", label: "Librarian Agent" };
+  }
+
+  async getWorldState(): Promise<any> {
+    const agents = await this.dynamicRegistry?.getAgentsHealth() ?? [];
+    
+    // Aggregate filesystem metrics (mirroring old tools.ts logic)
+    const memoryDir = "/home/m7r/Projects/Labs/agent-lab/memory";
+    const skillsDir = "/home/m7r/Projects/Labs/agent-lab/skills";
+    
+    let lastUpdated: string | undefined;
+    try {
+      const fs = await import("fs");
+      const memPath = `${memoryDir}/orchestrator.md`;
+      if (fs.existsSync(memPath)) {
+        lastUpdated = fs.statSync(memPath).mtime.toISOString();
+      }
+      
+      let skillTotal = 0;
+      let recentSlugs: string[] = [];
+      if (fs.existsSync(skillsDir)) {
+        const skillFiles = fs.readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
+        skillTotal = skillFiles.length;
+        recentSlugs = skillFiles.map(f => f.replace(".json", "")).reverse().slice(0, 5);
+      }
+
+      let taskTotal = 0;
+      if (fs.existsSync(memoryDir)) {
+        taskTotal = fs.readdirSync(memoryDir).filter(f => f.startsWith("task-") && f.endsWith(".json")).length;
+      }
+
+      return {
+        timestamp: new Date().toISOString(),
+        agents,
+        tasks: { total: taskTotal, active: 0, completed: 0, failed: 0 },
+        memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
+        skills: { total: skillTotal, recentSlugs },
+      };
+    } catch (e) {
+      console.error("Error gathering world state:", e);
+      return { timestamp: new Date().toISOString(), agents: [], error: "Filesystem access failed" };
+    }
+  }
+
+  private getAgentUrl(agentName: string): string | undefined {
+    if (this.dynamicRegistry) {
+      return this.dynamicRegistry.getUrl(agentName);
+    }
+    return undefined;
+  }
+
+  private getAvailableAgentNames(): string[] {
+    if (!this.dynamicRegistry) return [];
+    const cards = this.dynamicRegistry.getAllCards();
+    return Object.keys(cards);
+  }
+
+  private async delegateToMultiple(
+    agentNames: string[],
+    userText: string,
+  ): Promise<ConsensusInput[]> {
+    const tasks = agentNames
+      .filter((name) => name !== "orchestrator")
+      .map(async (name) => {
+        const url = this.getAgentUrl(name);
+        if (!url) return null;
+        try {
+          const response = await this.registry.delegateTask(url, userText);
+          const card = this.dynamicRegistry?.getCard(name);
+          if (!card) return null;
+          return { agentName: name, card, response } satisfies ConsensusInput;
+        } catch {
+          return null;
+        }
+      });
+
+    const results = await Promise.all(tasks);
+    return results.filter((r): r is ConsensusInput => r !== null);
+  }
+
+  async executeConsensus(taskId: string, userText: string): Promise<string> {
+    const available = this.getAvailableAgentNames();
+    if (available.length < 2) {
+      const url = this.getAgentUrl(available[0] ?? "librarian");
+      if (!url) return "No agents available for consensus";
+      return this.registry.delegateTask(url, userText);
+    }
+
+    this.memory.append(`[consensus] Delegating to ${available.length} agents`);
+    const inputs = await this.delegateToMultiple(available, userText);
+
+    if (inputs.length === 0) return "No agents responded";
+
+    const result = await this.cognitiveLoop.evaluate(inputs, userText);
+    const topScore = result.scores[0]?.score.toFixed(3) ?? "N/A";
+    this.memory.append(
+      `[consensus] Winner: ${result.winner.agentName} (score: ${topScore})`,
+    );
+
+    return result.synthesized;
+  }
+
+  async execute(taskId: string, userText: string): Promise<void> {
+    return this.executeWithDepth(taskId, userText, 0);
+  }
+
+  private async executeWithDepth(
+    taskId: string,
+    userText: string,
+    depth: number,
+    referenceTaskIds: string[] = [],
+  ): Promise<void> {
+    try {
+      let augmentedText = userText;
+      if (this.knowledge && depth === 0) {
+        try {
+          const palaceContext = await this.knowledge.query(userText, 3);
+          if (palaceContext.length > 0) {
+            const contextSummary = palaceContext
+              .map((c) => `[Palace Knowledge: ${c.slug}]\n${c.content}`)
+              .join("\n\n");
+            augmentedText = `${contextSummary}\n\nUser Task: ${userText}`;
+            this.memory.append(`[palace] Augmented query with ${palaceContext.length} knowledge entries`);
+          }
+        } catch (e) {
+          console.error("Palace query error:", e);
+        }
+      }
+
+      const { agentName, label } = this.routeTask(userText);
+      this.memory.append(
+        `[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}`,
+      );
+
+      const agentUrl = this.getAgentUrl(agentName);
+      if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
+
+      const result = await this.registry.delegateTask(agentUrl, augmentedText);
+
+      const handover = decodeHandover(result);
+
+      if (handover && depth < MAX_HANDOVER_DEPTH) {
+        this.memory.append(
+          `[depth=${depth}] Handover detected: ${agentName} → ${handover.transferTo} (${handover.reason})`,
+        );
+
+        this.taskStore.appendMessage(taskId, {
+          messageId: crypto.randomUUID(),
+          role: "agent",
+          kind: "message",
+          parts: [{ kind: "text", text: result.replace(/%%HANDOVER%%.*$/, "").trim() }],
+          contextId: taskId,
+        } as A2AMessage);
+
+        const childTaskId = crypto.randomUUID();
+        this.taskStore.create(childTaskId);
+        this.taskStore.updateState(taskId, "working");
+
+        const childUserText = handover.context || userText;
+        this.taskStore.appendMessage(childTaskId, {
+          messageId: crypto.randomUUID(),
+          role: "user",
+          kind: "message",
+          parts: [{ kind: "text", text: childUserText }],
+          contextId: childTaskId,
+          referenceTaskIds: [taskId, ...referenceTaskIds],
+        } as A2AMessage);
+
+        await this.executeWithDepth(
+          childTaskId,
+          childUserText,
+          depth + 1,
+          [taskId, ...referenceTaskIds],
+        );
+
+        const childTask = this.taskStore.get(childTaskId);
+        const childResult =
+          childTask?.messages
+            .filter((m) => m.role === "agent")
+            .map((m) => m.parts.filter((p) => p.kind === "text").map((p) => p.text).join(""))
+            .join("\n") ?? "";
+
+        this.taskStore.updateState(taskId, "completed");
+        this.taskStore.appendMessage(taskId, {
+          messageId: crypto.randomUUID(),
+          role: "agent",
+          kind: "message",
+          parts: [{ kind: "text", text: childResult }],
+          contextId: taskId,
+          referenceTaskIds: [childTaskId],
+        } as A2AMessage);
+        this.memory.append(
+          `[depth=${depth}] Handover chain completed. Result length: ${childResult.length} chars`,
+        );
+        return;
+      }
+
+      if (handover && depth >= MAX_HANDOVER_DEPTH) {
+        this.memory.append(
+          `[depth=${depth}] Max handover depth (${MAX_HANDOVER_DEPTH}) reached. Completing with available result.`,
+        );
+      }
+
+      this.taskStore.updateState(taskId, "completed");
+      this.taskStore.appendMessage(taskId, {
+        messageId: crypto.randomUUID(),
+        role: "agent",
+        kind: "message",
+        parts: [{ kind: "text", text: result }],
+        contextId: taskId,
+      } as A2AMessage);
+      this.memory.append(`Completed task. Result length: ${result.length} chars`);
+    } catch (e) {
+      this.taskStore.updateState(taskId, "failed");
+      this.taskStore.appendMessage(taskId, {
+        messageId: crypto.randomUUID(),
+        role: "agent",
+        kind: "message",
+        parts: [{ kind: "text", text: `Error: ${String(e)}` }],
+        contextId: taskId,
+      } as A2AMessage);
+    }
   }
 }
 </file>

@@ -6,6 +6,7 @@ import type { MemoryStorePort } from "@ports/memory-store";
 import type { DiscoveryPort } from "@ports/discovery-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 import type { LlmPort } from "@ports/llm-port";
+import type { KnowledgePort } from "@ports/knowledge-port";
 
 export const ORCHESTRATOR_CARD: AgentCard = {
   name: "Orchestrator",
@@ -44,6 +45,7 @@ export class OrchestratorAgent {
     private dynamicRegistry?: DiscoveryPort,
     private llmPort?: LlmPort,
     cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
+    private knowledge?: KnowledgePort,
   ) {
     this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
   }
@@ -170,6 +172,22 @@ export class OrchestratorAgent {
     referenceTaskIds: string[] = [],
   ): Promise<void> {
     try {
+      let augmentedText = userText;
+      if (this.knowledge && depth === 0) {
+        try {
+          const palaceContext = await this.knowledge.query(userText, 3);
+          if (palaceContext.length > 0) {
+            const contextSummary = palaceContext
+              .map((c) => `[Palace Knowledge: ${c.slug}]\n${c.content}`)
+              .join("\n\n");
+            augmentedText = `${contextSummary}\n\nUser Task: ${userText}`;
+            this.memory.append(`[palace] Augmented query with ${palaceContext.length} knowledge entries`);
+          }
+        } catch (e) {
+          console.error("Palace query error:", e);
+        }
+      }
+
       const { agentName, label } = this.routeTask(userText);
       this.memory.append(
         `[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}`,
@@ -178,7 +196,7 @@ export class OrchestratorAgent {
       const agentUrl = this.getAgentUrl(agentName);
       if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
 
-      const result = await this.registry.delegateTask(agentUrl, userText);
+      const result = await this.registry.delegateTask(agentUrl, augmentedText);
 
       const handover = decodeHandover(result);
 

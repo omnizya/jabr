@@ -5,6 +5,7 @@ import { TaskMemory } from "@adapters/task-memory";
 import { MemoryFS } from "@adapters/memory-fs";
 import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
 import { OpenAiLlmAdapter } from "@adapters/llm/openai";
+import { MemPalaceAdapter } from "@adapters/mem-palace";
 
 if (import.meta.main) {
   const PORT = 4000;
@@ -26,7 +27,9 @@ if (import.meta.main) {
   const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
   await dynamicRegistry.initialize();
 
-  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort);
+  const palace = new MemPalaceAdapter();
+
+  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace);
 
   const server = new A2AServer({
     port: PORT,

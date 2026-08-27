@@ -48,17 +48,17 @@ server.registerTool("write_file", {
 
 server.registerTool("install_python_dependency", {
   description: "Install a Python package into the persistent environment",
-  inputSchema: { package: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
-}, ({ package }) => {
+  inputSchema: { pkgName: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
+}, ({ pkgName }) => {
   ensurePythonEnv();
-  const proc = Bun.spawnSync(["uv", "add", package], {
+  const proc = Bun.spawnSync(["uv", "add", pkgName], {
     cwd: PYTHON_ENV_DIR,
   });
   if (proc.exitCode !== 0) {
     const stderr = new TextDecoder().decode(proc.stderr);
-    throw new Error(`Failed to install ${package}: ${stderr}`);
+    throw new Error(`Failed to install ${pkgName}: ${stderr}`);
   }
-  return { content: [{ type: "text", text: `Successfully installed ${package} into .python_env` }] };
+  return { content: [{ type: "text", text: `Successfully installed ${pkgName} into .python_env` }] };
 });
 
 server.registerTool("run_python", {
@@ -135,7 +135,7 @@ server.registerTool("list_skills", {
 registerResources(server, {
   subscriptions,
   projectRoot: process.cwd(),
-  getWorldState: async () => {
+  getWorldState: async (): Promise<any> => {
     try {
       const res = await fetch("http://localhost:4000/.well-known/world-state");
       if (!res.ok) throw new Error(`Orchestrator returned ${res.status}`);

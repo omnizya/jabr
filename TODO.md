@@ -59,6 +59,6 @@
 - [x] **GAP-4: run_python** — persistent uv venv + dependency support
 - [x] **GAP-5: Python agent layer** — Scientist agent
 - [x] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
-- [ ] **GAP-7: Mem-Palace integration**
+- [x] **GAP-7: Mem-Palace integration**
 - [ ] **GAP-8: Headroom integration** (budget awareness)
 - [ ] **GAP-9: ROUTING_TABLE removal cleanup sweep**

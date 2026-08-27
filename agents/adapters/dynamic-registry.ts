@@ -48,25 +48,25 @@ export class DynamicRegistry implements DiscoveryPort {
     return true;
   }
 
-  async getAgentsHealth(): Promise<Array<{name: string, status: any, port: number, skills: string[]}>> {
-    const health = [];
+  async getAgentsHealth(): Promise<Array<{name: string, status: "up" | "down", port: number, lastSeen: string}>> {
+    const health: Array<{name: string, status: "up" | "down", port: number, lastSeen: string}> = [];
     for (const [name, entry] of this.entries) {
       try {
         const url = new URL(entry.url);
         const res = await fetch(`${entry.url}/.well-known/agent-card.json`, { signal: AbortSignal.timeout(2000) });
-        const status = res.ok ? "online" : "offline";
+        const status: "up" | "down" = res.ok ? "up" : "down";
         health.push({
           name,
           status,
           port: url.port ? parseInt(url.port) : 80,
-          skills: entry.tags,
+          lastSeen: new Date().toISOString(),
         });
       } catch {
         health.push({
           name,
-          status: "offline",
+          status: "down",
           port: 0,
-          skills: entry.tags,
+          lastSeen: new Date().toISOString(),
         });
       }
     }
