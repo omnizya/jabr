@@ -18,6 +18,19 @@ export interface JSONRPCResponse extends JSONRPCDefaults {
   error?: { code: number; message: string };
 }
 
+export interface JSONRPCNotification {
+  jsonrpc: "2.0";
+  method: string;
+  params?: unknown;
+}
+
+export function notification(
+  method: string,
+  params?: unknown,
+): JSONRPCNotification {
+  return { jsonrpc: "2.0", method, params };
+}
+
 export function ok(id: SomeId,
   result: unknown): JSONRPCResponse {
   return { jsonrpc: "2.0", id, result };
