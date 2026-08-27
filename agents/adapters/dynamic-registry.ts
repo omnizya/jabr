@@ -128,6 +128,17 @@ export class DynamicRegistry {
   }
 
   /**
+   * Get all registered agent cards.
+   */
+  getAllCards(): Record<string, AgentCard> {
+    const cards: Record<string, AgentCard> = {};
+    for (const [name, entry] of this.entries) {
+      cards[name] = entry.card;
+    }
+    return cards;
+  }
+
+  /**
    * Get the full URL map for backwards compatibility.
    */
   toUrlMap(): Record<string, string> {

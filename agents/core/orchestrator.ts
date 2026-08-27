@@ -4,6 +4,7 @@ import type { AgentRegistryPort } from "../ports/agent-registry.ts";
 import type { TaskStorePort } from "../ports/task-store.ts";
 import type { MemoryStorePort } from "../ports/memory-store.ts";
 import type { DynamicRegistry } from "../adapters/dynamic-registry.ts";
+import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 
 // Keyword routing — exported for testability.
 // Each agent has its own keyword list; orchestrator picks the first match.
@@ -74,12 +75,17 @@ export const ORCHESTRATOR_CARD: AgentCard = {
 export const MAX_HANDOVER_DEPTH = 3;
 
 export class OrchestratorAgent {
+  private cognitiveLoop: CognitiveLoop;
+
   constructor(
     private registry: AgentRegistryPort,
     private taskStore: TaskStorePort,
     private memory: MemoryStorePort,
     private dynamicRegistry?: DynamicRegistry,
-  ) {}
+    cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
+  ) {
+    this.cognitiveLoop = new CognitiveLoop(cognitiveConfig);
+  }
 
   get card(): AgentCard {
     return ORCHESTRATOR_CARD;
@@ -117,6 +123,67 @@ export class OrchestratorAgent {
       return this.dynamicRegistry.getUrl(agentName);
     }
     return undefined;
+  }
+
+  /**
+   * Get all available agent names from the DynamicRegistry.
+   */
+  private getAvailableAgentNames(): string[] {
+    if (!this.dynamicRegistry) return [];
+    const cards = this.dynamicRegistry.getAllCards();
+    return Object.keys(cards);
+  }
+
+  /**
+   * Delegate to multiple agents in parallel and return their responses.
+   */
+  private async delegateToMultiple(
+    agentNames: string[],
+    userText: string,
+  ): Promise<ConsensusInput[]> {
+    const tasks = agentNames
+      .filter((name) => name !== "orchestrator")
+      .map(async (name) => {
+        const url = this.getAgentUrl(name);
+        if (!url) return null;
+        try {
+          const response = await this.registry.delegateTask(url, userText);
+          const card = this.dynamicRegistry?.getCard(name);
+          if (!card) return null;
+          return { agentName: name, card, response } satisfies ConsensusInput;
+        } catch {
+          return null;
+        }
+      });
+
+    const results = await Promise.all(tasks);
+    return results.filter((r): r is ConsensusInput => r !== null);
+  }
+
+  /**
+   * Execute consensus: delegate to multiple agents, evaluate responses, return best.
+   * Used for ambiguous or high-stakes tasks.
+   */
+  async executeConsensus(taskId: string, userText: string): Promise<string> {
+    const available = this.getAvailableAgentNames();
+    if (available.length < 2) {
+      const url = this.getAgentUrl(available[0] ?? "librarian");
+      if (!url) return "No agents available for consensus";
+      return this.registry.delegateTask(url, userText);
+    }
+
+    this.memory.append(`[consensus] Delegating to ${available.length} agents`);
+    const inputs = await this.delegateToMultiple(available, userText);
+
+    if (inputs.length === 0) return "No agents responded";
+
+    const result = this.cognitiveLoop.evaluate(inputs, userText);
+    const topScore = result.scores[0]?.score.toFixed(3) ?? "N/A";
+    this.memory.append(
+      `[consensus] Winner: ${result.winner.agentName} (score: ${topScore})`,
+    );
+
+    return result.synthesized;
   }
 
   /**

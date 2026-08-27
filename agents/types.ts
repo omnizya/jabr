@@ -41,11 +41,12 @@ export interface AgentSkill {
 export interface AgentCard {
   name: string;
   description: string;
-  url: string; // Canonical URL (kept for backwards compat; canonical endpoint)
+  url: string;
   version: string;
   capabilities: AgentCardCapabilities;
   skills: AgentSkill[];
-  supportedInterfaces?: AgentInterface[]; // v1.0: preferred over top-level url
+  supportedInterfaces?: AgentInterface[];
+  successRate?: number; // 0–1, used by CognitiveLoop for weighted voting
 }
 
 export type TaskState =
