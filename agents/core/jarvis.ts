@@ -5,6 +5,7 @@ import type { McpToolPort } from "@ports/mcp-tool-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { KnowledgePort } from "@ports/knowledge-port";
 import type { BudgetPort } from "@ports/budget-port";
+import type { KanbanPort } from "@ports/kanban-port";
 
 export const JARVIS_CARD: AgentCard = {
   name: "Jarvis Agent",
@@ -134,6 +135,7 @@ export class JarvisAgent {
     private skillStore: SkillStorePort,
     private knowledge?: KnowledgePort,
     private budget?: BudgetPort,
+    private kanban?: KanbanPort,
   ) {}
 
   get card(): AgentCard {
@@ -402,6 +404,9 @@ Return JSON: {opportunities[{file, description, effort, impact}]}`;
       }
     }
 
+    // Sync findings to Hermes kanban as tasks
+    await this.syncFindingsToKanban(scan.findings);
+
     return {
       scan,
       dependencies,
@@ -418,55 +423,35 @@ Return JSON: {opportunities[{file, description, effort, impact}]}`;
 
     if (lower.includes("scan") || lower.includes("steward")) {
       const report = await this.steward(workspace);
-      this.storeResult(taskId, report.summary);
+      console.log(`[Jarvis] ${report.summary}`);
       return;
     }
 
     if (lower.includes("dependency") || lower.includes("package")) {
       const report = await this.watchDependencies(workspace);
-      this.storeResult(
-        taskId,
-        `Dependency watch: ${report.outdated.length} outdated packages found.`,
-      );
+      console.log(`[Jarvis] Dependency watch: ${report.outdated.length} outdated packages found.`);
       return;
     }
 
     if (lower.includes("test") || lower.includes("coverage")) {
       const report = await this.analyzeTestGaps(workspace);
-      this.storeResult(
-        taskId,
-        `Test gap analysis: ${report.untestedFiles.length} untested files, ${report.missingEdgeCases.length} missing edge cases.`,
-      );
+      console.log(`[Jarvis] Test gap analysis: ${report.untestedFiles.length} untested files, ${report.missingEdgeCases.length} missing edge cases.`);
       return;
     }
 
     if (lower.includes("doc") || lower.includes("readme")) {
       const report = await this.syncDocs(workspace);
-      this.storeResult(
-        taskId,
-        `Doc sync: ${report.missingReadmes.length} missing READMEs, ${report.staleAdrs.length} stale ADRs.`,
-      );
+      console.log(`[Jarvis] Doc sync: ${report.missingReadmes.length} missing READMEs, ${report.staleAdrs.length} stale ADRs.`);
       return;
     }
 
     if (lower.includes("ai") || lower.includes("automat")) {
       const report = await this.identifyAIEnhancements(workspace);
-      this.storeResult(
-        taskId,
-        `AI enhancements: ${report.opportunities.length} opportunities identified.`,
-      );
+      console.log(`[Jarvis] AI enhancements: ${report.opportunities.length} opportunities identified.`);
       return;
     }
 
-    this.storeResult(
-      taskId,
-      "Jarvis ready. Commands: scan, dependencies, test gaps, docs, AI enhancements.",
-    );
-  }
-
-  private storeResult(taskId: string, text: string): void {
-    // TaskStorePort is not directly available here; result is returned via A2AServer
-    console.log(`[Jarvis] ${text}`);
+    console.log("[Jarvis] Jarvis ready. Commands: scan, dependencies, test gaps, docs, AI enhancements.");
   }
 
   private extractJson(text: string): any {
@@ -525,5 +510,18 @@ Return JSON: {opportunities[{file, description, effort, impact}]}`;
       usageCount: 1,
       successRate: 1.0,
     };
+  }
+
+  private async syncFindingsToKanban(findings: Finding[]): Promise<void> {
+    if (!this.kanban || findings.length === 0) return;
+    try {
+      for (const finding of findings.slice(0, 5)) {
+        await this.kanban.createTask(`[Jarvis] ${finding.category}: ${finding.message.slice(0, 60)}`, {
+          body: `${finding.suggestion}\n\nFile: ${finding.file}${finding.line ? `:${finding.line}` : ""}`,
+        });
+      }
+    } catch (err) {
+      console.error("[Jarvis] Kanban sync failed:", err);
+    }
   }
 }
