@@ -10,11 +10,12 @@ export interface AgentHealth {
 export interface DiscoveryPort {
   initialize(): Promise<void>;
   addAgent(url: string): Promise<boolean>;
-  matchAgent(taskText: string): { name: string; url: string; label: string } | null;
-  getUrl(agentName: string): string | undefined;
-  getCard(agentName: string): AgentCard | undefined;
-  getAgentNames(): string[];
-  getAllCards(): Record<string, AgentCard>;
+  matchAgent(taskText: string): Promise<{ name: string; url: string; label: string } | null>;
+  getUrl(agentName: string): Promise<string | undefined>;
+  getCard(agentName: string): Promise<AgentCard | undefined>;
+  getAgentNames(): Promise<string[]>;
+  getAllCards(): Promise<Record<string, AgentCard>>;
   toUrlMap(): Record<string, string>;
   getAgentsHealth(): Promise<AgentHealth[]>;
+  ensureReady?(): Promise<void>;
 }
