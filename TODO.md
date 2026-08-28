@@ -62,3 +62,9 @@
 - [x] **GAP-7: Mem-Palace integration**
 - [x] **GAP-8: Headroom integration** (budget awareness)
 - [x] **GAP-9: ROUTING_TABLE removal cleanup sweep** — no code refs remain; only historical docs (TODO, ADR, AGENTS.md) reference the removal
+
+## 🔌 9router LLM Default (v0.3.0 → v0.4.0) ✅
+- [x] **NineRouterLlmAdapter** (4a1dae4) — `agents/adapters/llm/9router.ts` extends `OpenAiLlmAdapter`; env `NINEROUTER_URL` (default `http://127.0.0.1:20128`), `NINEROUTER_KEY`, `NINEROUTER_MODEL` (default `openrouter/minimax/minimax-m3:free`)
+- [x] **Gateway hardening** (4a1dae4) — `openai.ts` tolerant of leading whitespace + trailing `data: [DONE]` sentinel (Bun `res.json()` quirk)
+- [x] **Default wiring** (4a1dae4) — orchestrator consensus synthesis uses 9router by default; no OpenAI key required
+- [x] **route-test.ts import fix** (4a1dae4) — `AgentRegistryPort` from `@ports/agent-registry` (unblocked `bun run typecheck`)
