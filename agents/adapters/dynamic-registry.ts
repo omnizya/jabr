@@ -2,10 +2,10 @@ import type { AgentCard, RegistryEntry } from "@agents/types";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { DiscoveryPort } from "@ports/discovery-port";
 
-
 export class DynamicRegistry implements DiscoveryPort {
   private entries: Map<string, RegistryEntry> = new Map();
   private cardCache: Map<string, AgentCard> = new Map();
+  private initialized = false;
 
   constructor(
     private registry: AgentRegistryPort,
@@ -13,23 +13,46 @@ export class DynamicRegistry implements DiscoveryPort {
   ) { }
 
   async initialize(): Promise<void> {
-    const urls = Object.values(this.seedUrls);
+    await this.ensureReady();
+  }
 
-    const cards = await this.registry.discoverAgents(urls);
+  private async discover(): Promise<void> {
+    this.entries.clear();
+    this.cardCache.clear();
 
-    for (const [name, card] of Object.entries(cards)) {
-      const url = this.seedUrls[name] ?? "";
-      if (!url) continue;
+    for (const [name, url] of Object.entries(this.seedUrls)) {
+      const card = await this.registry.fetchCard(url);
+      if (!card) continue;
 
       const tags = this.extractTags(card);
       this.entries.set(name, { url, card, tags });
       this.cardCache.set(url, card);
     }
 
-    console.log(
-      `[DynamicRegistry] Initialized with ${this.entries.size} agents:`,
-      [...this.entries.keys()].join(", "),
-    );
+    if (this.entries.size > 0) {
+      console.log(
+        `[DynamicRegistry] Initialized with ${this.entries.size} agents:`,
+        [...this.entries.keys()].join(", "),
+      );
+    }
+  }
+
+  async ensureReady(): Promise<void> {
+    if (this.entries.size > 0) return;
+    await this.discoverWithRetry();
+  }
+
+  private async discoverWithRetry(maxAttempts = 30, intervalMs = 1000): Promise<void> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await this.discover();
+      if (this.entries.size > 0) {
+        console.log(`[DynamicRegistry] Agents ready after ${attempt + 1} attempt(s)`);
+        return;
+      }
+      console.log(`[DynamicRegistry] Waiting for agents (attempt ${attempt + 1}/${maxAttempts})...`);
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    console.warn("[DynamicRegistry] No agents discovered after retries");
   }
 
   async addAgent(url: string): Promise<boolean> {
@@ -49,6 +72,7 @@ export class DynamicRegistry implements DiscoveryPort {
   }
 
   async getAgentsHealth(): Promise<Array<{name: string, status: "up" | "down", port: number, lastSeen: string}>> {
+    await this.ensureReady();
     const health: Array<{name: string, status: "up" | "down", port: number, lastSeen: string}> = [];
     for (const [name, entry] of this.entries) {
       try {
@@ -73,7 +97,8 @@ export class DynamicRegistry implements DiscoveryPort {
     return health;
   }
 
-  matchAgent(taskText: string): { name: string; url: string; label: string } | null {
+  async matchAgent(taskText: string): Promise<{ name: string; url: string; label: string } | null> {
+    await this.ensureReady();
     const lower = taskText.toLowerCase();
     const words = this.extractKeywords(lower);
 
@@ -117,19 +142,23 @@ export class DynamicRegistry implements DiscoveryPort {
     return null;
   }
 
-  getUrl(agentName: string): string | undefined {
+  async getUrl(agentName: string): Promise<string | undefined> {
+    await this.ensureReady();
     return this.entries.get(agentName)?.url;
   }
 
-  getCard(agentName: string): AgentCard | undefined {
+  async getCard(agentName: string): Promise<AgentCard | undefined> {
+    await this.ensureReady();
     return this.entries.get(agentName)?.card;
   }
 
-  getAgentNames(): string[] {
+  async getAgentNames(): Promise<string[]> {
+    await this.ensureReady();
     return [...this.entries.keys()];
   }
 
-  getAllCards(): Record<string, AgentCard> {
+  async getAllCards(): Promise<Record<string, AgentCard>> {
+    await this.ensureReady();
     const cards: Record<string, AgentCard> = {};
     for (const [name, entry] of this.entries) {
       cards[name] = entry.card;

@@ -7,6 +7,7 @@ import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { HeadroomAdapter } from "@adapters/headroom";
+import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 
 if (import.meta.main) {
   const PORT = 4000;
@@ -31,8 +32,9 @@ if (import.meta.main) {
   await dynamicRegistry.initialize();
 
   const palace = new MemPalaceAdapter();
+  const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
 
-  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace);
+  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace, kanban);
 
   const server = new A2AServer({
     port: PORT,

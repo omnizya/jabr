@@ -4,6 +4,7 @@ import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { TaskStorePort } from "@ports/task-store";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { DiscoveryPort } from "@ports/discovery-port";
+import type { KanbanPort } from "@ports/kanban-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 import type { LlmPort } from "@ports/llm-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
@@ -49,6 +50,7 @@ export class OrchestratorAgent {
     private llmPort?: LlmPort,
     cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
     private knowledge?: KnowledgePort,
+    private kanban?: KanbanPort,
   ) {
     this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
   }
@@ -57,8 +59,9 @@ export class OrchestratorAgent {
     return ORCHESTRATOR_CARD;
   }
 
-  routeTask(text: string): { agentName: string; label: string } {
-    const match = this.dynamicRegistry?.matchAgent(text);
+  async routeTask(text: string): Promise<{ agentName: string; label: string }> {
+    await this.dynamicRegistry?.ensureReady?.();
+    const match = await this.dynamicRegistry?.matchAgent(text);
     if (match) {
       return { agentName: match.name, label: match.label };
     }
@@ -106,16 +109,16 @@ export class OrchestratorAgent {
     }
   }
 
-  private getAgentUrl(agentName: string): string | undefined {
+  private async getAgentUrl(agentName: string): Promise<string | undefined> {
     if (this.dynamicRegistry) {
       return this.dynamicRegistry.getUrl(agentName);
     }
     return undefined;
   }
 
-  private getAvailableAgentNames(): string[] {
+  private async getAvailableAgentNames(): Promise<string[]> {
     if (!this.dynamicRegistry) return [];
-    const cards = this.dynamicRegistry.getAllCards();
+    const cards = await this.dynamicRegistry.getAllCards();
     return Object.keys(cards);
   }
 
@@ -126,11 +129,11 @@ export class OrchestratorAgent {
     const tasks = agentNames
       .filter((name) => name !== "orchestrator")
       .map(async (name) => {
-        const url = this.getAgentUrl(name);
+        const url = await this.getAgentUrl(name);
         if (!url) return null;
         try {
           const response = await this.registry.delegateTask(url, userText);
-          const card = this.dynamicRegistry?.getCard(name);
+          const card = await this.dynamicRegistry?.getCard(name);
           if (!card) return null;
           return { agentName: name, card, response } satisfies ConsensusInput;
         } catch {
@@ -143,9 +146,9 @@ export class OrchestratorAgent {
   }
 
   async executeConsensus(taskId: string, userText: string): Promise<string> {
-    const available = this.getAvailableAgentNames();
+    const available = await this.getAvailableAgentNames();
     if (available.length < 2) {
-      const url = this.getAgentUrl(available[0] ?? "librarian");
+      const url = await this.getAgentUrl(available[0] ?? "librarian");
       if (!url) return "No agents available for consensus";
       return this.registry.delegateTask(url, userText);
     }
@@ -191,12 +194,12 @@ export class OrchestratorAgent {
         }
       }
 
-      const { agentName, label } = this.routeTask(userText);
+      const { agentName, label } = await this.routeTask(userText);
       this.memory.append(
         `[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}`,
       );
 
-      const agentUrl = this.getAgentUrl(agentName);
+      const agentUrl = await this.getAgentUrl(agentName);
       if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
 
       if (this.registry instanceof A2AClient && this.registry.budget) {
@@ -287,6 +290,9 @@ export class OrchestratorAgent {
         contextId: taskId,
       } as A2AMessage);
       this.memory.append(`Completed task. Result length: ${result.length} chars`);
+
+      // Sync completed task to Hermes kanban
+      await this.syncToKanban(taskId, result);
     } catch (e) {
       this.taskStore.updateState(taskId, "failed");
       this.taskStore.appendMessage(taskId, {
@@ -296,6 +302,20 @@ export class OrchestratorAgent {
         parts: [{ kind: "text", text: `Error: ${String(e)}` }],
         contextId: taskId,
       } as A2AMessage);
+    }
+  }
+
+  private async syncToKanban(taskId: string, result: string): Promise<void> {
+    if (!this.kanban) return;
+    try {
+      const task = this.taskStore.get(taskId);
+      if (!task) return;
+      const title = task.messages.find((m) => m.role === "user")?.parts.find((p) => p.kind === "text")?.text ?? "Jabr task";
+      await this.kanban.createTask(`[Jabr] ${title.slice(0, 80)}`, {
+        body: `Task ID: ${taskId}\nResult: ${result.slice(0, 500)}`,
+      });
+    } catch (err) {
+      console.error("[Orchestrator] Kanban sync failed:", err);
     }
   }
 }
