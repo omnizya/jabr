@@ -30,6 +30,6 @@ const seed = { oracle:"http://localhost:4001", librarian:"http://localhost:4002"
 const dyn = new DynamicRegistry(new MockRegistry(seed), seed);
 await dyn.initialize();
 for (const t of ["find all TODO comments", "review this function for edge cases", "review this module for architecture concerns", "review the edge cases in this design"]) {
-  const m = dyn.matchAgent(t);
+  const m = await dyn.matchAgent(t);
   console.log(JSON.stringify(t), "->", m?.name, m?.label);
 }

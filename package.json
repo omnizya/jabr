@@ -25,7 +25,8 @@
     "mcp": "bun mcp-servers/tools.ts",
     "acp-bridge": "bun agents/run/acp-bridge.ts",
     "demo": "bun run --parallel scripts/demo.ts",
-    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer jarvis mcp acp-bridge",
+    "scientist": "bun agents/run/scientist.ts",
+    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer jarvis scientist mcp acp-bridge",
     "typecheck": "bun run tsc --noEmit"
   },
   "devDependencies": {
