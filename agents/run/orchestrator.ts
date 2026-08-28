@@ -24,6 +24,7 @@ if (import.meta.main) {
     designer: "http://localhost:4004",
     fixer: "http://localhost:4005",
     scientist: "http://localhost:4006",
+    jarvis: "http://localhost:1337",
   };
 
   const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);

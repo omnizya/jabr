@@ -21,10 +21,11 @@
     "explorer": "bun agents/run/explorer.ts",
     "designer": "bun agents/run/designer.ts",
     "fixer": "bun agents/run/fixer.ts",
+    "jarvis": "bun agents/run/jarvis.ts",
     "mcp": "bun mcp-servers/tools.ts",
     "acp-bridge": "bun agents/run/acp-bridge.ts",
     "demo": "bun run --parallel scripts/demo.ts",
-    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer mcp acp-bridge",
+    "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer jarvis mcp acp-bridge",
     "typecheck": "bun run tsc --noEmit"
   },
   "devDependencies": {

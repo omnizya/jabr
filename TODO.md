@@ -68,3 +68,10 @@
 - [x] **Gateway hardening** (4a1dae4) — `openai.ts` tolerant of leading whitespace + trailing `data: [DONE]` sentinel (Bun `res.json()` quirk)
 - [x] **Default wiring** (4a1dae4) — orchestrator consensus synthesis uses 9router by default; no OpenAI key required
 - [x] **route-test.ts import fix** (4a1dae4) — `AgentRegistryPort` from `@ports/agent-registry` (unblocked `bun run typecheck`)
+
+## 🤖 Jarvis — Proactive Codebase Steward (v0.4.0)
+- [x] **Jarvis Agent** — `agents/core/jarvis.ts` + `agents/run/jarvis.ts` on port 1337
+- [x] **Scan capabilities** — codebase scan, dependency watch, test gap analysis, doc sync, AI enhancement identification
+- [x] **Profile generation** — auto-creates idempotent skills for recurring patterns
+- [x] **Integration** — LlmPort (9router), SearchPort, McpToolPort, SkillStorePort, KnowledgePort (MemPalace), BudgetPort (Headroom)
+- [x] **Script + dev** — `jarvis` script added, included in `bun run dev`
