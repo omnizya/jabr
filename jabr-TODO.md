@@ -121,7 +121,7 @@ export function createLlmAdapter(): LlmPort { ... }
 
 ---
 
-## GAP-8 · Headroom integration
+## GAP-8 · Headroom integration ✅
 **What it is**: Headroom is a rate-limit + budget-awareness layer for LLM calls — tracks token usage per agent, enforces per-session caps, emits warnings before hitting provider limits. Prevents runaway consensus loops from burning quota.
 **Files**: new `agents/adapters/headroom.ts`, `agents/ports/budget-port.ts`
 **Task**:
