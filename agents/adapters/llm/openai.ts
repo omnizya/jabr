@@ -1,4 +1,4 @@
-import type { LlmPort, LlmRequest, LlmResponse } from "@agents/ports/llm-port";
+import type { LlmPort, LlmRequest, LlmResponse } from "@ports/llm-port";
 import type { BudgetPort } from "@ports/budget-port";
 
 export class OpenAiLlmAdapter implements LlmPort {

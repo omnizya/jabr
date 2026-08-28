@@ -1,7 +1,7 @@
 import { TaskMemory } from "@adapters/task-memory";
 import { SkillFS } from "@adapters/skill-fs";
 import { OracleAgent, ORACLE_CARD } from "@core/oracle";
-import { runAgent } from "./serve";
+import { runAgent } from "./serve.ts";
 
 if (import.meta.main) {
   const taskStore = new TaskMemory();

@@ -1,6 +1,6 @@
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { AgentCard } from "@agents/types";
-import type { JSONRPCRequest, JSONRPCResponse } from "@agents/utils/rpc";
+import type { JSONRPCRequest, JSONRPCResponse } from "@utils/rpc";
 import { BudgetExhaustedError } from "@ports/budget-port";
 import type { BudgetPort } from "@ports/budget-port";
 
@@ -8,6 +8,12 @@ export class A2AClient implements AgentRegistryPort {
   private cache: Map<string, AgentCard> = new Map();
 
   constructor(public readonly budget?: BudgetPort) {
+  }
+
+  private deriveAgentName(agentUrl: string): string | undefined {
+    const url = agentUrl.toLowerCase();
+    const known = ["scientist", "fixer", "oracle", "designer", "librarian", "explorer", "jarvis"];
+    return known.find((name) => url.includes(name));
   }
 
 
@@ -32,44 +38,14 @@ export class A2AClient implements AgentRegistryPort {
     }
   }
 
-  async discoverAgents(urls: string[]): Promise<Record<string, AgentCard>> {
-    const entries = await Promise.all(
-      urls.map(async (url) => {
-        try {
-          const card = await this.fetchCard(url);
-          if (!card) {
-            console.error(`[A2AClient] discoverAgents: no card for ${url}`);
-            return null;
-          }
-          return [card.name, card] as const;
-        } catch (err) {
-          console.error(`[A2AClient] discoverAgents: failed to fetch card for ${url}:`, err);
-          return null;
-        }
-      }),
-    );
+  async delegateTask(agentUrl: string, text: string, agentName?: string): Promise<string> {
+    // Budget check before dispatch. Prefer the explicit agent name (seed key) when
+    // provided; fall back to a best-effort URL substring match only as a last resort.
+    const name = agentName ?? this.deriveAgentName(agentUrl);
 
-    const result: Record<string, AgentCard> = {};
-    for (const entry of entries) {
-      if (entry) {
-        result[entry[0]] = entry[1];
-      }
-    }
-    return result;
-  }
-
-  async delegateTask(agentUrl: string, text: string): Promise<string> {
-    // Budget check before dispatch
-    if (this.budget) {
-      const url = new URL(agentUrl);
-      const agentName = url.pathname.includes("scientist") ? "scientist" : 
-                        url.pathname.includes("fixer") ? "fixer" :
-                        url.pathname.includes("oracle") ? "oracle" :
-                        url.pathname.includes("designer") ? "designer" :
-                        url.pathname.includes("librarian") ? "librarian" : "unknown";
-      
-      if (this.budget.isExhausted(agentName)) {
-        throw new BudgetExhaustedError(agentName, await this.budget.remaining(agentName));
+    if (this.budget && name) {
+      if (this.budget.isExhausted(name)) {
+        throw new BudgetExhaustedError(name, await this.budget.remaining(name));
       }
     }
 

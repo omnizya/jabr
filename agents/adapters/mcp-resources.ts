@@ -1,8 +1,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { readFileSync, existsSync, readdirSync } from "fs";
-import { join } from "path";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { WorldState } from "@agents/types";
 import type { SubscriptionManager } from "@adapters/subscription-manager";
 

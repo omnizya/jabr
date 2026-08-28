@@ -3,7 +3,7 @@ import { SkillFS } from "@adapters/skill-fs";
 import { Search9Router } from "@adapters/search-9router";
 import { LibrarianAgent, LIBRARIAN_CARD } from "@core/librarian";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
-import { runAgent } from "./serve";
+import { runAgent } from "./serve.ts";
 
 if (import.meta.main) {
   const taskStore = new TaskMemory();

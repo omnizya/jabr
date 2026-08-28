@@ -1,6 +1,6 @@
 import { TaskMemory } from "@adapters/task-memory";
 import { ExplorerAgent, EXPLORER_CARD } from "@core/explorer";
-import { runAgent } from "./serve";
+import { runAgent } from "./serve.ts";
 
 if (import.meta.main) {
   const taskStore = new TaskMemory();

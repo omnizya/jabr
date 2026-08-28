@@ -4,17 +4,13 @@ import type { AgentRegistryPort } from "@ports/agent-registry";
 
 class MockRegistry implements AgentRegistryPort {
   constructor(private seed: Record<string,string>) {}
-  async discoverAgents(urls: string[]): Promise<Record<string, AgentCard>> {
+  async fetchCard(url: string): Promise<AgentCard|null> {
     const inv: Record<string,string> = {};
     for (const [k,v] of Object.entries(this.seed)) inv[v]=k;
-    const out: Record<string, AgentCard> = {};
-    for (const url of urls) {
-      const name = inv[url]!;
-      out[name] = { name: `${name} Agent`, description:"", url, version:"1.0.0", capabilities:{}, skills: MOCK_SKILLS[name] } as AgentCard;
-    }
-    return out;
+    const name = inv[url];
+    if (!name) return null;
+    return { name: `${name} Agent`, description:"", url, version:"1.0.0", capabilities:{}, skills: MOCK_SKILLS[name] } as AgentCard;
   }
-  async fetchCard(url: string): Promise<AgentCard|null> { return null; }
   async delegateTask(): Promise<string> { return ""; }
 }
 

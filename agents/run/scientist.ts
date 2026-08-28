@@ -1,6 +1,6 @@
-import { McpClientAdapter } from "@agents/adapters/mcp-client";
-import { ScientistAgent } from "@agents/core/scientist";
-import { A2AServer } from "@agents/adapters/http/a2a-server";
+import { McpClientAdapter } from "@adapters/mcp-client";
+import { ScientistAgent } from "@core/scientist";
+import { A2AServer } from "@adapters/http/a2a-server";
 
 const port = 4006;
 const mcpClient = new McpClientAdapter();

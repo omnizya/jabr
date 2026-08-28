@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { McpToolPort, McpToolResult } from "@agents/ports/mcp-tool-port";
+import type { McpToolPort, McpToolResult } from "@ports/mcp-tool-port";
 
 export class McpClientAdapter implements McpToolPort {
   private process: any = null;

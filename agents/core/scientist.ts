@@ -1,5 +1,5 @@
 import type { AgentCard, AgentSkill } from "@agents/types";
-import type { McpToolPort } from "@agents/ports/mcp-tool-port";
+import type { McpToolPort } from "@ports/mcp-tool-port";
 
 export class ScientistAgent {
   public readonly card: AgentCard = {

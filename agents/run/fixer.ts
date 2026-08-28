@@ -1,7 +1,7 @@
 import { TaskMemory } from "@adapters/task-memory";
 import { SkillFS } from "@adapters/skill-fs";
 import { FixerAgent, FIXER_CARD } from "@core/fixer";
-import { runAgent, extractLastResponse } from "./serve";
+import { runAgent, extractLastResponse } from "./serve.ts";
 
 if (import.meta.main) {
   const taskStore = new TaskMemory();

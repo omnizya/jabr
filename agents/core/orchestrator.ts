@@ -8,8 +8,6 @@ import type { KanbanPort } from "@ports/kanban-port";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 import type { LlmPort } from "@ports/llm-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
-import { A2AClient } from "@adapters/a2a-client";
-import { BudgetExhaustedError } from "@ports/budget-port";
 
 
 export const ORCHESTRATOR_CARD: AgentCard = {
@@ -59,21 +57,22 @@ export class OrchestratorAgent {
     return ORCHESTRATOR_CARD;
   }
 
-  async routeTask(text: string): Promise<{ agentName: string; label: string }> {
+  async routeTask(text: string): Promise<{ agentName: string; label: string } | null> {
     await this.dynamicRegistry?.ensureReady?.();
     const match = await this.dynamicRegistry?.matchAgent(text);
     if (match) {
       return { agentName: match.name, label: match.label };
     }
-    return { agentName: "librarian", label: "Librarian Agent" };
+    return null;
   }
 
   async getWorldState(): Promise<any> {
     const agents = await this.dynamicRegistry?.getAgentsHealth() ?? [];
     
     // Aggregate filesystem metrics (mirroring old tools.ts logic)
-    const memoryDir = "/home/m7r/Projects/Labs/agent-lab/memory";
-    const skillsDir = "/home/m7r/Projects/Labs/agent-lab/skills";
+    const root = process.cwd();
+    const memoryDir = `${root}/memory`;
+    const skillsDir = `${root}/skills`;
     
     let lastUpdated: string | undefined;
     try {
@@ -132,7 +131,7 @@ export class OrchestratorAgent {
         const url = await this.getAgentUrl(name);
         if (!url) return null;
         try {
-          const response = await this.registry.delegateTask(url, userText);
+          const response = await this.registry.delegateTask(url, userText, name);
           const card = await this.dynamicRegistry?.getCard(name);
           if (!card) return null;
           return { agentName: name, card, response } satisfies ConsensusInput;
@@ -148,9 +147,10 @@ export class OrchestratorAgent {
   async executeConsensus(taskId: string, userText: string): Promise<string> {
     const available = await this.getAvailableAgentNames();
     if (available.length < 2) {
-      const url = await this.getAgentUrl(available[0] ?? "librarian");
+      const agentName = available[0] ?? "librarian";
+      const url = await this.getAgentUrl(agentName);
       if (!url) return "No agents available for consensus";
-      return this.registry.delegateTask(url, userText);
+      return this.registry.delegateTask(url, userText, agentName);
     }
 
     this.memory.append(`[consensus] Delegating to ${available.length} agents`);
@@ -194,7 +194,11 @@ export class OrchestratorAgent {
         }
       }
 
-      const { agentName, label } = await this.routeTask(userText);
+      const routed = await this.routeTask(userText);
+      if (!routed) {
+        throw new Error("No agents discovered — cannot route task");
+      }
+      const { agentName, label } = routed;
       this.memory.append(
         `[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}`,
       );
@@ -202,20 +206,7 @@ export class OrchestratorAgent {
       const agentUrl = await this.getAgentUrl(agentName);
       if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
 
-      if (this.registry instanceof A2AClient && this.registry.budget) {
-        const url = agentUrl;
-        const agentName = url.includes("scientist") ? "scientist" : 
-                          url.includes("fixer") ? "fixer" :
-                          url.includes("oracle") ? "oracle" :
-                          url.includes("designer") ? "designer" :
-                          url.includes("librarian") ? "librarian" : "unknown";
-        
-        if (this.registry.budget.isExhausted(agentName)) {
-          throw new BudgetExhaustedError(agentName, await this.registry.budget.remaining(agentName));
-        }
-      }
-
-      const result = await this.registry.delegateTask(agentUrl, augmentedText);
+      const result = await this.registry.delegateTask(agentUrl, augmentedText, agentName);
 
       const handover = decodeHandover(result);
 

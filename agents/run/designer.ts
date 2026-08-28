@@ -1,7 +1,7 @@
 import { TaskMemory } from "@adapters/task-memory";
 import { ImageGen9Router } from "@adapters/image-gen-9router";
 import { DesignerAgent, DESIGNER_CARD } from "@core/designer";
-import { runAgent } from "./serve";
+import { runAgent } from "./serve.ts";
 
 if (import.meta.main) {
   const taskStore = new TaskMemory();

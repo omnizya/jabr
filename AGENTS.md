@@ -66,7 +66,6 @@ agents/
 ```
 
 **Rule:** Core modules never import adapters. Adapters implement port interfaces. Run modules do all wiring.
-**Exception:** `core/orchestrator.ts` imports `A2AClient` for an `instanceof` budget check — the only core→adapter import.
 
 ## Agents
 
@@ -205,10 +204,11 @@ Core modules use relative imports for ports/types only.
 
 ## Architecture notes
 
-- **Routing**: Pure tag-based routing. `OrchestratorAgent.routeTask()` delegates entirely to `DynamicRegistry.matchAgent(text)`, which scores each registered agent's `AgentSkill.tags` (seeded from every specialist's `AgentCard`) against the task text and returns the best match. No keyword table — `ROUTING_TABLE` was removed (GAP-1). Scoring: +2 per tag substring in task text, +1 per keyword overlap (stopwords filtered, len>2). **Fallback is the FIRST registered agent (oracle), not Librarian** — Librarian is only used when the registry is empty.
-- **Handover**: A specialist can return `%%HANDOVER%%` + JSON `{transferTo, reason, context}`; orchestrator recurses with a child task (referenceTaskIds chain), max depth 3.
+- **Routing**: Pure tag-based routing. `OrchestratorAgent.routeTask()` delegates entirely to `DynamicRegistry.matchAgent(text)`, which scores each registered agent's `AgentSkill.tags` (seeded from every specialist's `AgentCard`) against the task text and returns the best match. No keyword table — `ROUTING_TABLE` was removed (GAP-1). Scoring: +2 per tag substring in task text, +1 per keyword overlap (stopwords filtered, len>2). `matchAgent` falls back to the FIRST registered agent (oracle) when no tag matches. `routeTask` returns `null` when the registry is EMPTY — the caller (`executeWithDepth`) then throws `"No agents discovered — cannot route task"`. Do NOT return a hardcoded agent name from `routeTask` on empty registry: `getAgentUrl` returns `undefined` for it and the old `"librarian"` fallback crashed with `No URL configured for agent`.
+- **Handover**: Any specialist can return `%%HANDOVER%%` + JSON `{transferTo, reason, context}`; orchestrator recurses with a child task (referenceTaskIds chain), max depth 3 (`MAX_HANDOVER_DEPTH`). `transferTo` must be a **seed key** (oracle, fixer, ...) resolvable by `getAgentUrl`. **Currently DORMANT by design**: `encodeHandover` is defined but no specialist calls it. Specialists are deterministic keyword matchers (not LLM-driven), so they have no reasoning step to "decide" it's the wrong lane — and hardcoding handover rules would just duplicate the router. Only `jarvis` and the orchestrator's consensus loop use an LLM. Wire handover into a specialist only when it becomes LLM-driven (then it can genuinely reason about mis-routing). `decodeHandover` does `JSON.parse` on everything after the marker with no trailing-text tolerance — the marker must be the LAST thing in the result.
 - **Consensus**: `executeConsensus` delegates to ALL agents, scores via `CognitiveLoop` (successRate×0.4, length>100 chars +0.2, word-overlap×0.3, tag hits×0.1, cap 1.0; defaults: judge=oracle, minAgents=2, confidence 0.7), synthesizes via LLM (temp 0.3) or markdown ranking.
-- **Budget**: `HeadroomAdapter` tracks per-agent token usage; env caps `JABR_TOKEN_CAP_<AGENT>` (default 100000). Exhausted budget throws `BudgetExhaustedError` before delegation.
+- **Budget**: `HeadroomAdapter` tracks per-agent token usage; env caps `JABR_TOKEN_CAP_<AGENT>` (default 100000). Exhausted budget throws `BudgetExhaustedError` before delegation. Budget name comes from the explicit seed-key `agentName` passed to `delegateTask(agentUrl, text, agentName?)`; `A2AClient.deriveAgentName()` (URL substring scan over scientist/fixer/oracle/designer/librarian/explorer/jarvis) is only a last-resort fallback.
+- **Discovery**: `DynamicRegistry.discover()` iterates `seedUrls` (keyed by seed keys: oracle, librarian, ...) and calls `registry.fetchCard(url)` per URL, registering each agent under its **seed key** (not its self-declared `card.name`). `A2AClient.fetchCard` caches cards by URL. The old `discoverAgents()` (map keyed by `card.name`) was removed — it silently dropped every entry because `seedUrls[card.name]` was undefined, leaving the registry empty.
 - **LLM**: Default is `NineRouterLlmAdapter` (`agents/adapters/llm/9router.ts`) — OpenAI-compatible 9router gateway. Env `NINEROUTER_URL` (default http://127.0.0.1:20128), `NINEROUTER_KEY`, `NINEROUTER_MODEL` (default `openrouter/minimax/minimax-m3:free`). Consumes "openai" budget. `OpenAiLlmAdapter` (`JABR_OPENAI_API_KEY`/`JABR_OPENAI_BASE_URL`/`JABR_OPENAI_MODEL`) still exists but is only used if constructed directly.
 - **Knowledge**: `MemPalaceAdapter` stores `memory/palace/<slug>.json`; orchestrator augments depth-0 tasks with top-3 entries (tags +5, slug +3, content word +1).
 - **ACP bridge**: Reads `ORCHESTRATOR_URL` env var (default `http://localhost:4000`).
@@ -221,6 +221,7 @@ Core modules use relative imports for ports/types only.
 ## Notes
 
 - `bun run typecheck` runs `tsc --noEmit`; no lint or test scripts configured
+- `getWorldState()` in `core/orchestrator.ts` resolves `memory/` and `skills/` relative to `process.cwd()` — do NOT hardcode absolute paths (the old `/home/m7r/...` paths broke on other checkouts).
 - All A2A endpoints return CORS `Access-Control-Allow-Origin: *`
 - `index.ts` is a stub, NOT the entrypoint (stale comment mentions coder/researcher)
 - Scientist's MCP client speaks raw JSON-RPC over stdio with a single-response listener — fragile by design

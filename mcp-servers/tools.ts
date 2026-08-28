@@ -1,11 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { registerResources } from "@adapters/mcp-resources";
 import { SubscriptionManager } from "@adapters/subscription-manager";
-import pkg from "../package.json"
+import pkg from "../package.json";
 
 const subscriptions = new SubscriptionManager();
 

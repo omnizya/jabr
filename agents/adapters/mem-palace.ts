@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { KnowledgeEntry, KnowledgePort } from "@ports/knowledge-port";
 
 export class MemPalaceAdapter implements KnowledgePort {
