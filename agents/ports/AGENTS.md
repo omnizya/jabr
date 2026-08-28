@@ -42,12 +42,24 @@ export interface SearchPort {
   `budget-port.ts` exports `BudgetExhaustedError extends Error`. This is the
   exception, not the rule.
 
-## Known inconsistencies to avoid
+## Forward-looking stubs (not dead code)
 
-- `resource-port.ts` (`ResourcePort`) is **dead** — never implemented or consumed.
-  Do not add to it; prefer removing it.
-- `discovery-port.ts` `getAgentNames()` and `toUrlMap()` are **dead** — implemented
-  in `DynamicRegistry` but never called. Don't add unused methods.
+Jabr is not 100% implemented. Some interfaces/methods are declared ahead of the
+features that will consume them — treat these as **planned contracts**, not cruft:
+
+- `resource-port.ts` (`ResourcePort`) — declared but not yet implemented or
+  consumed. It is the intended contract for resource exposure; keep it until the
+  resource feature lands.
+- `discovery-port.ts` `getAgentNames()` and `toUrlMap()` — implemented in
+  `DynamicRegistry` but not yet called. They are the planned discovery surface;
+  keep them for the feature that will use them.
+
+Rule: don't delete a stub just because it's unused today — but do not add *new*
+speculative methods either. If you implement the consuming feature, wire these up;
+only remove a stub if it is genuinely obsolete.
+
+## Other port conventions
+
 - Keep value exports rare; if a port needs an error type, follow the
   `BudgetExhaustedError` pattern (a small `extends Error` class).
 
