@@ -4,7 +4,7 @@ import { DynamicRegistry } from "@adapters/dynamic-registry";
 import { TaskMemory } from "@adapters/task-memory";
 import { MemoryFS } from "@adapters/memory-fs";
 import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
-import { OpenAiLlmAdapter } from "@adapters/llm/openai";
+import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { HeadroomAdapter } from "@adapters/headroom";
 
@@ -15,7 +15,7 @@ if (import.meta.main) {
   const registryClient = new A2AClient(budget);
   const taskStore = new TaskMemory();
   const memory = new MemoryFS("memory/orchestrator.md");
-  const llmPort = new OpenAiLlmAdapter(budget);
+  const llmPort = new NineRouterLlmAdapter(budget);
 
   const seedUrls: Record<string, string> = {
     oracle: "http://localhost:4001",

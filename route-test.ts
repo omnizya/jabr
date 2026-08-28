@@ -1,5 +1,6 @@
 import { DynamicRegistry } from "@adapters/dynamic-registry";
-import type { AgentCard, AgentRegistryPort } from "@agents/types";
+import type { AgentCard } from "@agents/types";
+import type { AgentRegistryPort } from "@ports/agent-registry";
 
 class MockRegistry implements AgentRegistryPort {
   constructor(private seed: Record<string,string>) {}

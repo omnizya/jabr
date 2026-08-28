@@ -6,10 +6,13 @@ export class OpenAiLlmAdapter implements LlmPort {
   private baseUrl: string;
   private model: string;
 
-  constructor(private budget?: BudgetPort) {
-    this.apiKey = process.env.JABR_OPENAI_API_KEY || "";
-    this.baseUrl = process.env.JABR_OPENAI_BASE_URL || "https://api.openai.com/v1";
-    this.model = process.env.JABR_OPENAI_MODEL || "gpt-4o";
+  constructor(
+    private budget?: BudgetPort,
+    opts?: { baseUrl?: string; apiKey?: string; model?: string },
+  ) {
+    this.apiKey = opts?.apiKey ?? process.env.JABR_OPENAI_API_KEY ?? "";
+    this.baseUrl = opts?.baseUrl ?? process.env.JABR_OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+    this.model = opts?.model ?? process.env.JABR_OPENAI_MODEL ?? "gpt-4o";
   }
 
   async generate(request: LlmRequest): Promise<LlmResponse> {
@@ -35,7 +38,16 @@ export class OpenAiLlmAdapter implements LlmPort {
       throw new Error(`LLM API Error: ${response.status} ${await response.text()}`);
     }
 
-    const data = await response.json() as any;
+    // 9router appends a streaming `data: [DONE]` sentinel to non-stream
+    // responses, and Bun's res.json() rejects leading whitespace — so
+    // extract the JSON object between the first `{` and last `}`.
+    const raw = await response.text();
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start === -1 || end <= start) {
+      throw new Error(`LLM API Error: invalid JSON response: ${raw.slice(0, 200)}`);
+    }
+    const data = JSON.parse(raw.slice(start, end + 1)) as any;
     const choice = data.choices[0];
 
     if (this.budget) {
