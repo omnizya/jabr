@@ -12,37 +12,61 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python tools). No build step — run
 ```
 agents/
 ├── core/              # Domain logic — ZERO infrastructure imports
-│   ├── orchestrator.ts   # Keyword routing, delegation
+│   ├── orchestrator.ts   # Routing, delegation, handover, memory
+│   ├── cognitive-loop.ts # Consensus scoring + synthesis
 │   ├── oracle.ts         # Code review, simplification, architecture
 │   ├── fixer.ts          # Bug fixes, code generation, mechanical impl
 │   ├── librarian.ts      # Docs, web research, code search
 │   ├── explorer.ts       # Fast codebase recon, file search
-│   └── designer.ts       # UI/UX design, responsive layouts
+│   ├── designer.ts       # UI/UX design, responsive layouts
+│   └── scientist.ts      # Python data analysis via MCP tools
 ├── ports/             # Interfaces (import type only)
 │   ├── agent-registry.ts
 │   ├── task-store.ts
 │   ├── memory-store.ts
-│   └── skill-store.ts
+│   ├── skill-store.ts
+│   ├── discovery-port.ts
+│   ├── budget-port.ts
+│   ├── llm-port.ts
+│   ├── search-port.ts
+│   ├── knowledge-port.ts
+│   ├── image-gen-port.ts
+│   ├── mcp-tool-port.ts
+│   └── resource-port.ts
 ├── adapters/          # Concrete implementations
 │   ├── http/
 │   │   ├── a2a-server.ts   # Bun.serve A2A HTTP server
 │   │   └── stdio-bridge.ts # ACP stdio → A2A HTTP proxy
 │   ├── a2a-client.ts       # HTTP client implementing AgentRegistryPort
+│   ├── dynamic-registry.ts # Tag-scored agent matching
+│   ├── headroom.ts         # Per-agent token budget (BudgetPort)
+│   ├── llm/openai.ts       # OpenAiLlmAdapter (LlmPort)
+│   ├── mem-palace.ts       # KnowledgePort (memory/palace/*.json)
 │   ├── memory-fs.ts        # Filesystem MemoryStorePort
+│   ├── mcp-client.ts       # Spawns MCP server, raw JSON-RPC over stdio
+│   ├── mcp-resources.ts    # jabr:// resources + subscriptions
+│   ├── search-9router.ts   # SearchPort via NINEROUTER
+│   ├── image-gen-9router.ts# ImageGenPort via NINEROUTER
 │   ├── skill-fs.ts         # Filesystem SkillStorePort
+│   ├── subscription-manager.ts
 │   └── task-memory.ts      # In-memory TaskStorePort
 ├── types.ts           # Shared TypeScript types
+├── utils/
+│   └── rpc.ts             # ok/err/corsHeaders JSON-RPC helpers
 └── run/               # Composition roots (wire ports → core)
+    ├── serve.ts           # runAgent() factory shared by all specialists
     ├── orchestrator.ts     # Port 4000
     ├── oracle.ts           # Port 4001
     ├── librarian.ts        # Port 4002
     ├── explorer.ts         # Port 4003
     ├── designer.ts         # Port 4004
     ├── fixer.ts            # Port 4005
+    ├── scientist.ts        # Port 4006
     └── acp-bridge.ts       # stdio, reads ORCHESTRATOR_URL env
 ```
 
 **Rule:** Core modules never import adapters. Adapters implement port interfaces. Run modules do all wiring.
+**Exception:** `core/orchestrator.ts` imports `A2AClient` for an `instanceof` budget check — the only core→adapter import.
 
 ## Agents
 
@@ -54,14 +78,24 @@ agents/
 | Explorer         | 4003  | A2A server | Fast codebase recon, file search              |
 | Designer         | 4004  | A2A server | UI/UX design, responsive layouts              |
 | Fixer            | 4005  | A2A server | Bug fixes, code generation, mechanical impl   |
+| Scientist        | 4006  | A2A server | Python data analysis via MCP tools (uv)       |
 | ACP Bridge       | stdio | ACP server | IDE bridge → Orchestrator                     |
 | MCP Tool Server  | stdio | MCP server | fs, uv-python, calculate, skill store         |
+
+**Scientist has no `package.json` script and is NOT in `bun run dev`** — start it with `bun agents/run/scientist.ts` if needed.
 
 ## Protocol layers
 
 - **ACP** (stdio nd-JSON) — IDE ↔ ACP bridge — JSON-RPC 2.0, one JSON object per line
-- **A2A** (HTTP JSON-RPC) — Orchestrator ↔ Specialists — Agent Cards at `/.well-known/agent-card.json`
+- **A2A** (HTTP JSON-RPC) — Orchestrator ↔ Specialists — synchronous `tasks/send` to agent URL root; Agent Cards at `/.well-known/agent-card.json`
 - **MCP** (stdio) — Agents ↔ Tools — `bun mcp-servers/tools.ts`
+
+### A2A wire protocol (a2a-server.ts)
+
+- POST to `/` (root path ONLY) with JSON-RPC method `tasks/send`, params `{message:{parts:[{kind:"text",text}]}}`
+- Any other method → `-32601 Method not found`; any other path → 404
+- Synchronous: server awaits the handler and returns the result in the response — no polling
+- `scripts/demo.ts` is OUT OF SYNC: it posts to `/a2a` with `message/send` and polls `tasks/get`. Current server rejects both. Trust `a2a-server.ts`, not `demo.ts`.
 
 ## Skills system
 
@@ -85,18 +119,9 @@ JSON files created by agents during the self-improvement loop.
 Librarian Agent writes `skills/<slug>.json` after each novel task.
 Skills are idempotent: same task type → slug match → skipped if file exists.
 
-### Skill assignment (opencode.json)
+### Skill assignment
 
-```json
-"agents": {
-  "orchestrator": { "skills": ["deepwork", "verification-planning", "reflect", "worktrees", "codemap"] },
-  "oracle": { "skills": ["simplify"] },
-  "explorer": { "skills": ["codemap"] },
-  "librarian": { "skills": [] },
-  "designer": { "skills": [] },
-  "fixer": { "skills": [] }
-}
-```
+The active `opencode.json` has NO `agents.skills` config (it only sets the 9router provider + explorer subagent). The old assignment block lives in the leftover `opencode.json.need_fix` — do not treat it as live config.
 
 ## Self-improvement loop
 
@@ -106,23 +131,25 @@ Skills are idempotent: same task type → slug match → skipped if file exists.
 
 ## Key files
 
-- `agents/core/` — Domain logic (orchestrator, oracle, fixer, librarian, explorer, designer)
-- `agents/ports/` — Port interfaces (agent-registry, task-store, memory-store, skill-store)
-- `agents/adapters/` — HTTP servers, A2A client, filesystem stores
-- `agents/run/` — Composition roots that wire everything together
-- `agents/types.ts` — Shared TypeScript types (A2A, ACP, Skill, MCP, AgentCard)
+- `agents/core/` — Domain logic (orchestrator, cognitive-loop, oracle, fixer, librarian, explorer, designer, scientist)
+- `agents/ports/` — Port interfaces (agent-registry, task-store, memory-store, skill-store, discovery, budget, llm, search, knowledge, image-gen, mcp-tool, resource)
+- `agents/adapters/` — HTTP servers, A2A client, filesystem stores, 9router clients
+- `agents/run/` — Composition roots that wire everything together (`serve.ts` = shared factory)
+- `agents/types.ts` — Shared TypeScript types (A2A, ACP, Skill, MCP, AgentCard, handover)
 - `mcp-servers/tools.ts` — MCP tool server (Bun, uses McpServer from SDK)
-- `scripts/demo.ts` — End-to-end integration test (requires all agents running)
+- `scripts/demo.ts` — End-to-end integration test (⚠ OUT OF SYNC with current A2A protocol)
+- `route-test.ts` — Standalone routing test with MockRegistry (`bun route-test.ts`)
 - `skills/` — Auto-generated skill documents (JSON)
 - `skills/builtin/` — Static Hermes-style SKILL.md files
 - `memory/orchestrator.md` — Session memory (append-only markdown)
+- `settings.json` — Zed config (⚠ stale path `agents/acp-bridge.ts`; real file is `agents/run/acp-bridge.ts`)
 
 ## Quick start
 
 ```bash
 bun install
 
-# Start all agents in parallel (dev mode)
+# Start all agents in parallel (dev mode) — NOTE: does NOT include Scientist
 bun run dev
 
 # Or individually:
@@ -132,6 +159,10 @@ bun run librarian    # port 4002
 bun run explorer     # port 4003
 bun run designer     # port 4004
 bun run fixer        # port 4005
+bun agents/run/scientist.ts # port 4006 (no script)
+
+# Type check
+bun run typecheck
 
 # Run integration test (agents must be running first)
 bun run demo
@@ -162,21 +193,34 @@ bun run demo
 
 ## Aliased imports
 
-`tsconfig.json` configures `@agents/*` → `./agents/*` path mapping.
+`tsconfig.json` path aliases: `@agents/*` → `./agents/*`, `@core/*` → `./agents/core/*`, `@ports/*` → `./agents/ports/*`, `@adapters/*` → `./agents/adapters/*`, `@run/*` → `./agents/run/*`, `@mcp/*` → `./mcp-servers/*`, `@utils/*` → `./agents/utils/*`.
 Core modules use relative imports for ports/types only.
+
+## TypeScript conventions
+
+- `verbatimModuleSyntax` — use `import type { ... }` for type-only imports or tsc fails
+- `allowImportingTsExtensions` — relative imports use explicit `.ts` extension (`./cognitive-loop.ts`)
+- `noUncheckedIndexedAccess` — array/object index access returns `T | undefined`
+- `noImplicitOverride` — override methods need the `override` keyword
 
 ## Architecture notes
 
-- **Routing**: Pure tag-based routing. `OrchestratorAgent.routeTask()` delegates entirely to `DynamicRegistry.matchAgent(text)`, which scores each registered agent's `AgentSkill.tags` (seeded from every specialist's `AgentCard`) against the task text and returns the best match. No keyword table — `ROUTING_TABLE` was removed (GAP-1). Specialist tags: fixer (fix/bug/error/patch/repair/debug, code/implement/function/algorithm/typescript/write, python, review) → oracle (review/simplify/refactor/architecture/audit) → explorer (find/files/map/structure/grep/search) → designer (layout/responsive/ui, component/button/ux, color/palette) → librarian (research/doc/api/library/how-to/summarize). Unmatched → Librarian.
-- **Task polling**: A2A uses simple polling (200ms interval, 20 retries = ~4s max). Use SSE streaming in production.
+- **Routing**: Pure tag-based routing. `OrchestratorAgent.routeTask()` delegates entirely to `DynamicRegistry.matchAgent(text)`, which scores each registered agent's `AgentSkill.tags` (seeded from every specialist's `AgentCard`) against the task text and returns the best match. No keyword table — `ROUTING_TABLE` was removed (GAP-1). Scoring: +2 per tag substring in task text, +1 per keyword overlap (stopwords filtered, len>2). **Fallback is the FIRST registered agent (oracle), not Librarian** — Librarian is only used when the registry is empty.
+- **Handover**: A specialist can return `%%HANDOVER%%` + JSON `{transferTo, reason, context}`; orchestrator recurses with a child task (referenceTaskIds chain), max depth 3.
+- **Consensus**: `executeConsensus` delegates to ALL agents, scores via `CognitiveLoop` (successRate×0.4, length>100 chars +0.2, word-overlap×0.3, tag hits×0.1, cap 1.0; defaults: judge=oracle, minAgents=2, confidence 0.7), synthesizes via LLM (temp 0.3) or markdown ranking.
+- **Budget**: `HeadroomAdapter` tracks per-agent token usage; env caps `JABR_TOKEN_CAP_<AGENT>` (default 100000). Exhausted budget throws `BudgetExhaustedError` before delegation.
+- **LLM**: Default is `NineRouterLlmAdapter` (`agents/adapters/llm/9router.ts`) — OpenAI-compatible 9router gateway. Env `NINEROUTER_URL` (default http://127.0.0.1:20128), `NINEROUTER_KEY`, `NINEROUTER_MODEL` (default `openrouter/minimax/minimax-m3:free`). Consumes "openai" budget. `OpenAiLlmAdapter` (`JABR_OPENAI_API_KEY`/`JABR_OPENAI_BASE_URL`/`JABR_OPENAI_MODEL`) still exists but is only used if constructed directly.
+- **Knowledge**: `MemPalaceAdapter` stores `memory/palace/<slug>.json`; orchestrator augments depth-0 tasks with top-3 entries (tags +5, slug +3, content word +1).
 - **ACP bridge**: Reads `ORCHESTRATOR_URL` env var (default `http://localhost:4000`).
-- **MCP run_python**: Writes temp `.py` to `/tmp`, runs via `uv run --quiet`, 10s timeout. No persistent venv — each call is isolated.
-- **MCP tools**: `read_file`, `write_file`, `run_python`, `calculate`, `save_skill`, `list_skills`. All paths relative to `process.cwd()`.
+- **MCP run_python**: Writes `.python_env/main.py`, runs `uv run --project .python_env python main.py`, 10s timeout. **Persistent `.python_env/`** (auto-created via `uv init --lib`) — NOT /tmp, NOT ephemeral. `install_python_dependency` = `uv add` into it.
+- **MCP tools**: `read_file`, `write_file`, `run_python`, `calculate`, `save_skill`, `list_skills`, `install_python_dependency`. All paths relative to `process.cwd()`.
+- **MCP resources**: `jabr://world-state`, `jabr://tasks/{taskId}`, `jabr://skills`, `jabr://memory`; subscriptions via `SubscriptionManager`.
 - **Memory**: Append-only markdown. Orchestrator writes to `memory/orchestrator.md`. Compatible with Hermes `memory.md` pattern.
 - **Skills**: JSON files in `skills/` with `name`, `description`, `tags`, `steps`, `createdAt`, `usageCount`, `successRate`.
 
 ## Notes
 
-- No typecheck, lint, or test scripts configured — `bun run tsc --noEmit` for type checking if needed
+- `bun run typecheck` runs `tsc --noEmit`; no lint or test scripts configured
 - All A2A endpoints return CORS `Access-Control-Allow-Origin: *`
-- Agent routing defaults to Librarian for unrecognized task types
+- `index.ts` is a stub, NOT the entrypoint (stale comment mentions coder/researcher)
+- Scientist's MCP client speaks raw JSON-RPC over stdio with a single-response listener — fragile by design
