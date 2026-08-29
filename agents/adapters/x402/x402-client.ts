@@ -144,7 +144,7 @@ export class X402Client {
     if (delegatorBalance < (settlement.autoRefillThreshold ?? 0)) {
       const refilled = await this.ledger.refillIfLow(this.delegatorUrl, delegatorBalance);
       if (refilled > 0) {
-        console.log(`[X402Client] auto-refilled ${refilled} units for ${this.delegatorUrl} (balance now ${delegatorBalance + refilled})`);
+        console.log(`[X402Client] auto-refilled ${refilled} units for ${this.delegatorUrl}`);
       }
     }
 
@@ -155,7 +155,7 @@ export class X402Client {
       agentUrl,
       amount,
       purpose,
-      { proof: `mint:${Date.now()}` },
+      { proof: `mint:${Date.now()}`, chainEndpoint: this.ledger.chainEndpointUrl },
     );
 
     console.log(`[X402Client] minted PaymentToken txId=${token.txId} amount=${amount} → ${agentUrl}`);

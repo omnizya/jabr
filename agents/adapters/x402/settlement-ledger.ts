@@ -46,7 +46,7 @@ export class SettlementLedger {
   private autoRefillThreshold: number;
   private autoRefillAmount: number;
 
-  /** Mint records: txId → { from, to, amount, issuedAt, purpose, proof, signature } */
+  /** Mint records: txId → { from, to, amount, issuedAt, purpose, proof, signature, chainEndpoint } */
   private mints = new Map<string, {
     from: string;
     to: string;
@@ -55,6 +55,7 @@ export class SettlementLedger {
     purpose: string;
     proof: string;
     signature: string;
+    chainEndpoint?: string;
   }>();
 
   /** Settlement receipts: txId → SettlementReceipt */
@@ -83,11 +84,12 @@ export class SettlementLedger {
     to: string,
     amount: number,
     purpose: string,
-    opts?: { proof?: string },
+    opts?: { proof?: string; chainEndpoint?: string },
   ): PaymentToken {
     const txId = crypto.randomUUID();
     const issuedAt = new Date().toISOString();
     const proof = opts?.proof ?? `mint:${txId}`.slice(0, 64);
+    const chainEndpoint = opts?.chainEndpoint ?? this.chainEndpoint;
     const payload = `${txId}\n${from}\n${to}\n${amount}\n${issuedAt}\n${purpose}\n${proof}`;
     const signature = Hmac("sha256", this.hmacSecret)
       .update(payload)
@@ -101,6 +103,7 @@ export class SettlementLedger {
       purpose,
       proof,
       signature,
+      chainEndpoint,
     });
 
     // Credit the recipient's balance immediately on mint.
@@ -274,6 +277,11 @@ export class SettlementLedger {
   }
 
   // --- Queries ---
+
+  /** The configured chain endpoint (public read access for clients). */
+  get chainEndpointUrl(): string | undefined {
+    return this.chainEndpoint;
+  }
 
   getBalance(agentUrl: string): number {
     return this.balances.get(this.agentKey(agentUrl))?.balance ?? 0;
