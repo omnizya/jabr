@@ -2,7 +2,7 @@ import { A2AServer } from "@adapters/http/a2a-server";
 import { A2AClient } from "@adapters/a2a-client";
 import { DynamicRegistry } from "@adapters/dynamic-registry";
 import { TaskMemory } from "@adapters/task-memory";
-import { MemoryFS } from "@adapters/memory-fs";
+import { MemoryFS, DEFAULT_MEMORY_DIR } from "@adapters/memory-fs";
 import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
@@ -15,7 +15,7 @@ if (import.meta.main) {
   const budget = new HeadroomAdapter();
   const registryClient = new A2AClient(budget);
   const taskStore = new TaskMemory();
-  const memory = new MemoryFS("memory/orchestrator.md");
+  const memory = new MemoryFS({ baseDir: DEFAULT_MEMORY_DIR });
   const llmPort = new NineRouterLlmAdapter(budget);
 
   const seedUrls: Record<string, string> = {

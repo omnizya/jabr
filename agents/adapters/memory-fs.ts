@@ -12,9 +12,29 @@ import {
   rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Resolve the repo-root `memory/` directory relative to this module's location
+// (agents/adapters/memory-fs.ts -> ../../memory) instead of process.cwd(),
+// which is fragile when the process is started from another directory.
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_MEMORY_DIR = join(MODULE_DIR, "..", "..", "memory");
+
+export interface MemoryFSOptions {
+  /** Base directory for memory files. Defaults to the repo-root `memory/`. */
+  baseDir?: string;
+  /** Memory file name within baseDir. Defaults to `orchestrator.md`. */
+  file?: string;
+}
 
 export class MemoryFS implements MemoryStorePort {
-  constructor(private filePath: string = "memory/orchestrator.md") {}
+  private readonly filePath: string;
+
+  constructor(opts?: MemoryFSOptions) {
+    const baseDir = opts?.baseDir ?? DEFAULT_MEMORY_DIR;
+    const file = opts?.file ?? "orchestrator.md";
+    this.filePath = join(baseDir, file);
+  }
 
   read(): string {
     if (!existsSync(this.filePath)) return "";
