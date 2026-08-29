@@ -1,4 +1,5 @@
 import type { AgentCard, SkillDocument } from "@agents/types";
+import type { TaskStorePort } from "@ports/task-store";
 import type { LlmPort } from "@ports/llm-port";
 import type { SearchPort } from "@ports/search-port";
 import type { McpToolPort } from "@ports/mcp-tool-port";
@@ -129,6 +130,7 @@ export interface StewardReport {
 
 export class JarvisAgent {
   constructor(
+    private taskStore: TaskStorePort,
     private llm: LlmPort,
     private search: SearchPort,
     private mcpTools: McpToolPort,
@@ -420,54 +422,95 @@ Return JSON: {opportunities[{file, description, effort, impact}]}`;
   async execute(taskId: string, userText: string): Promise<void> {
     const lower = userText.toLowerCase();
     const workspace = process.cwd();
+    let text: string;
 
     if (lower.includes("scan") || lower.includes("steward")) {
       const report = await this.steward(workspace);
-      console.log(`[Jarvis] ${report.summary}`);
-      return;
-    }
-
-    if (lower.includes("dependency") || lower.includes("package")) {
+      text = `[Jarvis] ${report.summary}`;
+      console.log(text);
+    } else if (lower.includes("dependency") || lower.includes("package")) {
       const report = await this.watchDependencies(workspace);
-      console.log(`[Jarvis] Dependency watch: ${report.outdated.length} outdated packages found.`);
-      return;
-    }
-
-    if (lower.includes("test") || lower.includes("coverage")) {
+      text = `[Jarvis] Dependency watch: ${report.outdated.length} outdated packages found.`;
+      console.log(text);
+    } else if (lower.includes("test") || lower.includes("coverage")) {
       const report = await this.analyzeTestGaps(workspace);
-      console.log(`[Jarvis] Test gap analysis: ${report.untestedFiles.length} untested files, ${report.missingEdgeCases.length} missing edge cases.`);
-      return;
-    }
-
-    if (lower.includes("doc") || lower.includes("readme")) {
+      text = `[Jarvis] Test gap analysis: ${report.untestedFiles.length} untested files, ${report.missingEdgeCases.length} missing edge cases.`;
+      console.log(text);
+    } else if (lower.includes("doc") || lower.includes("readme")) {
       const report = await this.syncDocs(workspace);
-      console.log(`[Jarvis] Doc sync: ${report.missingReadmes.length} missing READMEs, ${report.staleAdrs.length} stale ADRs.`);
-      return;
-    }
-
-    if (lower.includes("ai") || lower.includes("automat")) {
+      text = `[Jarvis] Doc sync: ${report.missingReadmes.length} missing READMEs, ${report.staleAdrs.length} stale ADRs.`;
+      console.log(text);
+    } else if (lower.includes("ai") || lower.includes("automat")) {
       const report = await this.identifyAIEnhancements(workspace);
-      console.log(`[Jarvis] AI enhancements: ${report.opportunities.length} opportunities identified.`);
-      return;
+      text = `[Jarvis] AI enhancements: ${report.opportunities.length} opportunities identified.`;
+      console.log(text);
+    } else {
+      text = "[Jarvis] Jarvis ready. Commands: scan, dependencies, test gaps, docs, AI enhancements.";
+      console.log(text);
     }
 
-    console.log("[Jarvis] Jarvis ready. Commands: scan, dependencies, test gaps, docs, AI enhancements.");
+    this.taskStore.updateState(taskId, "completed");
+    this.taskStore.appendMessage(taskId, {
+      messageId: crypto.randomUUID(),
+      role: "agent",
+      kind: "message",
+      parts: [{ kind: "text", text }],
+      contextId: taskId,
+      taskId,
+    });
   }
 
   private extractJson(text: string): any {
-    try {
-      const start = text.indexOf("{");
-      const end = text.lastIndexOf("}");
-      if (start !== -1 && end > start) {
-        return JSON.parse(text.slice(start, end + 1));
+    const firstObj = text.indexOf("{");
+    const firstArr = text.indexOf("[");
+
+    // Determine which top-level value ({ or [) appears first.
+    let start = -1;
+    let open = "";
+    let close = "";
+    if (firstObj === -1 && firstArr === -1) return null;
+    if (firstArr === -1 || (firstObj !== -1 && firstObj < firstArr)) {
+      start = firstObj;
+      open = "{";
+      close = "}";
+    } else {
+      start = firstArr;
+      open = "[";
+      close = "]";
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i]!;
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
       }
-      const arrStart = text.indexOf("[");
-      const arrEnd = text.lastIndexOf("]");
-      if (arrStart !== -1 && arrEnd > arrStart) {
-        return JSON.parse(text.slice(arrStart, arrEnd + 1));
+      if (ch === '"') {
+        inString = true;
+        continue;
       }
-    } catch {
-      // Fall through
+      if (ch === open) {
+        depth++;
+      } else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          const slice = text.slice(start, i + 1);
+          try {
+            return JSON.parse(slice);
+          } catch {
+            return null;
+          }
+        }
+      }
     }
     return null;
   }
@@ -477,8 +520,11 @@ Return JSON: {opportunities[{file, description, effort, impact}]}`;
   ): Promise<string | null> {
     try {
       const results = await this.search.search(`npm ${packageName} latest version`);
-      if (results.length > 0) {
-        const match = results[0]?.snippet.match(/(\d+\.\d+\.\d+)/);
+      const snippet = results[0]?.snippet;
+      if (snippet) {
+        const match = snippet.match(
+          /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
+        );
         return match?.[1] ?? null;
       }
     } catch {

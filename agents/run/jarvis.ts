@@ -5,6 +5,7 @@ import { SkillFS } from "@adapters/skill-fs";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { HeadroomAdapter } from "@adapters/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
+import { TaskMemory } from "@adapters/task-memory";
 import { A2AServer } from "@adapters/http/a2a-server";
 import { JarvisAgent, JARVIS_CARD } from "@core/jarvis";
 
@@ -17,8 +18,9 @@ if (import.meta.main) {
   const skills = new SkillFS("skills");
   const palace = new MemPalaceAdapter();
   const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
+  const taskStore = new TaskMemory();
 
-  const jarvis = new JarvisAgent(llm, search, mcp, skills, palace, budget, kanban);
+  const jarvis = new JarvisAgent(taskStore, llm, search, mcp, skills, palace, budget, kanban);
 
   const server = new A2AServer({
     port,
