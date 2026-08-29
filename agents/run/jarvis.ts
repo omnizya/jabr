@@ -8,6 +8,7 @@ import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { TaskMemory } from "@adapters/task-memory";
 import { A2AServer } from "@adapters/http/a2a-server";
 import { JarvisAgent, JARVIS_CARD } from "@core/jarvis";
+import { extractLastResponse } from "./serve.ts";
 
 if (import.meta.main) {
   const port = 1337;
@@ -30,7 +31,7 @@ if (import.meta.main) {
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
       await jarvis.execute(taskId, text);
-      return `Jarvis processed: "${text}" — check logs for details.`;
+      return extractLastResponse(taskStore, taskId);
     },
   });
 
