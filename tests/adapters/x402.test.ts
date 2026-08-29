@@ -356,24 +356,22 @@ describe("X402Client", () => {
     const ledger = new SettlementLedger({ hmacSecret: "secret" });
     const client = new X402Client({ ledger, delegatorUrl: "http://delegator" });
 
-    // Mock fetch: return a card with no settlement, then a successful response.
-    let callCount = 0;
+    let lastInit: RequestInit | null = null;
     globalThis.fetch = function (url: string, init: RequestInit) {
-      callCount++;
+      lastInit = init;
       if (url.endsWith("/.well-known/agent-card.json")) {
         return Response.json(makeCard(5, { settlement: false }));
       }
-      // Delegate call.
       const body = JSON.parse(init!.body as string);
       return Response.json({ result: { text: "response text" } });
     } as typeof fetch;
 
     const result = await client.delegateTask("http://worker", "hello task", "worker");
     expect(result).toBe("response text");
-    expect(callCount).toBe(2); // card fetch + delegate
-    // No PaymentToken header should be present (card has no settlement).
-    const lastCallBody = JSON.parse((globalThis.fetch as any).lastCallInit?.body as string);
-    expect(lastCallBody).toBeDefined();
+    // No PaymentToken header should be present.
+    const headers = lastInit?.headers as Headers | undefined;
+    const paymentHeader = headers?.get("X-Payment-Token");
+    expect(paymentHeader).toBeNull();
   });
 
   test("mints and attaches a PaymentToken when agent has settlement pricing", async () => {
@@ -409,18 +407,27 @@ describe("X402Client", () => {
     const ledger = new SettlementLedger({ hmacSecret: "secret" });
     const client = new X402Client({ ledger, delegatorUrl: "http://delegator" });
 
+    let txId: string | null = null;
     globalThis.fetch = function (url: string, init: RequestInit) {
       if (url.endsWith("/.well-known/agent-card.json")) {
         return Response.json(makeCard(5, { settlement: true }));
+      }
+      // Capture the txId from the PaymentToken header.
+      const headers = init?.headers as Headers | undefined;
+      const h = headers?.get("X-Payment-Token");
+      if (h) {
+        const token = JSON.parse(h) as PaymentToken;
+        txId = token.txId;
       }
       return Response.json({ result: { text: "ok" } });
     } as typeof fetch;
 
     await client.delegateTask("http://worker", "hello", "worker");
-    // The ledger should have a receipt for the minted token.
-    const receipts = Array.from(ledger["receipts"].values());
-    expect(receipts.length).toBeGreaterThan(0);
-    expect(receipts[0]?.verified).toBe(true);
+    expect(txId).toBeTruthy();
+    const receipt = ledger.getReceipt(txId!);
+    expect(receipt).toBeDefined();
+    expect(receipt!.verified).toBe(true);
+    expect(receipt!.to).toBe("http://worker");
   });
 });
 
