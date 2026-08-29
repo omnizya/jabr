@@ -26,30 +26,85 @@ const server = new McpServer(
   },
 );
 
+function sanitizeArgs(args: unknown): unknown {
+  if (args === null || typeof args !== "object") return args;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+    if (typeof v === "string" && v.length > 200) {
+      out[k] = `${v.slice(0, 200)}… (${v.length} chars)`;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function logOk(name: string, start: number, result: unknown) {
+  const ms = Math.round(performance.now() - start);
+  let size: string | undefined;
+  if (result && typeof result === "object" && "content" in result) {
+    const content = (result as { content?: unknown }).content;
+    if (Array.isArray(content)) {
+      const text = content
+        .map((c) => (c && typeof c === "object" && "text" in c && typeof (c as { text: unknown }).text === "string" ? (c as { text: string }).text : ""))
+        .join("");
+      size = `${text.length} chars`;
+    }
+  }
+  console.error(`[MCP tools] ${name} ok in ${ms}ms${size ? ` (${size})` : ""}`);
+}
+
+function withLogging<Args, R>(name: string, handler: (args: Args) => R): (args: Args) => R {
+  return (args: Args) => {
+    console.error(`[MCP tools] call ${name}`, sanitizeArgs(args));
+    const start = performance.now();
+    try {
+      const result = handler(args);
+      if (result instanceof Promise) {
+        return result.then(
+          (r) => {
+            logOk(name, start, r);
+            return r;
+          },
+          (e) => {
+            console.error(`[MCP tools] ${name} error:`, e);
+            throw e;
+          },
+        ) as R;
+      }
+      logOk(name, start, result);
+      return result;
+    } catch (e) {
+      console.error(`[MCP tools] ${name} error:`, e);
+      throw e;
+    }
+  };
+}
+
 server.registerTool("read_file", {
   description: "Read a file from the project workspace",
   inputSchema: { path: z.string().describe("Relative file path") },
-}, ({ path }) => {
+}, withLogging("read_file", ({ path }) => {
   const full = join(process.cwd(), path);
   if (!existsSync(full)) throw new Error(`File not found: ${path}`);
   const content = readFileSync(full, "utf-8");
   return { content: [{ type: "text", text: `File: ${path}\n\n${content}` }] };
-});
+}));
 
 server.registerTool("write_file", {
   description: "Write content to a file in the project workspace",
   inputSchema: { path: z.string(), content: z.string() },
-}, ({ path, content }) => {
+}, withLogging("write_file", ({ path, content }) => {
   const full = join(process.cwd(), path);
   mkdirSync(join(full, ".."), { recursive: true });
   writeFileSync(full, content, "utf-8");
   return { content: [{ type: "text", text: `Written ${content.length} chars to ${path}` }] };
-});
+}));
 
 server.registerTool("install_python_dependency", {
   description: "Install a Python package into the persistent environment",
   inputSchema: { pkgName: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
-}, ({ pkgName }) => {
+}, withLogging("install_python_dependency", ({ pkgName }) => {
   ensurePythonEnv();
   const proc = Bun.spawnSync(["uv", "add", pkgName], {
     cwd: PYTHON_ENV_DIR,
@@ -59,12 +114,12 @@ server.registerTool("install_python_dependency", {
     throw new Error(`Failed to install ${pkgName}: ${stderr}`);
   }
   return { content: [{ type: "text", text: `Successfully installed ${pkgName} into .python_env` }] };
-});
+}));
 
 server.registerTool("run_python", {
   description: "Execute a Python snippet via uv in a persistent environment with dependency support",
   inputSchema: { code: z.string().describe("Python code to run") },
-}, ({ code }) => {
+}, withLogging("run_python", ({ code }) => {
   ensurePythonEnv();
   const mainPath = join(PYTHON_ENV_DIR, "main.py");
   writeFileSync(mainPath, code, "utf-8");
@@ -77,7 +132,7 @@ server.registerTool("run_python", {
   const stderr = new TextDecoder().decode(proc.stderr);
   if (proc.exitCode !== 0) throw new Error(stderr || "Python error");
   return { content: [{ type: "text", text: stdout || "(no output)" }] };
-});
+}));
 
 
 type Token =
@@ -214,10 +269,10 @@ function safeCalculate(expression: string): number {
 server.registerTool("calculate", {
   description: "Safe arithmetic evaluator",
   inputSchema: { expression: z.string().describe("Math expression") },
-}, ({ expression }) => {
+}, withLogging("calculate", ({ expression }) => {
   const result = safeCalculate(expression);
   return { content: [{ type: "text", text: String(result) }] };
-});
+}));
 
 server.registerTool("save_skill", {
   description: "Persist a Hermes-style skill document to the skill store",
@@ -227,7 +282,7 @@ server.registerTool("save_skill", {
     steps: z.array(z.string()),
     tags: z.array(z.string()).optional().default([]),
   },
-}, ({ name: skillName, description, steps, tags }) => {
+}, withLogging("save_skill", ({ name: skillName, description, steps, tags }) => {
   const skillDir = join(process.cwd(), "skills");
   mkdirSync(skillDir, { recursive: true });
   const slug = skillName.toLowerCase().replace(/\s+/g, "-");
@@ -242,12 +297,12 @@ server.registerTool("save_skill", {
   };
   writeFileSync(join(skillDir, `${slug}.json`), JSON.stringify(doc, null, 2));
   return { content: [{ type: "text", text: `Skill "${skillName}" saved → skills/${slug}.json` }] };
-});
+}));
 
 server.registerTool("list_skills", {
   description: "List all saved skills from the skill store",
   inputSchema: {},
-}, () => {
+}, withLogging("list_skills", () => {
   const skillDir = join(process.cwd(), "skills");
   if (!existsSync(skillDir))
     return { content: [{ type: "text", text: "No skills yet." }] };
@@ -259,7 +314,7 @@ server.registerTool("list_skills", {
   return {
     content: [{ type: "text", text: skills.length ? skills.join("\n") : "No skills yet." }],
   };
-});
+}));
 
 registerResources(server, {
   subscriptions,
@@ -270,6 +325,7 @@ registerResources(server, {
       if (!res.ok) throw new Error(`Orchestrator returned ${res.status}`);
       return await res.json();
     } catch (e) {
+      console.error("[MCP tools] getWorldState failed:", e);
       return { 
         timestamp: new Date().toISOString(), 
         agents: [], 
@@ -288,7 +344,8 @@ registerResources(server, {
     }
     try {
       return JSON.parse(readFileSync(taskPath, "utf-8"));
-    } catch {
+    } catch (e) {
+      console.error("[MCP tools] getTask failed:", e);
       return {
         id: taskId,
         status: "error",
