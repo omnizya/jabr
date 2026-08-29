@@ -181,8 +181,9 @@ describe("SettlementLedger", () => {
       defaultAutoRefillThreshold: 5,
       defaultAutoRefillAmount: 20,
     });
-    ledger.mintToken("http://from", "http://to", 10, "task");
-    // Balance is already 10 which is >= threshold 5.
+    // Mint to `http://from` (as recipient) so its balance is 10.
+    ledger.mintToken("http://someone", "http://from", 10, "task");
+    // Balance is 10 which is >= threshold 5.
     const refilled = ledger.refillIfLow("http://from", 10);
     expect(refilled).toBe(0);
     expect(ledger.getBalance("http://from")).toBe(10);
@@ -190,10 +191,12 @@ describe("SettlementLedger", () => {
 
   test("getBalances returns all tracked agents", () => {
     const ledger = new SettlementLedger({ hmacSecret: "secret" });
-    ledger.mintToken("http://a", "http://b", 5, "t1");
+    ledger.mintToken("http://a", "http://b", 5, "t1"); // b gets 5
+    ledger.mintToken("http://c", "http://a", 3, "t2"); // a gets 3
     const balances = ledger.getBalances();
-    expect(balances.some((b) => b.agent === "http://a" && b.balance === 0)).toBe(true);
+    expect(balances.some((b) => b.agent === "http://a" && b.balance === 3)).toBe(true);
     expect(balances.some((b) => b.agent === "http://b" && b.balance === 5)).toBe(true);
+    expect(balances.some((b) => b.agent === "http://c")).toBe(false); // c never received
   });
 
   test("reset clears all state", () => {
@@ -255,7 +258,8 @@ describe("X402Server", () => {
     const card = makeCard(5, { settlement: true });
     server.updateFromCard(card);
 
-    const req = makeReq('{"not":"json"}');
+    // A genuinely unparseable header value (not JSON).
+    const req = makeReq('not-json{{{');
     const check = server.check(req);
     expect(check.paid).toBe(false);
     expect(check.rejectReason).toBe("malformed X-Payment-Token header");
@@ -315,10 +319,31 @@ describe("X402Server", () => {
   test("x402Reject returns a 402 response", () => {
     const resp = x402Reject(42, "test reason");
     expect(resp.status).toBe(402);
-    const body = JSON.parse(resp.body as string);
-    expect(body.error.code).toBe(-32022);
-    expect(body.error.message).toContain("Payment required");
-    expect(body.error.message).toContain("test reason");
+    const bodyText = resp.body instanceof ReadableStream
+      ? "" // Bun Response.body is a stream; parse from a clone instead.
+      : resp.body as string;
+    // For Bun, resp.text() works but is async. Use a sync path:
+    const body = (() => {
+      // Bun Response.json() parses the body; fall back to text.
+      try {
+        return resp.json() as Promise<any>;
+      } catch {
+        return { error: { code: -1 } };
+      }
+    })();
+    // resp.json() is async; in a sync test we check the status only and
+    // trust the implementation. The error code is set in x402Reject.
+    // Do an async check via a separate test. Here just verify status 402.
+    // For full body verification, use an async test.
+    expect(resp.status).toBe(402);
+  });
+
+  test("x402Reject body contains payment-required error (async)", async () => {
+    const resp = x402Reject(42, "test reason");
+    const data = await resp.json();
+    expect(data.error.code).toBe(-32022);
+    expect(data.error.message).toContain("Payment required");
+    expect(data.error.message).toContain("test reason");
   });
 });
 

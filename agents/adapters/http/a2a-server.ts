@@ -34,6 +34,7 @@ export class A2AServer {
     const { port, card, onTask, onWorldState, authToken, requireAuth } = (this
       .config as any);
     const rateLimiter = this.rateLimiter;
+    const x402 = this.x402;
 
     this.server = Bun.serve({
       port,
@@ -108,12 +109,12 @@ export class A2AServer {
           }
 
           // --- x402 payment check (when middleware is configured) ---
-          if (this.x402) {
+          if (x402) {
             // Temporarily expose rawBody on the request so the x402 server
             // can re-parse headers (the header itself is on the request, not
             // the body). The check only needs the headers + the body for
             // signature-less token parse.
-            const check = this.x402.check(req);
+            const check = x402.check(req);
             if (!check.paid) {
               console.warn(`[A2AServer] x402 rejected: ${check.rejectReason ?? "unpaid"}`);
               return x402Reject(null, check.rejectReason ?? "unpaid");
