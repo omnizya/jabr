@@ -136,12 +136,19 @@ export class DynamicRegistry implements DiscoveryPort {
 
       for (const tag of entry.tags) {
         const tagLower = tag.toLowerCase();
-        if (lower.includes(tagLower)) {
-          score += 2;
-        }
-        for (const word of words) {
-          if (tagLower.includes(word) || word.includes(tagLower)) {
+        if (words.includes(tagLower)) {
+          // Exact whole-word tag match — strongest routing signal.
+          score += 3;
+        } else {
+          // Tag appears as a substring of the task text
+          // (e.g. "code" inside "codebase") — weak signal.
+          if (lower.includes(tagLower)) {
             score += 1;
+          }
+          for (const word of words) {
+            if (tagLower.includes(word) || word.includes(tagLower)) {
+              score += 1;
+            }
           }
         }
       }
