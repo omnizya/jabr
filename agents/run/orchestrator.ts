@@ -13,6 +13,9 @@ import { openJabrDb } from "@adapters/sqlite-db";
 import { GitHubWebhookAdapter } from "@adapters/http/github-webhook";
 import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
 import type { RealtimePort } from "@ports/realtime-port";
+import { SettlementLedger } from "@adapters/x402/settlement-ledger";
+import { X402Client } from "@adapters/x402/x402-client";
+import { X402Server } from "@adapters/x402/x402-server";
 
 if (import.meta.main) {
   const PORT = 4000;
@@ -46,7 +49,7 @@ if (import.meta.main) {
   const palace = new MemPalaceAdapter();
   const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
 
-  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace, kanban);
+  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace, kanban, budget);
 
   const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
   const requireAuth = Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
