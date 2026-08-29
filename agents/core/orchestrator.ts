@@ -90,15 +90,16 @@ export class OrchestratorAgent {
         recentSlugs = skillFiles.map(f => f.replace(".json", "")).reverse().slice(0, 5);
       }
 
-      let taskTotal = 0;
-      if (fs.existsSync(memoryDir)) {
-        taskTotal = fs.readdirSync(memoryDir).filter(f => f.startsWith("task-") && f.endsWith(".json")).length;
-      }
+      // Task counts come from the task store (sqlite-backed), not filesystem.
+      const active = this.taskStore.listByState("working").length;
+      const completed = this.taskStore.listByState("completed").length;
+      const failed = this.taskStore.listByState("failed").length;
+      const canceled = this.taskStore.listByState("canceled").length;
 
       return {
         timestamp: new Date().toISOString(),
         agents,
-        tasks: { total: taskTotal, active: 0, completed: 0, failed: 0 },
+        tasks: { total: active + completed + failed + canceled, active, completed, failed, canceled },
         memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
         skills: { total: skillTotal, recentSlugs },
       };
