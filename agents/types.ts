@@ -23,6 +23,19 @@ export interface AgentPricing {
   costPerTask: number;
   /** Optional per-token surcharge on top of costPerTask; multiplied by input length. */
   costPerToken?: number;
+  /** Optional settlement/currency extension for cross-agent payment (x402). */
+  settlement?: {
+    /** Settlement currency/ledger identifier. When unset, uses the local Jabr ledger. */
+    currency?: string;
+    /** Maximum unpaid balance before auto-refill is triggered (0 = no auto-refill). */
+    autoRefillThreshold?: number;
+    /** Amount to refill when balance drops below autoRefillThreshold. */
+    autoRefillAmount?: number;
+    /** On-chain RPC endpoint for verification when currency is a chain token. */
+    chainEndpoint?: string;
+    /** Optional contract/program address for on-chain verification. */
+    contractAddress?: string;
+  };
 }
 
 export interface AgentCardCapabilities {
