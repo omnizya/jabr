@@ -184,6 +184,7 @@ export class OrchestratorAgent {
     userText: string,
     depth: number,
     referenceTaskIds: string[] = [],
+    forcedAgentName?: string,
   ): Promise<void> {
     try {
       let augmentedText = userText;
@@ -202,7 +203,9 @@ export class OrchestratorAgent {
         }
       }
 
-      const routed = await this.routeTask(userText);
+      const routed = forcedAgentName
+        ? { agentName: forcedAgentName, label: forcedAgentName }
+        : await this.routeTask(userText);
       if (!routed) {
         throw new Error("No agents discovered — cannot route task");
       }
@@ -214,7 +217,7 @@ export class OrchestratorAgent {
       const agentUrl = await this.getAgentUrl(agentName);
       if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
 
-      const result = await this.registry.delegateTask(agentUrl, augmentedText, agentName);
+      let result = await this.registry.delegateTask(agentUrl, augmentedText, agentName);
 
       const handover = decodeHandover(result);
 
@@ -236,6 +239,20 @@ export class OrchestratorAgent {
         this.taskStore.updateState(taskId, "working");
 
         const childUserText = handover.context || userText;
+
+        // Honor the explicit transferTo target when resolvable; otherwise fall back
+        // to registry re-routing (the context text may route better on its own).
+        let forcedAgentName: string | undefined;
+        if (handover.transferTo) {
+          const targetUrl = await this.getAgentUrl(handover.transferTo);
+          if (targetUrl) {
+            forcedAgentName = handover.transferTo;
+          } else {
+            this.memory.append(
+              `[depth=${depth}] Handover target "${handover.transferTo}" not resolvable — re-routing via registry`,
+            );
+          }
+        }
         this.taskStore.appendMessage(childTaskId, {
           messageId: crypto.randomUUID(),
           role: "user",
@@ -250,6 +267,7 @@ export class OrchestratorAgent {
           childUserText,
           depth + 1,
           [taskId, ...referenceTaskIds],
+          forcedAgentName,
         );
 
         const childTask = this.taskStore.get(childTaskId);
@@ -278,6 +296,7 @@ export class OrchestratorAgent {
         this.memory.append(
           `[depth=${depth}] Max handover depth (${MAX_HANDOVER_DEPTH}) reached. Completing with available result.`,
         );
+        result = result.replace(/%%HANDOVER%%.*$/, "").trim() || result;
       }
 
       this.taskStore.updateState(taskId, "completed");
