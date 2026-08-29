@@ -64,6 +64,7 @@ export class StdioBridge {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        console.error(`[StdioBridge] ← inbound line: ${trimmed.slice(0, 200)}`);
         this.handleLine(trimmed);
       }
     };
@@ -85,6 +86,9 @@ export class StdioBridge {
     const params: Record<string, unknown> = { toolCallId, status };
     if (content !== undefined) params.content = content;
     const note: JSONRPCNotification = notification("tool_call_update", params);
+    console.error(
+      `[StdioBridge] → notify tool_call_update toolCallId=${toolCallId} status=${status}`,
+    );
     process.stdout.write(JSON.stringify(note) + "\n");
   }
 
@@ -93,13 +97,22 @@ export class StdioBridge {
     try {
       req = JSON.parse(line) as JSONRPCRequest;
     } catch {
+      console.error("[StdioBridge] parse error: invalid JSON-RPC line");
       process.stdout.write(
         JSON.stringify(err(null, -32700, "Parse error")) + "\n",
       );
       return;
     }
 
+    console.error(
+      `[StdioBridge] ← ${req.method ?? "<unknown>"} id=${req.id ?? "null"}`,
+    );
+
     const response = await this.dispatch(req);
+    console.error(
+      `[StdioBridge] → response id=${response.id ?? "null"} ` +
+        `${response.error ? `error=${response.error.code} ${response.error.message}` : "ok"}`,
+    );
     process.stdout.write(JSON.stringify(response) + "\n");
   }
 
@@ -110,6 +123,7 @@ export class StdioBridge {
 
     switch (req.method) {
       case "initialize": {
+        console.error("[StdioBridge] dispatch: initialize");
         return ok(req.id, { capabilities: {} });
       }
 
@@ -135,6 +149,7 @@ export class StdioBridge {
       }
 
       case "session/list": {
+        console.error("[StdioBridge] dispatch: session/list");
         return ok(req.id, { sessions: this.memory.listSessions() });
       }
 
@@ -143,6 +158,7 @@ export class StdioBridge {
         if (typeof params.sessionId !== "string") {
           return err(req.id, -32602, "Invalid params: missing sessionId");
         }
+        console.error(`[StdioBridge] dispatch: session/delete ${params.sessionId}`);
         const deleted = this.memory.deleteSession(params.sessionId);
         if (this.currentSessionId === params.sessionId) {
           this.currentSessionId = null;
@@ -158,6 +174,7 @@ export class StdioBridge {
         if (typeof params.sessionId !== "string") {
           return err(req.id, -32602, "Invalid params: missing sessionId");
         }
+        console.error(`[StdioBridge] dispatch: session/resume ${params.sessionId}`);
         const session = this.memory.getSession(params.sessionId);
         if (!session) {
           return err(req.id, -32602, `Session not found: ${params.sessionId}`);
@@ -175,6 +192,7 @@ export class StdioBridge {
       }
 
       default:
+        console.error(`[StdioBridge] dispatch: unknown method ${req.method}`);
         return err(req.id, -32601, `Method not found: ${req.method}`);
     }
   }
@@ -185,6 +203,10 @@ export class StdioBridge {
     sessionId?: string,
   ): Promise<JSONRPCResponse> {
     try {
+      console.error(
+        `[StdioBridge] → orchestrator tasks/send (${this.orchestratorUrl})`,
+      );
+      const started = Date.now();
       const res = await fetch(`${this.orchestratorUrl}/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -195,8 +217,14 @@ export class StdioBridge {
           params: { text },
         }),
       });
+      console.error(
+        `[StdioBridge] ← orchestrator responded in ${Date.now() - started}ms status=${res.status}`,
+      );
 
       if (!res.ok) {
+        console.error(
+          `[StdioBridge] orchestrator returned ${res.status} for tasks/send`,
+        );
         return err(req.id, -32603, `Orchestrator returned ${res.status}`);
       }
 
@@ -217,6 +245,10 @@ export class StdioBridge {
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "Unknown fetch error";
+      console.error(
+        `[StdioBridge] tasks/send failed: ${message}`,
+        e instanceof Error ? e.stack : e,
+      );
       return err(
         req.id,
         -32603,
@@ -254,6 +286,10 @@ export class StdioBridge {
 
     if (typeof content.unified === "string") {
       try {
+        console.error(
+          `[StdioBridge] → orchestrator tasks/send (unified diff) (${this.orchestratorUrl})`,
+        );
+        const started = Date.now();
         const res = await fetch(`${this.orchestratorUrl}/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -264,7 +300,13 @@ export class StdioBridge {
             params: { text: `Apply unified diff:\n${content.unified}` },
           }),
         });
+        console.error(
+          `[StdioBridge] ← orchestrator responded in ${Date.now() - started}ms status=${res.status}`,
+        );
         if (!res.ok) {
+          console.error(
+            `[StdioBridge] orchestrator returned ${res.status} for unified diff tasks/send`,
+          );
           this.notifyToolCallUpdate(toolCallId, "failed", {
             reason: `orchestrator ${res.status}`,
           });
@@ -279,6 +321,10 @@ export class StdioBridge {
       } catch (e) {
         const message =
           e instanceof Error ? e.message : "Unknown fetch error";
+        console.error(
+          `[StdioBridge] unified diff tasks/send failed: ${message}`,
+          e instanceof Error ? e.stack : e,
+        );
         this.notifyToolCallUpdate(toolCallId, "failed", { reason: message });
         return err(req.id, -32603, `Internal error: ${message}`);
       }

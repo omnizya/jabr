@@ -22,7 +22,11 @@ export class DynamicRegistry implements DiscoveryPort {
 
     for (const [name, url] of Object.entries(this.seedUrls)) {
       const card = await this.registry.fetchCard(url);
-      if (!card) continue;
+      if (!card) {
+        console.warn(`[DynamicRegistry] failed to fetch ${name} from ${url}`);
+        continue;
+      }
+      console.log(`[DynamicRegistry] fetched ${card.name} from ${url}`);
 
       const tags = this.extractTags(card);
       this.entries.set(name, { url, card, tags });
@@ -100,6 +104,7 @@ export class DynamicRegistry implements DiscoveryPort {
         const url = new URL(entry.url);
         const res = await fetch(`${entry.url}/.well-known/agent-card.json`, { signal: AbortSignal.timeout(2000) });
         const status: "up" | "down" = res.ok ? "up" : "down";
+        console.log(`[DynamicRegistry] health ${name}: ${status}`);
         health.push({
           name,
           status,
@@ -107,6 +112,7 @@ export class DynamicRegistry implements DiscoveryPort {
           lastSeen: new Date().toISOString(),
         });
       } catch {
+        console.log(`[DynamicRegistry] health ${name}: down`);
         health.push({
           name,
           status: "down",
@@ -140,6 +146,10 @@ export class DynamicRegistry implements DiscoveryPort {
         }
       }
 
+      console.log(
+        `[DynamicRegistry] matchAgent candidate ${name} (${entry.card.name}) score=${score}`,
+      );
+
       if (score > 0 && (!bestMatch || score > bestMatch.score)) {
         bestMatch = {
           name,
@@ -151,15 +161,22 @@ export class DynamicRegistry implements DiscoveryPort {
     }
 
     if (bestMatch) {
+      console.log(
+        `[DynamicRegistry] matchAgent selected ${bestMatch.name} (${bestMatch.label}) score=${bestMatch.score}`,
+      );
       return { name: bestMatch.name, url: bestMatch.url, label: bestMatch.label };
     }
 
     const first = this.entries.values().next().value;
     if (first) {
       const name = this.findNameByUrl(first.url);
+      console.log(
+        `[DynamicRegistry] matchAgent no tag match — falling back to first registered agent: ${name ?? "unknown"} (${first.card.name})`,
+      );
       return { name: name ?? "unknown", url: first.url, label: first.card.name };
     }
 
+    console.log("[DynamicRegistry] matchAgent registry empty — returning null");
     return null;
   }
 
