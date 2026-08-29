@@ -1,0 +1,18 @@
+{
+  "name": "Fibonacci Generation",
+  "description": "Generate a Fibonacci sequence implementation in TypeScript",
+  "tags": [
+    "code",
+    "typescript",
+    "fibonacci",
+    "algorithm"
+  ],
+  "steps": [
+    "Detect a Fibonacci request from user text",
+    "Generate an iterative fib(n) implementation",
+    "Return the code as an artifact"
+  ],
+  "createdAt": "2026-08-29T12:31:43.873Z",
+  "usageCount": 0,
+  "successRate": 1
+}
