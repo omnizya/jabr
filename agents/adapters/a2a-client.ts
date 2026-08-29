@@ -84,11 +84,16 @@ export class A2AClient implements AgentRegistryPort {
 
       const result = data.result as
         | {
+          text?: string;
           artifacts?: Array<{ parts?: Array<{ text?: string }> }>;
           message?: { parts?: Array<{ text?: string }> };
         }
         | undefined;
 
+      // The A2A server returns the flat `{ text }` shape (a2a-server.ts:88).
+      if (result?.text) {
+        return result.text;
+      }
       if (result?.artifacts?.[0]?.parts?.[0]?.text) {
         return result.artifacts[0].parts[0].text;
       }
