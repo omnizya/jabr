@@ -62,9 +62,9 @@ describe("IdempotencyLock", () => {
     const snapshot = lock.getSnapshot();
     expect(snapshot["evt-1"]).toBeDefined();
     expect(snapshot["evt-2"]).toBeDefined();
-    expect(snapshot["evt-1"].acquiredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(snapshot["evt-1"].expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(snapshot["evt-1"].ttlRemainingMs).toBeGreaterThan(0);
+    expect(snapshot["evt-1"]!.acquiredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(snapshot["evt-1"]!.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(snapshot["evt-1"]!.ttlRemainingMs).toBeGreaterThan(0);
   });
 
   test("getSnapshot excludes expired entries", async () => {

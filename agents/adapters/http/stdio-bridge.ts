@@ -55,7 +55,6 @@ export class StdioBridge {
   }
 
   start(): void {
-    process.stdin.setEncoding("utf-8");
     this.onData = (chunk: Uint8Array) => {
       this.buffer += this.decoder.decode(chunk, { stream: true });
       const lines = this.buffer.split("\n");
@@ -214,7 +213,7 @@ export class StdioBridge {
           jsonrpc: "2.0",
           id: req.id ?? crypto.randomUUID(),
           method: "tasks/send",
-          params: { text },
+          params: { message: { parts: [{ kind: "text", text }] } },
         }),
       });
       console.error(
@@ -297,7 +296,11 @@ export class StdioBridge {
             jsonrpc: "2.0",
             id: req.id ?? crypto.randomUUID(),
             method: "tasks/send",
-            params: { text: `Apply unified diff:\n${content.unified}` },
+            params: {
+              message: {
+                parts: [{ kind: "text", text: `Apply unified diff:\n${content.unified}` }],
+              },
+            },
           }),
         });
         console.error(

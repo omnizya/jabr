@@ -1,5 +1,4 @@
 import { createHmac, createHash } from "node:crypto";
-import type { Request } from "bun";
 import { IdempotencyLock, idempotencyConflictResponse } from "@adapters/idempotency-lock";
 import { rateLimitResponse } from "@adapters/rate-limit";
 import { ok, err, buildCorsHeaders } from "@utils/rpc";
@@ -39,8 +38,7 @@ export interface WebhookPayload {
 const SIGNATURE_HEADER = "x-hub-signature-256";
 const DELIVERY_HEADER = "x-github-delivery";
 
-/**
- * Derive the canonical event ID. Priority:
+/** Derive the canonical event ID. Priority:
  *  1. X-GitHub-Delivery (GitHub delivery GUID — canonical dedup key).
  *  2. X-Webhook-Event-Id (explicit generic override).
  *  3. SHA-256 hash of the raw body (fallback so identical replays dedupe).
@@ -73,8 +71,7 @@ function verifySignature(rawBody: string, signatureHeader: string, secret: strin
   return computed === expected;
 }
 
-/**
- * Generic webhook server. Layered fetch handler:
+/** Generic webhook server. Layered fetch handler:
  *   method/path check → rate limit → read raw body → signature → idempotency → dispatch
  *
  * Mirrors `A2AServer`'s architecture: a single Bun.serve handler with layered
@@ -92,6 +89,7 @@ export class WebhookServer {
 
   start(): void {
     const { port, webhookSecret, rateLimiter, onEvent } = this.config;
+    const self = this;
 
     this.server = Bun.serve({
       port,
@@ -117,8 +115,6 @@ export class WebhookServer {
         }
 
         // --- Rate limiting (when configured) ---
-        // Mirrors A2AServer: rate-limit BEFORE signature/idempotency so a flood
-        // of bogus deliveries doesn't cost us signature/hash work.
         if (rateLimiter) {
           const rl = rateLimiter.check(req);
           if (!rl.allowed) {
@@ -132,10 +128,6 @@ export class WebhookServer {
         }
 
         // --- Read raw body ONCE ---
-        // Bun.Request.text() consumes the body stream; we call it once and use
-        // the string for both HMAC verification and JSON parsing. This avoids
-        // the double-consumption problem and keeps the exact bytes the sender
-        // signed available for the HMAC check.
         let rawBody: string;
         try {
           rawBody = await req.text();
@@ -162,14 +154,12 @@ export class WebhookServer {
             );
           }
         } else {
-          // No signature header — allow but log. Production deployments should
-          // require one; this is a dev-friendly default.
           console.warn(`[WebhookServer] no ${SIGNATURE_HEADER} header — allowing (dev mode)`);
         }
 
         // --- Idempotency ---
         const eventId = eventIdFromRequest(req, rawBody);
-        const lockResult = this.idempotencyLock.acquire(eventId);
+        const lockResult = self.idempotencyLock.acquire(eventId);
         if (!lockResult.acquired) {
           console.log(`[WebhookServer] duplicate event (409) eventId=${eventId}`);
           const resp = idempotencyConflictResponse(eventId);
@@ -222,7 +212,7 @@ export class WebhookServer {
     });
 
     console.log(`\n📡 Webhook Server → http://localhost:${port}/webhook`);
-    console.log(`   Idempotency TTL: ${this.idempotencyLock.ttlMs / 1000}s`);
+    console.log(`   Idempotency TTL: ${self.idempotencyLock.ttlMs / 1000}s`);
     if (rateLimiter) {
       console.log(`   Rate limit: ${rateLimiter.maxRequests} req/${rateLimiter.windowMs / 1000}s per caller`);
     }

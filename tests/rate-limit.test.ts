@@ -47,7 +47,7 @@ describe("RateLimiter", () => {
     const resp = rateLimitResponse(30_000);
     expect(resp.status).toBe(429);
     expect(resp.headers["Retry-After"]).toBe("30");
-    expect(resp.body.error.code).toBe(-32002);
+    expect((resp.body as { error: { code: number } }).error.code).toBe(-32002);
   });
 
   test("getSnapshot returns current state", () => {
@@ -57,8 +57,9 @@ describe("RateLimiter", () => {
     rl.check(req);
     const snapshot = rl.getSnapshot();
     expect(snapshot["key:key1"]).toBeDefined();
-    expect(snapshot["key:key1"].used).toBe(2);
-    expect(snapshot["key:key1"].cap).toBe(10);
+    const snap = snapshot["key:key1"]!;
+    expect(snap.used).toBe(2);
+    expect(snap.cap).toBe(10);
   });
 
   test("reset clears all windows", () => {

@@ -1,4 +1,4 @@
-1|import { createHmac as nodeCreateHmac } from "node:crypto";
+import { createHmac as nodeCreateHmac } from "node:crypto";
 import type { GitHubWebhookEvent, GitHubEventType, GitHubEventAction } from "@ports/github-bot-port";
 
 /**
@@ -117,12 +117,15 @@ function toEventAction(raw?: string): GitHubEventAction | undefined {
   return undefined;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type UnknownRecord = Record<string, any>;
+
 function buildPayload(
   body: Record<string, unknown>,
   type: GitHubEventType,
   repo: NonNullable<GitHubWebhookEvent["payload"]["repository"]>,
 ): GitHubWebhookEvent["payload"] {
-  const sender = body.sender as Record<string, unknown> | undefined;
+  const sender = body.sender as UnknownRecord | undefined;
   const base: GitHubWebhookEvent["payload"] = {
     repository: repo,
     sender: sender
@@ -135,21 +138,23 @@ function buildPayload(
   };
 
   // Pull request fields.
-  const pr = body.pull_request as Record<string, unknown> | undefined;
+  const pr = body.pull_request as UnknownRecord | undefined;
   if (pr && (type === "pull_request" || type === "issues")) {
-    const prHead = pr.head as Record<string, unknown> | undefined;
-    const prBase = pr.base as Record<string, unknown> | undefined;
+    const prHead = pr.head as UnknownRecord | undefined;
+    const prBase = pr.base as UnknownRecord | undefined;
+    const prHeadBranch = prHead?.branch as UnknownRecord | undefined;
+    const prBaseBranch = prBase?.branch as UnknownRecord | undefined;
     base.pull_request = {
       number: Number(pr.number ?? 0),
       title: String(pr.title ?? ""),
       state: String(pr.state ?? ""),
       head: {
         sha: String(prHead?.sha ?? ""),
-        branch: { name: String(prHead?.branch?.name ?? "") },
+        branch: { name: String(prHeadBranch?.name ?? "") },
       },
       base: {
         sha: String(prBase?.sha ?? ""),
-        branch: { name: String(prBase?.branch?.name ?? "") },
+        branch: { name: String(prBaseBranch?.name ?? "") },
       },
       body: String(pr.body ?? ""),
       user: { login: String(pr.user?.login ?? "") },
@@ -157,9 +162,9 @@ function buildPayload(
   }
 
   // Issue fields.
-  const issue = body.issue as Record<string, unknown> | undefined;
+  const issue = body.issue as UnknownRecord | undefined;
   if (issue && (type === "issues" || type === "pull_request")) {
-    const labels = issue.labels as Array<Record<string, unknown>> | undefined;
+    const labels = issue.labels as Array<UnknownRecord> | undefined;
     base.issue = {
       number: Number(issue.number ?? 0),
       title: String(issue.title ?? ""),
@@ -171,10 +176,10 @@ function buildPayload(
   }
 
   // Check run fields.
-  const cr = body.check_run as Record<string, unknown> | undefined;
+  const cr = body.check_run as UnknownRecord | undefined;
   if (cr) {
-    const suite = cr.check_suite as Record<string, unknown> | undefined;
-    const crCon = cr.conclusion as GitHubWebhookEvent["payload"]["check_run"]["conclusion"] | undefined;
+    const suite = cr.check_suite as UnknownRecord | undefined;
+    const crCon = (cr as Record<string, unknown>).conclusion as NonNullable<GitHubWebhookEvent["payload"]["check_run"]>["conclusion"] | undefined;
     base.check_run = {
       id: Number(cr.id ?? 0),
       status: (cr.status as "queued" | "in_progress" | "completed" | undefined) ?? "queued",
@@ -189,7 +194,7 @@ function buildPayload(
   }
 
   // Release fields.
-  const release = body.release as Record<string, unknown> | undefined;
+  const release = body.release as UnknownRecord | undefined;
   if (release) {
     base.release = {
       tag_name: String(release.tag_name ?? ""),
@@ -202,7 +207,7 @@ function buildPayload(
   if (type === "push") {
     base.after = String(body.after ?? "");
     base.before = String(body.before ?? "");
-    const commits = body.commits as Array<Record<string, unknown>> | undefined;
+    const commits = body.commits as Array<UnknownRecord> | undefined;
     if (commits) {
       base.commits = commits.map((c) => ({
         sha: String(c.sha ?? ""),

@@ -12,15 +12,23 @@ function makeTestAdapter(delegateUrl = "http://localhost:4000"): {
   fetchCalls: Array<{ url: string; body: unknown }>;
 } {
   const fetchCalls: Array<{ url: string; body: unknown }> = [];
-  const originalFetch = globalThis.fetch;
-  (globalThis as any).fetch = ((url: string | URL, opts?: RequestInit) => {
-    fetchCalls.push({ url: url as string, body: opts?.body ? JSON.parse(opts.body as string) : undefined });
-    return new Response(JSON.stringify({ result: { text: "ok" } }), { status: 200 });
-  }) as typeof fetch;
-  return {
+  const mockFetch = async (url: string | URL, init?: RequestInit) => {
+    const raw = init?.body;
+    let parsed: unknown = raw;
+    if (typeof raw === "string") {
+      try { parsed = JSON.parse(raw); } catch { parsed = raw; }
+    }
+    fetchCalls.push({ url: url as string, body: parsed });
+    return new Response(JSON.stringify({ result: { text: "ok" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const adapter: ReturnType<typeof makeTestAdapter> = {
     handlePush: async (e: GitHubWebhookEvent) => {
       const text = `GitHub push to ${e.payload.repository.full_name} on ${e.payload.after} (${e.payload.commits?.length ?? 0} commits). Before: ${e.payload.before}`;
-      const res = await fetch(delegateUrl, {
+      const res = await mockFetch(delegateUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -39,7 +47,7 @@ function makeTestAdapter(delegateUrl = "http://localhost:4000"): {
       if (!pr) return;
       const repo = e.payload.repository.full_name;
       const text = `GitHub PR #${pr.number} ${e.action} on ${repo}: ${pr.title}\nHead SHA: ${pr.head.sha}\nBody:\n${pr.body}`;
-      const res = await fetch(delegateUrl, {
+      const res = await mockFetch(delegateUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -55,6 +63,8 @@ function makeTestAdapter(delegateUrl = "http://localhost:4000"): {
     },
     fetchCalls,
   };
+
+  return adapter;
 }
 
 // ---- Signature verification ----
@@ -110,6 +120,7 @@ const prPayload = JSON.stringify({
   },
   sender: { login: "tester", id: 42, avatar_url: "https://example.com/avatar.png" },
   action: "opened",
+  head_commit: { timestamp: "2026-08-29T12:00:00Z" },
   pull_request: {
     number: 42,
     title: "Add GitHubWebhookAdapter",
@@ -324,11 +335,11 @@ describe("GitHubWebhookAdapter", () => {
     };
     await adapter.handlePush(event);
     expect(adapter.fetchCalls.length).toBe(1);
-    expect(adapter.fetchCalls[0].url).toBe("http://localhost:4000");
-    const body = adapter.fetchCalls[0].body as { jsonrpc: string; method: string; params: { message: { parts: Array<{ kind: string; text: string }> } } };
-    expect(body.jsonrpc).toBe("2.0");
-    expect(body.method).toBe("tasks/send");
-    expect(body.params.message.parts[0].text).toContain("GitHub push to omnizya/jabr on abc");
+    expect(adapter.fetchCalls[0]!.url).toBe("http://localhost:4000");
+    const callBody = adapter.fetchCalls[0]!.body as { jsonrpc: string; method: string; params: { message: { parts: Array<{ kind: string; text: string }> } } };
+    expect(callBody.jsonrpc).toBe("2.0");
+    expect(callBody.method).toBe("tasks/send");
+    expect(callBody.params.message.parts[0]!.text).toContain("GitHub push to omnizya/jabr on abc");
   });
 
   test("handlePullRequest delegates to agent when delegateUrl is set", async () => {
@@ -355,8 +366,14 @@ describe("GitHubWebhookAdapter", () => {
     };
     await adapter.handlePullRequest(event);
     expect(adapter.fetchCalls.length).toBe(1);
-    const body = adapter.fetchCalls[0].body as { params: { message: { parts: Array<{ kind: string; text: string }> } } };
-    expect(body.params.message.parts[0].text).toContain("GitHub PR #1 opened on omnizya/jabr: PR title");
+    const callBody = adapter.fetchCalls[0]!.body as {
+      params: {
+        message: { parts: Array<{ kind: string; text: string }> };
+      };
+    };
+    expect(callBody.params.message.parts[0]!.text).toContain(
+      "GitHub PR #1 opened on omnizya/jabr: PR title",
+    );
   });
 
   test("handlePullRequest is a no-op when pull_request is absent", async () => {

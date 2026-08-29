@@ -1,6 +1,7 @@
 import type { TelegramBotPort, TelegramParseMode, TelegramChatAction, TelegramInlineKeyboard } from "@ports/telegram-bot-port";
-import { WebhookServer } from "./webhook-server";
-import { ok } from "@utils/rpc";
+import { IdempotencyLock, idempotencyConflictResponse } from "@adapters/idempotency-lock";
+import { rateLimitResponse } from "@adapters/rate-limit";
+import { ok, err, buildCorsHeaders } from "@utils/rpc";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 
@@ -18,6 +19,8 @@ export interface TelegramWebhookAdapterConfig {
   webhookUrl?: string;
   /** Hostname for the default webhook URL. Default "localhost". */
   host?: string;
+  /** Optional rate limiter. */
+  rateLimiter?: import("@agents/adapters/rate-limit").RateLimiter;
 }
 
 export class TelegramWebhookAdapter implements TelegramBotPort {
@@ -26,14 +29,18 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
   private readonly delegateUrl: string;
   private readonly webhookSecret: string;
   private readonly webhookUrl: string;
+  private readonly rateLimiter?: import("@agents/adapters/rate-limit").RateLimiter;
   private server: ReturnType<typeof Bun.serve> | null = null;
-  private webhookServer: WebhookServer | null = null;
+  private idempotencyLock: IdempotencyLock;
+  private seenUpdateIds: Set<number> = new Set();
 
   constructor(config: TelegramWebhookAdapterConfig) {
     this.botToken = config.botToken;
     this.port = config.port ?? 4008;
     this.delegateUrl = config.delegateUrl ?? "";
     this.webhookSecret = config.webhookSecret ?? "";
+    this.idempotencyLock = new IdempotencyLock();
+    this.rateLimiter = config.rateLimiter;
     const host = config.host ?? "localhost";
     const port = this.port;
     this.webhookUrl =
@@ -43,11 +50,7 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
 
   // ---- Webhook lifecycle ----
 
-  /**
-   * Register the webhook URL with Telegram via setWebhook.
-   * Call once on startup. Subsequent calls are no-ops if the server is already
-   * listening (the URL won't have changed).
-   */
+  /** Register the webhook URL with Telegram via setWebhook. */
   async setWebhook(url: string, secretToken?: string): Promise<void> {
     const token = secretToken ?? this.webhookSecret;
     const payload: Record<string, unknown> = { url };
@@ -134,51 +137,237 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
   start(): void {
     if (this.server) return;
 
-    this.webhookServer = new WebhookServer({
+    const adapter = this;
+
+    this.server = Bun.serve({
       port: this.port,
-      webhookSecret: this.webhookSecret,
-      onEvent: async (payload) => {
-        const p = payload.payload as Record<string, unknown>;
-        const updateId = p.update_id as number | undefined;
-        const chatId = (p.message as { chat?: { id?: number } })?.chat?.id
-          ?? (p.callback_query as { from?: { id?: number } })?.from?.id;
-        console.log(`[TelegramWebhookAdapter] ← event update_id=${updateId} chat_id=${chatId}`);
-        // Forward to the delegate agent if configured.
-        if (this.delegateUrl) {
-          try {
-            await fetch(this.delegateUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ ...payload, chatId, updateId }),
+      async fetch(req) {
+        const url = new URL(req.url);
+
+        // Preflight
+        if (req.method === "OPTIONS") {
+          const origin = req.headers.get("Origin");
+          const headers = buildCorsHeaders(origin);
+          if (!headers) return new Response(null, { status: 204 });
+          return new Response(null, { headers });
+        }
+
+        // Only POST /webhook
+        if (req.method !== "POST" || url.pathname !== "/webhook") {
+          const origin = req.headers.get("Origin");
+          const headers = buildCorsHeaders(origin) ?? {};
+          return new Response("Not found", {
+            status: 404,
+            headers: { ...headers, "Content-Type": "text/plain" },
+          });
+        }
+
+        // --- Rate limiting (when configured) ---
+        if (adapter.rateLimiter) {
+          const rl = adapter.rateLimiter.check(req);
+          if (!rl.allowed) {
+            console.warn(`[TelegramWebhookAdapter] rate-limited: 429`);
+            const rr = rateLimitResponse(rl.retryAfterMs);
+            return new Response(JSON.stringify(rr.body), {
+              status: rr.status,
+              headers: rr.headers,
             });
-          } catch (e) {
-            console.error(`[TelegramWebhookAdapter] delegate fetch failed:`, e);
           }
         }
-        return ok(null, { received: true });
+
+        // --- Read raw body ONCE ---
+        let rawBody: string;
+        try {
+          rawBody = await req.text();
+        } catch (e) {
+          console.error(`[TelegramWebhookAdapter] body read error:`, e);
+          const origin = req.headers.get("Origin");
+          const headers = buildCorsHeaders(origin) ?? { "Content-Type": "application/json" };
+          return new Response(
+            JSON.stringify(err(null, -32700, "Parse error: cannot read body")),
+            { status: 400, headers }
+          );
+        }
+
+        // --- Telegram signature verification ---
+        // Telegram uses X-Telegram-Bot-Api-Secret-Token: a plaintext secret token
+        // (not HMAC). Compare directly.
+        const secretTokenHeader = req.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+        if (!secretTokenHeader || adapter.webhookSecret === "" || secretTokenHeader !== adapter.webhookSecret) {
+          console.warn(`[TelegramWebhookAdapter] rejected: bad or missing secret token`);
+          const origin = req.headers.get("Origin");
+          const headers = buildCorsHeaders(origin) ?? { "Content-Type": "application/json" };
+          return new Response(
+            JSON.stringify(err(null, -32002, "Unauthorized: invalid webhook secret token")),
+            { status: 401, headers }
+          );
+        }
+
+        // --- Idempotency (by update_id) ---
+        let updateId: number | undefined;
+        try {
+          const parsed = JSON.parse(rawBody);
+          updateId = parsed.update_id;
+        } catch {
+          // If we can't parse, allow the request but don't track idempotency
+        }
+
+        if (updateId !== undefined) {
+          const lockKey = `telegram:${updateId}`;
+          const lockResult = adapter.idempotencyLock.acquire(lockKey);
+          if (!lockResult.acquired) {
+            console.log(`[TelegramWebhookAdapter] duplicate update_id=${updateId} (409)`);
+            const resp = idempotencyConflictResponse(lockKey);
+            const origin = req.headers.get("Origin");
+            const headers = buildCorsHeaders(origin) ?? {};
+            return new Response(JSON.stringify(resp.body), {
+              status: resp.status,
+              headers: { ...headers, "Content-Type": "application/json" },
+            });
+          }
+          // Track seen update IDs for duplicate detection
+          adapter.seenUpdateIds.add(updateId);
+        }
+
+        // --- Parse and dispatch ---
+        let parsedPayload: unknown = {};
+        try {
+          parsedPayload = JSON.parse(rawBody || "{}");
+        } catch {
+          parsedPayload = { raw: rawBody };
+        }
+
+        // Extract chat ID and sender info for delegation
+        const p = parsedPayload as Record<string, unknown>;
+        const updateIdNum = p.update_id as number | undefined;
+        let chatId: number | undefined;
+        let senderId: number | undefined;
+        let senderName: string | undefined;
+        let messageText: string | undefined;
+
+        // Text message
+        if (p.message) {
+          const msg = p.message as Record<string, unknown>;
+          chatId = (msg.chat as Record<string, unknown>)?.id as number | undefined;
+          const from = msg.from as Record<string, unknown> | undefined;
+          senderId = from?.id as number | undefined;
+          senderName = from?.first_name as string | undefined;
+          messageText = msg.text as string | undefined;
+        }
+
+        // Callback query
+        if (p.callback_query) {
+          const cb = p.callback_query as Record<string, unknown>;
+          chatId = (cb.chat as Record<string, unknown>)?.id as number | undefined;
+          const from = cb.from as Record<string, unknown> | undefined;
+          senderId = from?.id as number | undefined;
+          senderName = from?.first_name as string | undefined;
+        }
+
+        console.log(`[TelegramWebhookAdapter] ← event update_id=${updateIdNum} chat_id=${chatId}`);
+
+        // Route to handler (fire-and-forget so HTTP response returns fast)
+        adapter.route({
+          updateId: updateIdNum,
+          chatId,
+          senderId,
+          senderName,
+          messageText,
+          rawPayload: parsedPayload,
+        }).catch((e) =>
+          console.error(`[TelegramWebhookAdapter] handler error for update_id=${updateIdNum}:`, e),
+        );
+
+        const origin = req.headers.get("Origin");
+        const headers = buildCorsHeaders(origin) ?? {};
+        return new Response(JSON.stringify(ok(null, { received: true })), { headers });
       },
-    });
-
-    this.webhookServer.start();
-
-    // Register the webhook URL with Telegram (fire-and-forget on startup).
-    Promise.resolve().then(async () => {
-      try {
-        await this.setWebhook(this.webhookUrl, this.webhookSecret || undefined);
-      } catch (e) {
-        console.error(`[TelegramWebhookAdapter] setWebhook on startup failed:`, e);
-      }
     });
 
     console.log(`\n📱 Telegram Webhook Adapter → http://localhost:${this.port}/webhook`);
     console.log(`   Webhook URL: ${this.webhookUrl}`);
     console.log(`   Bot token:   ${"*".repeat(this.botToken.length)}\n`);
+
+    // Register the webhook URL with Telegram (fire-and-forget on startup).
+    Promise.resolve().then(async () => {
+      try {
+        await adapter.setWebhook(adapter.webhookUrl, adapter.webhookSecret || undefined);
+      } catch (e) {
+        console.error(`[TelegramWebhookAdapter] setWebhook on startup failed:`, e);
+      }
+    });
   }
 
   stop(): void {
-    this.webhookServer?.stop();
-    this.webhookServer = null;
+    this.server?.stop();
     this.server = null;
+    this.seenUpdateIds.clear();
     this.deleteWebhook().catch((e) => console.error("[TelegramWebhookAdapter] deleteWebhook on stop failed:", e));
+  }
+
+  // ---- Event routing ----
+
+  private async route(event: {
+    updateId?: number;
+    chatId?: number;
+    senderId?: number;
+    senderName?: string;
+    messageText?: string;
+    rawPayload: unknown;
+  }): Promise<void> {
+    if (!this.delegateUrl) {
+      console.log(`[TelegramWebhookAdapter] no delegateUrl — dropping update_id=${event.updateId}`);
+      return;
+    }
+
+    // Build the text to send to the agent
+    const parts: string[] = ["[Telegram]"];
+
+    if (event.senderId !== undefined) {
+      parts.push(`Sender: ${event.senderId}${event.senderName ? ` (${event.senderName})` : ""}`);
+    }
+
+    if (event.chatId !== undefined) {
+      parts.push(`Chat: ${event.chatId}`);
+    }
+
+    if (event.messageText !== undefined) {
+      parts.push(event.messageText);
+    } else {
+      // Non-text update (e.g., callback query, status)
+      parts.push(`Update received (update_id: ${event.updateId})`);
+    }
+
+    const fullText = parts.join("\n");
+    console.log(`[TelegramWebhookAdapter] delegating to agent: ${fullText.slice(0, 120)}...`);
+
+    await this.delegateToAgent(fullText);
+  }
+
+  /** Delegate an inbound message to an agent via JSON-RPC tasks/send. */
+  private async delegateToAgent(text: string): Promise<void> {
+    if (!this.delegateUrl) {
+      console.log(`[TelegramWebhookAdapter] no delegateUrl — dropping message`);
+      return;
+    }
+
+    const res = await fetch(this.delegateUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tasks/send",
+        params: {
+          message: {
+            role: "user",
+            parts: [{ kind: "text", text }],
+          },
+        },
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[TelegramWebhookAdapter] delegate failed: ${res.status} ${res.statusText}`);
+    }
   }
 }

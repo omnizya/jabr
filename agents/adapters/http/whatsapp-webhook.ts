@@ -1,11 +1,11 @@
 import { createHmac } from "node:crypto";
 import type { BunRequest } from "bun";
-import type {
-  WhatsAppBotPort,
-  WhatsAppMessageType,
-  WhatsAppInteractiveMessage,
-  WhatsAppWebhookEvent,
-  WhatsAppInboundMessage,
+import {
+  type WhatsAppBotPort,
+  type WhatsAppMessageType,
+  type WhatsAppInteractiveMessage,
+  type WhatsAppWebhookEvent,
+  type WhatsAppInboundMessage,
   isTextMessage,
   isImageMessage,
   isAudioMessage,
@@ -237,7 +237,7 @@ export function parseWhatsAppEvent(rawBody: string): WhatsAppWebhookEvent {
   const rawValue = change.value as {
     messaging_product?: string;
     metadata?: { display_phone_number: string; phone_number_id: string };
-    messages?: RawWhatsappMessage[];
+    messages?: RawWhatsAppMessage[];
     statuses?: Array<{
       id: string;
       recipient_id: string;
@@ -585,7 +585,25 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
     if (!template.name) {
       throw new Error("[WhatsAppWebhookAdapter] sendTemplateMessage: template.name is required");
     }
-    const payload: Record<string, unknown> = {
+    const payload: {
+      messaging_product: string;
+      recipient_type: string;
+      to: string;
+      type: "template";
+      template: {
+        name: string;
+        language: { code: string };
+        components?: Array<{
+          type: string;
+          parameters?: Array<{
+            type: string;
+            text?: string;
+            media?: { link: string };
+            fallback?: string;
+          }>;
+        }>;
+      };
+    } = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to,
@@ -685,15 +703,43 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
       document?: { url: string; filename: string };
     },
   ): Promise<void> {
-    const payload: Record<string, unknown> = {
+    const payload = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to,
+      type: body.type,
+    } as {
+      messaging_product: string;
+      recipient_type: string;
+      to: string;
+      type: string;
+      template?: {
+        name: string;
+        language: { code: string };
+        components?: Array<{
+          type: string;
+          parameters?: Array<{
+            type: string;
+            text?: string;
+            media?: { link: string };
+            fallback?: string;
+          }>;
+        }>;
+      };
+      interactive?: {
+        type: string;
+        header: { type: string; text: string };
+        body: { text: string };
+        footer?: { text: string };
+        buttons: Array<{ type: string; reply: { id: string; title: string } }>;
+      };
+      text?: { body: string };
+      document?: { url: string; filename: string };
     };
 
     if (body.type === "text") {
       payload.type = "text";
-      payload.text = { body: body.text };
+      payload.text = { body: body.text ?? "" };
     } else if (body.type === "interactive") {
       const interactive = body.interactive;
       if (!interactive) return;

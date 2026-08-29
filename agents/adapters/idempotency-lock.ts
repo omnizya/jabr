@@ -1,5 +1,3 @@
-import type { Request } from "bun";
-
 /**
  * Redis-style in-memory lock with TTL, following the same design philosophy as
  * {@link RateLimiter} (`agents/adapters/rate-limit.ts`): sliding-window state
