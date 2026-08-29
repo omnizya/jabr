@@ -2,12 +2,13 @@
  * demo.ts — End-to-end test of the full agent stack
  *
  * What it tests:
- *   1. A2A agent card discovery (Fixer, Librarian, Oracle, Explorer, Designer, Orchestrator)
+ *   1. A2A agent card discovery (all 8 agents: Fixer, Librarian, Oracle, Explorer,
+ *      Designer, Scientist, Jarvis, Orchestrator)
  *   2. Direct A2A task delegation (Fixer Agent)
- *   3. Orchestrator routing (Fixer / Librarian / Explorer / Oracle)
+ *   3. Orchestrator routing (Fixer / Librarian / Explorer / Oracle / Scientist / Jarvis)
  *   4. Self-improvement: skill file creation
- *   5. ACP bridge handshake (stdio simulation)
- *   6. Memory persistence check
+ *   5. Memory persistence (sqlite-backed, memory/jabr.db)
+ *   6. ACP bridge handshake (stdio simulation)
  *   7. Orchestrator world-state endpoint
  *
  * Run AFTER starting all agents:
@@ -22,12 +23,15 @@
 
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
+import { Database } from "bun:sqlite";
 
 const FIXER = "http://localhost:4005";
 const LIBRARIAN = "http://localhost:4002";
 const ORACLE = "http://localhost:4001";
 const EXPLORER = "http://localhost:4003";
 const DESIGNER = "http://localhost:4004";
+const SCIENTIST = "http://localhost:4006";
+const JARVIS = "http://localhost:1337";
 const ORCHESTRATOR = "http://localhost:4000";
 
 let passed = 0;
@@ -100,6 +104,8 @@ await checkCard("Librarian Agent card reachable", LIBRARIAN);
 await checkCard("Oracle Agent card reachable", ORACLE);
 await checkCard("Explorer Agent card reachable", EXPLORER);
 await checkCard("Designer Agent card reachable", DESIGNER);
+await checkCard("Scientist Agent card reachable", SCIENTIST);
+await checkCard("Jarvis Agent card reachable", JARVIS);
 await checkCard("Orchestrator card reachable", ORCHESTRATOR);
 
 // ── 2. Direct A2A task delegation ─────────────────────────────────────────────
@@ -149,6 +155,26 @@ await check("Orchestrator routes review task → Oracle", async () => {
   console.log(`     → ${response.slice(0, 80)}…`);
 });
 
+await check("Orchestrator routes data task → Scientist", async () => {
+  const response = await postA2A(
+    ORCHESTRATOR,
+    "analyze this data with python",
+  );
+  if (!/Scientist/i.test(response))
+    throw new Error("Response doesn't mention Scientist");
+  console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+await check("Orchestrator routes scan task → Jarvis", async () => {
+  const response = await postA2A(
+    ORCHESTRATOR,
+    "scan the codebase for improvements",
+  );
+  if (!/Steward scan complete/i.test(response))
+    throw new Error("Response doesn't mention Steward scan");
+  console.log(`     → ${response.slice(0, 80)}…`);
+});
+
 // ── 4. Self-improvement: skill persistence ────────────────────────────────────
 step("4 · Self-improvement — skill files created");
 
@@ -171,50 +197,65 @@ await check("Librarian creates skill files after tasks", async () => {
 });
 
 // ── 5. Memory persistence ─────────────────────────────────────────────────────
-step("5 · Memory persistence (Hermes-style)");
+step("5 · Memory persistence (sqlite-backed)");
 
-await check("Orchestrator memory file written", async () => {
-  const memPath = join(process.cwd(), "memory", "orchestrator.md");
-  if (!existsSync(memPath)) throw new Error("memory/orchestrator.md not found");
-  const mem = readFileSync(memPath, "utf-8");
-  if (mem.length < 10) throw new Error("Memory file too short");
-  const lines = mem.trim().split("\n").filter(Boolean);
-  console.log(`     → ${lines.length} memory entries`);
-  console.log(`     → Last: ${lines.at(-1)?.slice(0, 80)}…`);
+await check("Orchestrator memory persisted to sqlite", async () => {
+  const dbPath = join(process.cwd(), "memory", "jabr.db");
+  if (!existsSync(dbPath)) throw new Error("memory/jabr.db not found");
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const tasks = db
+      .query("SELECT COUNT(*) AS n FROM tasks")
+      .get() as { n: number };
+    const mem = db
+      .query("SELECT COUNT(*) AS n FROM memory_log")
+      .get() as { n: number };
+    console.log(`     → ${tasks.n} task(s) · ${mem.n} memory log entr(ies)`);
+    if (tasks.n < 1) throw new Error("No tasks recorded in sqlite memory");
+  } finally {
+    db.close();
+  }
 });
 
 // ── 6. ACP bridge handshake (simulated) ──────────────────────────────────────
-step("6 · ACP bridge — simulated initialize + sessions/message");
+step("6 · ACP bridge — simulated initialize + session/list");
 
 await check("ACP initialize returns capabilities", async () => {
-  // Spawn the ACP bridge as a subprocess and test it via stdin/stdout
+  // Spawn the ACP bridge as a subprocess and test it via stdin/stdout.
   const proc = Bun.spawn(["bun", "agents/run/acp-bridge.ts"], {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
   });
 
-  // Read initial ready notification
-  const reader = proc.stdout.getReader();
-  let buf = "";
-  let gotReady = false;
+  // The bridge logs its ready notification on stderr; JSON-RPC responses
+  // arrive on stdout.
+  const stderrReader = proc.stderr.getReader();
+  const stdoutReader = proc.stdout.getReader();
+  const errBuf = { current: "" };
+  const outBuf = { current: "" };
 
-  const readLine = async (): Promise<string> => {
+  const readLine = async (
+    reader: { read(): Promise<{ done: boolean; value?: Uint8Array }> },
+    buf: { current: string },
+  ): Promise<string> => {
     while (true) {
-      if (buf.includes("\n")) {
-        const [line, ...rest] = buf.split("\n");
-        buf = rest.join("\n");
-        return line!.trim();
+      const nl = buf.current.indexOf("\n");
+      if (nl >= 0) {
+        const line = buf.current.slice(0, nl).trim();
+        buf.current = buf.current.slice(nl + 1);
+        return line;
       }
       const { value, done } = await reader.read();
-      if (done) throw new Error("ACP bridge stdout closed");
-      buf += new TextDecoder().decode(value);
+      if (done) throw new Error("ACP bridge stream closed");
+      if (!value) throw new Error("ACP bridge read returned no data");
+      buf.current += new TextDecoder().decode(value);
     }
   };
 
-  // Read ready notification
+  // Read ready notification (stderr).
   const ready = await Promise.race([
-    readLine(),
+    readLine(stderrReader, errBuf),
     Bun.sleep(2000).then(() => "timeout"),
   ]);
   if (ready === "timeout")
@@ -230,7 +271,7 @@ await check("ACP initialize returns capabilities", async () => {
     }) + "\n";
   proc.stdin.write(initReq);
   const initResp = await Promise.race([
-    readLine(),
+    readLine(stdoutReader, outBuf),
     Bun.sleep(2000).then(() => "timeout"),
   ]);
   if (initResp === "timeout") throw new Error("ACP bridge initialize timeout");
@@ -242,23 +283,25 @@ await check("ACP initialize returns capabilities", async () => {
     `     → capabilities: ${JSON.stringify(parsed.result.capabilities)}`,
   );
 
-  // Send sessions/create
+  // Send session/list (the bridge has no sessions/create — list is the
+  // session API).
   proc.stdin.write(
     JSON.stringify({
       jsonrpc: "2.0",
       id: 2,
-      method: "sessions/create",
+      method: "session/list",
       params: {},
     }) + "\n",
   );
   const sessResp = await Promise.race([
-    readLine(),
+    readLine(stdoutReader, outBuf),
     Bun.sleep(2000).then(() => "timeout"),
   ]);
-  if (sessResp === "timeout") throw new Error("sessions/create timeout");
+  if (sessResp === "timeout") throw new Error("session/list timeout");
   const sessData = JSON.parse(sessResp);
-  if (!sessData.result?.sessionId) throw new Error("No sessionId in response");
-  console.log(`     → sessionId: ${sessData.result.sessionId.slice(0, 16)}…`);
+  if (!Array.isArray(sessData.result?.sessions))
+    throw new Error("No sessions array in response");
+  console.log(`     → ${sessData.result.sessions.length} session(s)`);
 
   proc.kill();
 });

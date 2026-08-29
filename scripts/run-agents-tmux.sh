@@ -10,24 +10,25 @@
 #   scripts/run-agents-tmux.sh          # start all agents in tmux panes
 #   scripts/run-agents-tmux.sh stop     # kill the tmux session + agent processes
 #   scripts/run-agents-tmux.sh attach   # attach to the running session
+#   scripts/run-agents-tmux.sh status   # show session + per-agent port health
 #
-# Requires: tmux, bun. Run from the repo root.
+# Requires: tmux, bun, curl. Run from the repo root.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${JABR_TMUX_SESSION:-jabr}"
 
-# name:run-script
+# name:run-script:port
 AGENTS=(
-  "orchestrator:orchestrator"
-  "oracle:oracle"
-  "librarian:librarian"
-  "explorer:explorer"
-  "designer:designer"
-  "fixer:fixer"
-  "scientist:scientist"
-  "jarvis:jarvis"
+  "orchestrator:orchestrator:4000"
+  "oracle:oracle:4001"
+  "librarian:librarian:4002"
+  "explorer:explorer:4003"
+  "designer:designer:4004"
+  "fixer:fixer:4005"
+  "scientist:scientist:4006"
+  "jarvis:jarvis:1337"
 )
 
 stop() {
@@ -40,6 +41,47 @@ stop() {
 
 attach() {
   tmux attach-session -t "$SESSION"
+}
+
+# Poll each agent's agent-card endpoint until every one responds (or timeout).
+wait_ready() {
+  local deadline=$((SECONDS + 30))
+  local all_ready=0
+  while (( SECONDS < deadline )); do
+    all_ready=1
+    for entry in "${AGENTS[@]}"; do
+      local name port
+      IFS=':' read -r name _ port <<< "$entry"
+      if ! curl -sf --max-time 1 "http://localhost:$port/.well-known/agent-card.json" >/dev/null 2>&1; then
+        all_ready=0
+        break
+      fi
+    done
+    if (( all_ready )); then break; fi
+    sleep 1
+  done
+  if (( all_ready )); then
+    echo "All ${#AGENTS[@]} agents ready."
+  else
+    echo "Warning: not all agents became ready within 30s — check /tmp/jabr-*.log"
+  fi
+}
+
+status() {
+  if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "Session '$SESSION' is not running."
+    exit 1
+  fi
+  echo "Session '$SESSION' is running (${#AGENTS[@]} agent panes)."
+  for entry in "${AGENTS[@]}"; do
+    local name port
+    IFS=':' read -r name _ port <<< "$entry"
+    if curl -sf --max-time 1 "http://localhost:$port/.well-known/agent-card.json" >/dev/null 2>&1; then
+      echo "  ✓ $name (:$port)"
+    else
+      echo "  ✗ $name (:$port)"
+    fi
+  done
 }
 
 start() {
@@ -62,16 +104,17 @@ start() {
   for entry in "${AGENTS[@]:1}"; do
     local name script
     IFS=':' read -r name script <<< "$entry"
-    tmux split-window -t "$SESSION" -h -l 50% \
+    tmux split-window -t "$SESSION" \
       "cd '$ROOT' && bun agents/run/$script.ts 2>&1 | tee /tmp/jabr-$name.log"
     tmux select-layout -t "$SESSION" tiled 2>/dev/null || true
   done
 
-  # Give agents a moment to boot, then show the layout.
-  sleep 2
+  # Wait for every agent to serve its agent card, then show the layout.
+  wait_ready
   tmux select-layout -t "$SESSION" tiled 2>/dev/null || true
   echo "Started session '$SESSION' with ${#AGENTS[@]} agent panes."
   echo "  attach:  scripts/run-agents-tmux.sh attach"
+  echo "  status:  scripts/run-agents-tmux.sh status"
   echo "  stop:    scripts/run-agents-tmux.sh stop"
   echo "  logs:    tail -f /tmp/jabr-<agent>.log"
 }
@@ -80,8 +123,9 @@ case "${1:-start}" in
   start)  start ;;
   stop)   stop ;;
   attach) attach ;;
+  status) status ;;
   *)
-    echo "Usage: $0 {start|stop|attach}" >&2
+    echo "Usage: $0 {start|stop|attach|status}" >&2
     exit 1
     ;;
 esac
