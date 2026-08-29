@@ -91,7 +91,7 @@
 - [ ] **`AgentCard.name` mismatch** — runtime cards still say "Oracle"/"Librarian" while lore uses polymaths (JABIR/RUSHD/...); rebrand is skin-deep
 - [ ] **`memory-fs` resolves `process.cwd()`** — fragile for non-repo-root invocations
 - [ ] **`mcp-resources.ts` resource templates** — `listChanged` declared but not all resources emit `notifications/resources/updated`
-- [ ] **Jarvis LLM prompt leaves `[ADDRESS]` placeholders unfilled** in 2 call sites
+- [x] **Jarvis LLM prompt `[ADDRESS]` placeholders** — threaded `agentEndpoint` (ORCHESTRATOR_URL, default http://localhost:4000) into scan + AI-enhancement prompts; no bare `[ADDRESS]` literals remain
 - [x] **`route-test.ts` MockRegistry diverges from real `DynamicRegistry`** — replaced MockRegistry with an offline `AgentRegistryPort` feeding the real `DynamicRegistry`; routing test now exercises the actual `matchAgent` algorithm (typecheck clean, self-check asserts explorer hit)
 - [ ] **Consensus always queries ALL agents** — no opt-out; wasteful for narrow tasks
 

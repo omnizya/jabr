@@ -20,7 +20,9 @@ if (import.meta.main) {
   const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
   const taskStore = new TaskMemory();
 
-  const jarvis = new JarvisAgent(taskStore, llm, search, mcp, skills, palace, budget, kanban);
+  const agentEndpoint = process.env.ORCHESTRATOR_URL ?? "http://localhost:4000";
+
+  const jarvis = new JarvisAgent(taskStore, llm, search, mcp, skills, palace, budget, kanban, agentEndpoint);
 
   const server = new A2AServer({
     port,

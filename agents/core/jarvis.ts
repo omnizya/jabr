@@ -138,6 +138,7 @@ export class JarvisAgent {
     private knowledge?: KnowledgePort,
     private budget?: BudgetPort,
     private kanban?: KanbanPort,
+    private agentEndpoint: string = "http://localhost:4000",
   ) {}
 
   get card(): AgentCard {
@@ -154,6 +155,8 @@ export class JarvisAgent {
 2. Dead code (unused exports, unreachable branches)
 3. Complexity hotspots (high cyclomatic complexity, deep nesting)
 4. Security risks (hardcoded secrets, missing input validation)
+
+The Jabr agent/orchestrator endpoint (where MCP tools and other agents are reachable) is: ${this.agentEndpoint}
 
 Return a JSON array of findings: [{severity, category, file, line, message, suggestion, autoFixable}]`;
 
@@ -346,6 +349,8 @@ Look for:
 3. Documentation that could be auto-generated
 4. Test boilerplate that could be synthesized
 5. Refactoring patterns that could be detected and applied
+
+The Jabr agent/orchestrator endpoint (where automation agents are reachable to dispatch this work) is: ${this.agentEndpoint}
 
 Return JSON: {opportunities[{file, description, effort, impact}]}`;
 
