@@ -144,17 +144,25 @@ export class OrchestratorAgent {
     return results.filter((r): r is ConsensusInput => r !== null);
   }
 
-  async executeConsensus(taskId: string, userText: string): Promise<string> {
+  async executeConsensus(
+    taskId: string,
+    userText: string,
+    agentNames?: string[],
+  ): Promise<string> {
     const available = await this.getAvailableAgentNames();
-    if (available.length < 2) {
-      const agentName = available[0] ?? "librarian";
+    const participants = agentNames && agentNames.length > 0
+      ? available.filter((name) => agentNames.includes(name))
+      : available;
+
+    if (participants.length < 2) {
+      const agentName = participants[0] ?? "librarian";
       const url = await this.getAgentUrl(agentName);
       if (!url) return "No agents available for consensus";
       return this.registry.delegateTask(url, userText, agentName);
     }
 
-    this.memory.append(`[consensus] Delegating to ${available.length} agents`);
-    const inputs = await this.delegateToMultiple(available, userText);
+    this.memory.append(`[consensus] Delegating to ${participants.length} agents`);
+    const inputs = await this.delegateToMultiple(participants, userText);
 
     if (inputs.length === 0) return "No agents responded";
 
