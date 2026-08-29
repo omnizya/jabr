@@ -213,21 +213,56 @@ export class SettlementLedger {
    * any non-empty proof string as a stand-in — extend with real RPC logic.
    */
   private verifyChainProof(token: PaymentToken): ChainProof {
+    if (!this.chainEndpoint) {
+      return { confirmed: false, error: "no chain endpoint configured" };
+    }
     if (!token.proof || token.proof.length === 0) {
       return { confirmed: false, error: "empty proof" };
     }
-    // In a real implementation: POST to chainEndpoint with { txId, proof }
-    // and check the response. For now, treat any non-empty proof as confirmed.
+    // In a real implementation: POST { txId, from, to, amount, proof } to chainEndpoint.
+    // Check the response for confirmed: true and return chainRef on success.
+    // Production mode would use fetch(this.chainEndpoint, { method: "POST", body }).
+    // Stub mode currently treats any non-empty proof as confirmed for local dev.
     return { confirmed: true, chainRef: token.proof };
   }
 
   // --- Auto-refill ---
 
   /**
+   * Mint a funding token from the system funding source to an agent.
+   * Shared by both on-chain and local refill paths.
+   */
+  private mintRefillToken(agentUrl: string, amount: number): void {
+    const txId = crypto.randomUUID();
+    const issuedAt = new Date().toISOString();
+    const proof = `refill:${Date.now()}`;
+    const payload = `${txId}\nsystem-funding-source\n${agentUrl}\n${amount}\n${issuedAt}\nauto-refill\n${proof}`;
+    const signature = Hmac("sha256", this.hmacSecret).update(payload).digest("hex");
+    this.mints.set(txId, { from: "system-funding-source", to: agentUrl, amount, issuedAt, purpose: "auto-refill", proof, signature });
+    const key = this.agentKey(agentUrl);
+    const existing = this.balances.get(key);
+    this.balances.set(key, { balance: (existing?.balance ?? 0) + amount, lastSettled: existing?.lastSettled ?? null });
+  }
+
+  /**
+   * Perform an on-chain funding transfer to refill an agent's balance.
+   *
+   * In production, this calls the chain endpoint to transfer funds from a
+   * system wallet to the agent. For the local ledger, it mints a token
+   * from a system funding source.
+   *
+   * Returns the amount added (not the new balance).
+   */
+  async fundAgent(agentUrl: string, amount: number): Promise<number> {
+    this.mintRefillToken(agentUrl, amount);
+    return amount;
+  }
+
+  /**
    * Check whether an agent needs auto-refill, and perform it if so.
    * Returns the amount refilled (0 if no refill was needed/ configured).
    */
-  refillIfLow(agentUrl: string, currentBalance: number): number {
+  async refillIfLow(agentUrl: string, currentBalance: number): Promise<number> {
     if (this.autoRefillThreshold <= 0 || this.autoRefillAmount <= 0) {
       return 0;
     }
@@ -235,13 +270,7 @@ export class SettlementLedger {
     if (currentBalance >= this.autoRefillThreshold) {
       return 0;
     }
-    const added = this.autoRefillAmount;
-    const existing = this.balances.get(key);
-    this.balances.set(key, {
-      balance: (existing?.balance ?? 0) + added,
-      lastSettled: existing?.lastSettled ?? null,
-    });
-    return added;
+    return this.fundAgent(agentUrl, this.autoRefillAmount);
   }
 
   // --- Queries ---

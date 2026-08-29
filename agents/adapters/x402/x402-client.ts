@@ -65,6 +65,8 @@ export class X402Client {
   private defaultCurrency?: string;
   /** Cached agent cards (fetched on demand). */
   private cache = new Map<string, AgentCard | null>();
+  /** Cached settlement pricing per agent URL. */
+  private settlementCache = new Map<string, import("./types").SettlementPricing | null>();
 
   constructor(config: X402ClientConfig) {
     this.ledger = config.ledger;
@@ -106,21 +108,41 @@ export class X402Client {
    * Returns the response text (or error body) from the agent.
    */
   async delegateTask(agentUrl: string, text: string, agentName?: string): Promise<string> {
+    // Check cached settlement pricing first.
+    const cachedSettlement = this.settlementCache.get(agentUrl);
+    if (cachedSettlement !== undefined && cachedSettlement !== null) {
+      return this.delegateWithPayment(agentUrl, text, cachedSettlement, agentName);
+    }
+
+    // Fetch card and cache settlement pricing.
     const card = await this.fetchCard(agentUrl);
     const settlement = card ? getSettlementPricing(card) : null;
+    this.settlementCache.set(agentUrl, settlement);
 
     // No settlement pricing → standard delegation (no header).
     if (!settlement) {
       return this.sendTask(agentUrl, text);
     }
 
-    // Compute the required amount from the card + input length.
-    const amount = computeAmount(card, text.length);
+    return this.delegateWithPayment(agentUrl, text, settlement, agentName);
+  }
+
+  /**
+   * Delegate with a cached settlement pricing object — avoids re-fetching the card.
+   */
+  async delegateWithPayment(
+    agentUrl: string,
+    text: string,
+    settlement: import("./types").SettlementPricing,
+    agentName?: string,
+  ): Promise<string> {
+    // Compute the required amount from the settlement + input length.
+    const amount = settlement.costPerTask + (settlement.costPerToken ?? 0) * Math.max(1, Math.ceil(text.length / 4));
 
     // Auto-refill check: if the delegator's own balance is low, refill.
     const delegatorBalance = this.ledger.getBalance(this.delegatorUrl);
-    if (delegatorBalance < settlement.autoRefillThreshold ?? 0) {
-      const refilled = this.ledger.refillIfLow(this.delegatorUrl, delegatorBalance);
+    if (delegatorBalance < (settlement.autoRefillThreshold ?? 0)) {
+      const refilled = await this.ledger.refillIfLow(this.delegatorUrl, delegatorBalance);
       if (refilled > 0) {
         console.log(`[X402Client] auto-refilled ${refilled} units for ${this.delegatorUrl} (balance now ${delegatorBalance + refilled})`);
       }
