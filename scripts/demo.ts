@@ -2,18 +2,22 @@
  * demo.ts — End-to-end test of the full agent stack
  *
  * What it tests:
- *   1. A2A agent card discovery (Coder + Researcher)
- *   2. Direct A2A task delegation (Coder Agent)
- *   3. Orchestrator routing (Coder vs Researcher)
+ *   1. A2A agent card discovery (Fixer, Librarian, Oracle, Explorer, Designer, Orchestrator)
+ *   2. Direct A2A task delegation (Fixer Agent)
+ *   3. Orchestrator routing (Fixer / Librarian / Explorer / Oracle)
  *   4. Self-improvement: skill file creation
  *   5. ACP bridge handshake (stdio simulation)
  *   6. Memory persistence check
+ *   7. Orchestrator world-state endpoint
  *
  * Run AFTER starting all agents:
- *   bun run coder &
- *   bun run researcher &
- *   bun run orchestrator &
+ *   bun run dev &
  *   bun scripts/demo.ts
+ *
+ * Protocol note: the A2A server is synchronous. It accepts POST to the root
+ * `/` with JSON-RPC method `tasks/send` and params
+ * `{ message: { parts: [{ kind: "text", text }] } }`, and returns
+ * `{ jsonrpc: "2.0", id, result: { text: string } }` inline — no polling.
  */
 
 import { existsSync, readdirSync, readFileSync } from "fs";
@@ -46,113 +50,66 @@ async function check(label: string, fn: () => Promise<void>) {
   }
 }
 
-async function postA2A(url: string, method: string, params: unknown) {
-  const res = await fetch(`${url}/a2a`, {
+/**
+ * POST a task to an A2A agent's root `/` endpoint using the `tasks/send`
+ * method. The server is synchronous: it awaits the handler and returns the
+ * result inline as `{ result: { text } }`.
+ */
+async function postA2A(agentUrl: string, text: string): Promise<string> {
+  const res = await fetch(`${agentUrl}/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: crypto.randomUUID(),
-      method,
-      params,
+      method: "tasks/send",
+      params: { message: { parts: [{ kind: "text", text }] } },
     }),
   });
-  return res.json() as Promise<{ result: unknown; error?: unknown }>;
-}
-
-async function waitForTask(
-  agentUrl: string,
-  taskId: string,
-  maxWait = 5000,
-): Promise<string> {
-  const deadline = Date.now() + maxWait;
-  while (Date.now() < deadline) {
-    await Bun.sleep(250);
-    const { result } = (await postA2A(agentUrl, "tasks/get", { taskId })) as {
-      result: {
-        status: { state: string };
-        history: Array<{
-          role: string;
-          parts: Array<{ kind: string; text: string }>;
-        }>;
-      };
-    };
-    if (result.status.state === "completed") {
-      return (
-        result.history
-          .find((m) => m.role === "agent")
-          ?.parts.find((p) => p.kind === "text")?.text ?? ""
-      );
-    }
-    if (result.status.state === "failed") throw new Error("Task failed");
+  const data = (await res.json()) as {
+    result?: { text: string };
+    error?: { code: number; message: string };
+  };
+  if (data.error) {
+    throw new Error(`RPC ${data.error.code}: ${data.error.message}`);
   }
-  throw new Error("Timeout");
+  if (!data.result || typeof data.result.text !== "string") {
+    throw new Error("Malformed response: missing result.text");
+  }
+  return data.result.text;
 }
 
 // ── 1. A2A agent card discovery ───────────────────────────────────────────────
 step("1 · A2A Agent Card discovery");
 
-await check("Fixer Agent card reachable", async () => {
-  const res = await fetch(`${FIXER}/.well-known/agent-card.json`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const card = (await res.json()) as { name: string; skills: unknown[] };
-  if (!card.name) throw new Error("No name in card");
-  console.log(`     → ${card.name} · ${card.skills.length} skills`);
-});
+async function checkCard(label: string, url: string) {
+  await check(label, async () => {
+    const res = await fetch(`${url}/.well-known/agent-card.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const card = (await res.json()) as { name: string; skills?: unknown[] };
+    if (!card.name) throw new Error("No name in card");
+    console.log(
+      `     → ${card.name}` +
+        (card.skills ? ` · ${card.skills.length} skills` : ""),
+    );
+  });
+}
 
-await check("Librarian Agent card reachable", async () => {
-  const res = await fetch(`${LIBRARIAN}/.well-known/agent-card.json`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const card = (await res.json()) as { name: string; skills: unknown[] };
-  console.log(`     → ${card.name} · ${card.skills.length} skills`);
-});
-
-await check("Oracle Agent card reachable", async () => {
-  const res = await fetch(`${ORACLE}/.well-known/agent-card.json`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const card = (await res.json()) as { name: string; skills: unknown[] };
-  console.log(`     → ${card.name} · ${card.skills.length} skills`);
-});
-
-await check("Explorer Agent card reachable", async () => {
-  const res = await fetch(`${EXPLORER}/.well-known/agent-card.json`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const card = (await res.json()) as { name: string; skills: unknown[] };
-  console.log(`     → ${card.name} · ${card.skills.length} skills`);
-});
-
-await check("Designer Agent card reachable", async () => {
-  const res = await fetch(`${DESIGNER}/.well-known/agent-card.json`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const card = (await res.json()) as { name: string; skills: unknown[] };
-  console.log(`     → ${card.name} · ${card.skills.length} skills`);
-});
-
-await check("Orchestrator card reachable", async () => {
-  const res = await fetch(`${ORCHESTRATOR}/.well-known/agent-card.json`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const card = (await res.json()) as { name: string };
-  console.log(`     → ${card.name}`);
-});
+await checkCard("Fixer Agent card reachable", FIXER);
+await checkCard("Librarian Agent card reachable", LIBRARIAN);
+await checkCard("Oracle Agent card reachable", ORACLE);
+await checkCard("Explorer Agent card reachable", EXPLORER);
+await checkCard("Designer Agent card reachable", DESIGNER);
+await checkCard("Orchestrator card reachable", ORCHESTRATOR);
 
 // ── 2. Direct A2A task delegation ─────────────────────────────────────────────
 step("2 · Direct A2A task: Fixer Agent → Fibonacci");
 
-await check("Send task and poll to completion", async () => {
-  const { result: task } = (await postA2A(FIXER, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [
-        { kind: "text", text: "Implement a fibonacci function in TypeScript" },
-      ],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-
-  const taskId = task.id;
-  const response = await waitForTask(FIXER, taskId);
+await check("Send task and read result synchronously", async () => {
+  const response = await postA2A(
+    FIXER,
+    "Implement a fibonacci function in TypeScript",
+  );
   if (!response.includes("fibonacci") && !response.includes("Fibonacci"))
     throw new Error("Response doesn't mention fibonacci");
   console.log(`     → ${response.slice(0, 80)}…`);
@@ -162,64 +119,33 @@ await check("Send task and poll to completion", async () => {
 step("3 · Orchestrator routing");
 
 await check("Orchestrator routes code task → Fixer", async () => {
-  const { result: task } = (await postA2A(ORCHESTRATOR, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [{ kind: "text", text: "Write a binary search function" }],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-
-  const response = await waitForTask(ORCHESTRATOR, task.id, 8000);
+  const response = await postA2A(ORCHESTRATOR, "Write a binary search function");
   console.log(`     → ${response.slice(0, 80)}…`);
 });
 
 await check("Orchestrator routes research task → Librarian", async () => {
-  const { result: task } = (await postA2A(ORCHESTRATOR, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [{ kind: "text", text: "Research the MCP and A2A protocols" }],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-
-  const response = await waitForTask(ORCHESTRATOR, task.id, 8000);
+  const response = await postA2A(
+    ORCHESTRATOR,
+    "Research the MCP and A2A protocols",
+  );
   if (!response.includes("MCP") && !response.includes("A2A"))
     throw new Error("Response doesn't mention protocols");
   console.log(`     → ${response.slice(0, 80)}…`);
 });
 
 await check("Orchestrator routes find task → Explorer", async () => {
-  const { result: task } = (await postA2A(ORCHESTRATOR, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [{ kind: "text", text: "find all TODO comments in the codebase" }],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-
-  const response = await waitForTask(ORCHESTRATOR, task.id, 8000);
+  const response = await postA2A(
+    ORCHESTRATOR,
+    "find all TODO comments in the codebase",
+  );
   console.log(`     → ${response.slice(0, 80)}…`);
 });
 
 await check("Orchestrator routes review task → Oracle", async () => {
-  const { result: task } = (await postA2A(ORCHESTRATOR, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [{ kind: "text", text: "review this function for edge cases: async function foo() { return 1; }" }],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-
-  const response = await waitForTask(ORCHESTRATOR, task.id, 8000);
+  const response = await postA2A(
+    ORCHESTRATOR,
+    "review this function for edge cases: async function foo() { return 1; }",
+  );
   console.log(`     → ${response.slice(0, 80)}…`);
 });
 
@@ -228,18 +154,7 @@ step("4 · Self-improvement — skill files created");
 
 await check("Librarian creates skill files after tasks", async () => {
   // Trigger a research task to generate skills
-  const { result: task } = (await postA2A(LIBRARIAN, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [
-        { kind: "text", text: "Research self-improvement in agent systems" },
-      ],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-  await waitForTask(LIBRARIAN, task.id);
+  await postA2A(LIBRARIAN, "Research self-improvement in agent systems");
 
   // Check skill store
   const skillDir = join(process.cwd(), "skills");
@@ -348,38 +263,28 @@ await check("ACP initialize returns capabilities", async () => {
   proc.kill();
 });
 
-// ── 7. Orchestrator agent discovery endpoint ─────────────────────────────────────────
-step("7 · Orchestrator agent discovery endpoint");
+// ── 7. Orchestrator world-state endpoint ──────────────────────────────────────
+step("7 · Orchestrator world-state endpoint");
 
-await check("discover returns all specialist cards", async () => {
-  const { result } = (await postA2A(ORCHESTRATOR, "discover", {})) as {
-    result: { agents: unknown[] };
-  };
-  const agents = result.agents ?? [];
-  console.log(`     → ${agents.length} agent(s) discovered`);
-  if (agents.length < 5) throw new Error(`Expected at least 5 specialists, got ${agents.length}`);
-  for (const a of agents as Array<{ name: string; url: string }>) {
-    console.log(`       • ${a.name} @ ${a.url}`);
-  }
+await check("world-state returns current state", async () => {
+  const res = await fetch(`${ORCHESTRATOR}/.well-known/world-state`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const state = (await res.json()) as { agents?: unknown[]; tasks?: unknown[] };
+  const agentCount = Array.isArray(state.agents) ? state.agents.length : 0;
+  const taskCount = Array.isArray(state.tasks) ? state.tasks.length : 0;
+  console.log(`     → ${agentCount} agent(s) · ${taskCount} task(s)`);
+  if (agentCount < 5)
+    throw new Error(`Expected at least 5 agents, got ${agentCount}`);
 });
 
-await check("Handover depth counter increases", async () => {
-  // This test assumes a mock setup or a specific task that triggers a handover
-  // For the purpose of the demo, we simulate the logic check if a handover is signaled
-  const { result: task } = (await postA2A(ORCHESTRATOR, "message/send", {
-    message: {
-      messageId: crypto.randomUUID(),
-      role: "user",
-      kind: "message",
-      parts: [{ kind: "text", text: "%%HANDOVER%% Trigger a handover" }],
-      contextId: crypto.randomUUID(),
-    },
-  })) as { result: { id: string } };
-
-  const response = await waitForTask(ORCHESTRATOR, task.id, 8000);
+await check("Handover sentinel processed without crash", async () => {
+  // The orchestrator should process the %%HANDOVER%% sentinel and return a
+  // result inline (synchronous). We only verify it didn't error out.
+  const response = await postA2A(
+    ORCHESTRATOR,
+    "%%HANDOVER%% Trigger a handover",
+  );
   console.log(`     → ${response.slice(0, 80)}…`);
-  // In a real scenario, we'd verify the internal state of the Orchestrator 
-  // but for the demo script, we verify it didn't crash and processed the sentinel.
 });
 
 // ── Summary ───────────────────────────────────────────────────────────────────
@@ -389,9 +294,7 @@ console.log("═".repeat(60));
 
 if (failed > 0) {
   console.log("\n⚠ Some tests failed. Make sure all agents are running:");
-  console.log("  bun run coder &");
-  console.log("  bun run researcher &");
-  console.log("  bun run orchestrator &");
+  console.log("  bun run dev &");
   console.log("  bun run demo");
 }
 
