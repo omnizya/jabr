@@ -367,6 +367,9 @@ export class OrchestratorAgent {
       } as A2AMessage);
       this.memory.append(`Completed task. Result length: ${result.length} chars`);
 
+      // Emit lifecycle event for subscribed clients.
+      this.emitTaskCompleted(taskId, result);
+
       // Sync completed task to Hermes kanban
       await this.syncToKanban(taskId, result);
     } catch (e) {
@@ -378,6 +381,9 @@ export class OrchestratorAgent {
         parts: [{ kind: "text", text: `Error: ${String(e)}` }],
         contextId: taskId,
       } as A2AMessage);
+
+      // Emit lifecycle event for subscribed clients.
+      this.emitTaskFailed(taskId, String(e));
     }
   }
 
