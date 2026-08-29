@@ -47,9 +47,12 @@ agents/
 │   ├── mcp-resources.ts    # jabr:// resources + subscriptions
 │   ├── search-9router.ts   # SearchPort via NINEROUTER
 │   ├── image-gen-9router.ts# ImageGenPort via NINEROUTER
-│   ├── skill-fs.ts         # Filesystem SkillStorePort
+│   ├── skill-fs.ts        # Filesystem SkillStorePort
 │   ├── subscription-manager.ts
-│   └── task-memory.ts      # In-memory TaskStorePort
+│   ├── task-memory.ts      # In-memory TaskStorePort
+│   ├── sqlite-db.ts        # openJabrDb() factory + initSchema() + path constants
+│   ├── sqlite-task-store.ts# SqliteTaskStore implements TaskStorePort
+│   └── sqlite-memory-store.ts # SqliteMemoryStore implements MemoryStorePort
 ├── types.ts           # Shared TypeScript types
 ├── utils/
 │   └── rpc.ts             # ok/err/corsHeaders JSON-RPC helpers
@@ -140,7 +143,7 @@ Skills are idempotent: same task type → slug match → skipped if file exists.
 - `route-test.ts` — Standalone routing test with MockRegistry (`bun route-test.ts`)
 - `skills/` — Auto-generated skill documents (JSON)
 - `skills/builtin/` — Static Hermes-style SKILL.md files
-- `memory/orchestrator.md` — Session memory (append-only markdown)
+- `memory/orchestrator.md` — Session memory `.md` mirror (sqlite-backed in `memory/jabr.db`)
 - `settings.json` — Zed config (⚠ stale path `agents/acp-bridge.ts`; real file is `agents/run/acp-bridge.ts`)
 
 ## Quick start
@@ -215,7 +218,7 @@ Core modules use relative imports for ports/types only.
 - **MCP run_python**: Writes `.python_env/main.py`, runs `uv run --project .python_env python main.py`, 10s timeout. **Persistent `.python_env/`** (auto-created via `uv init --lib`) — NOT /tmp, NOT ephemeral. `install_python_dependency` = `uv add` into it.
 - **MCP tools**: `read_file`, `write_file`, `run_python`, `calculate`, `save_skill`, `list_skills`, `install_python_dependency`. All paths relative to `process.cwd()`.
 - **MCP resources**: `jabr://world-state`, `jabr://tasks/{taskId}`, `jabr://skills`, `jabr://memory`; subscriptions via `SubscriptionManager`.
-- **Memory**: Append-only markdown. Orchestrator writes to `memory/orchestrator.md`. Compatible with Hermes `memory.md` pattern.
+- **Memory**: Sqlite-backed persistence. Orchestrator uses `SqliteMemoryStore` over `memory/jabr.db` (WAL) with a `.md` mirror written to `memory/orchestrator.md` on each `append`. Sessions and the memory log live in sqlite tables (`memory_log`, `sessions`); the ACP bridge uses a separate `memory/jabr-bridge.db` with `mirrorFile: null` (no `.md` mirror). Specialists keep `TaskMemory` (in-memory) by default via `runAgent()`; only the orchestrator and ACP bridge are wired to sqlite.
 - **Skills**: JSON files in `skills/` with `name`, `description`, `tags`, `steps`, `createdAt`, `usageCount`, `successRate`.
 
 ## Git conventions
