@@ -1,137 +1,224 @@
-# TODO: Jabr Enhancement Roadmap
+# TODO: Jabr Roadmap
 
-## 🚀 Priority 1: Plug-and-Play (PnP) Kit ✅
-- [x] **Type System Migration** (720c1dd)
-  - [x] Updated `agents/types.ts` to A2A v1.0 `AgentCard` schema (`supportedInterfaces`, `tags`, `extensions`, `HandoverRequest`, etc.)
-- [x] **Dynamic Agent Registry** (720c1dd)
-  - [x] Implemented `DynamicRegistry` class in `agents/adapters/dynamic-registry.ts`
-  - [x] Seed URL scanning and `/.well-known/agent-card.json` fetching via `AgentRegistryPort`
-  - [x] Tag-based routing in Orchestrator matching tasks against `AgentSkill.tags`
-- [x] **A2A Handover Protocol** (720c1dd)
-  - [x] `HandoverRequest` type + `encodeHandover`/`decodeHandover` helpers in types.ts
-  - [x] `%%HANDOVER%%` sentinel marker for specialist→orchestrator transfer signals
-  - [x] Recursive routing in Orchestrator (`MAX_HANDOVER_DEPTH = 3`)
+**Current version:** 0.4.0
+**Last updated:** 2026-08-29
+**See also:** [CANONICAL.md](./CANONICAL.md) for full architecture, gap analysis, and production readiness assessment.
 
-## 📡 Priority 2: Live Context Kit (MCP Evolution) ✅
-- [x] **MCP Resource Infrastructure** (a671161)
-  - [x] Resource types in `agents/types.ts` (`McpResource`, `McpResourceContent`, `ResourceSubscription`, `WorldState`)
-  - [x] `ResourcePort` interface in `agents/ports/resource-port.ts`
-  - [x] Resource adapter in `agents/adapters/mcp-resources.ts` — registers 4 resources on McpServer
-  - [x] Resources wired in `mcp-servers/tools.ts` with default context
-  - [x] Declare `subscribe` and `listChanged` capabilities in the MCP server
-- [x] **Subscription Management**
-  - [x] `SubscriptionManager` class in `agents/adapters/subscription-manager.ts`
-  - [x] `subscribe()`/`unsubscribe()`/`hasSubscribers()`/`getSubscriberIds()` methods
-  - [x] Integrate `subscriptions/listen` flow and handle `notifications/resources/updated`
-- [x] **World-State Resource**
-  - [x] `jabr://world-state` — JSON system snapshot (agents, tasks, memory, skills)
-  - [x] `jabr://tasks/{taskId}` — individual task state (URI template)
-  - [x] `jabr://skills` — saved skill catalog
-  - [x] `jabr://memory` — session memory markdown
-  - [x] Wire live data callbacks from Orchestrator's task store and agent registry
-- [x] **DRY Specialist Runners** (dc0a798) — `runAgent()` factory in `agents/run/serve.ts`
+---
 
-## 🧹 Maintenance: Coherence & Hexagonal ✅
-- [x] Aliased imports sweep — all cross-module imports use `@agents/*`, `@ports/*`, `@adapters/*` (fix-6, 3f15a81)
-- [x] Deslop — removed decorative headers, restating JSDoc, inline narration (fix-8/9, 3f15a81)
-- [x] Hexagonal boundary — `DiscoveryPort` isolates core from adapter (`agents/ports/discovery-port.ts`, e1981b5) — tsc clean
+## Completed (v0.1.0 → v0.4.0)
 
-## 🧠 Priority 4: Cognitive Loop Kit (Reasoning Evolution) ✅
-- [x] **Consensus Engine** (26f9e0a)
-  - [x] `CognitiveLoop` class with weighted scoring (successRate, relevance, tag hits)
-  - [x] `DynamicRegistry.getAllCards()` + `Orchestrator.delegateToMultiple()` / `executeConsensus()`
-  - [x] Judge pattern via `cognitiveConfig` (oracle)
-- [x] **Recursive Reasoning** — `TaskStorePort` + `MemoryStorePort` persistence supports loop recovery
+### PnP Kit (v0.1.0) ✅
+- [x] A2A v1.0 `AgentCard` types (`supportedInterfaces`, `tags`, `extensions`, `HandoverRequest`)
+- [x] `DynamicRegistry` with tag-scored routing
+- [x] `%%HANDOVER%%` recursive routing (max depth 3)
 
-## 🖥️ Priority 3: IDE-Native Kit (ACP Evolution) ✅
-- [x] **Diff Streaming** (fix-10)
-  - [x] Extend `stdio-bridge.ts` to support native ACP `diff` content type (`path`/`oldText`/`newText` + `unified` fallback)
-  - [x] Implement `tool_call_update` notification stream via `notification()` helper in `utils/rpc.ts`
-- [x] **Stateful Session Management** (fix-10)
-  - [x] Implement `session/list` and `session/delete` in ACP adapter
-  - [x] Implement session migration via `session/resume` with `replayFrom: {type:"start"}`
-  - [x] Persist session metadata via extended `MemoryStorePort` (`SessionData`, `SessionEntry`) + `memory-fs` (`memory/sessions/session-<id>.json`)
+### Live Context Kit (v0.2.0) ✅
+- [x] MCP resources: `jabr://world-state`, `jabr://tasks/{id}`, `jabr://skills`, `jabr://memory`
+- [x] `SubscriptionManager` (`resources/subscribe` → `subscriptions/listen`)
+- [x] `runAgent()` DRY factory in `agents/run/serve.ts`
 
-## 🛠️ Gap Filling (v0.3.0 → v0.4.0)
-- [x] **GAP-1: Kill ROUTING_TABLE** — pure tag routing
-- [x] **GAP-3: Fix demo script** — reflect 6-agent topology
-- [x] **GAP-2: Live-wire jabr://world-state** — real agent health
-- [x] **GAP-4: run_python** — persistent uv venv + dependency support
-- [x] **GAP-5: Python agent layer** — Scientist agent
-- [x] **GAP-6: Provider-agnostic LlmPort** + consensus synthesis
-- [x] **GAP-7: Mem-Palace integration**
-- [x] **GAP-8: Headroom integration** (budget awareness)
-- [x] **GAP-9: ROUTING_TABLE removal cleanup sweep** — no code refs remain; only historical docs (TODO, ADR, AGENTS.md) reference the removal
+### Cognitive Loop Kit (v0.2.0) ✅
+- [x] `CognitiveLoop` weighted voting (`successRate`, relevance, tag hits)
+- [x] `delegateToMultiple` / `executeConsensus`
 
-## 🔌 9router LLM Default (v0.3.0 → v0.4.0) ✅
-- [x] **NineRouterLlmAdapter** (4a1dae4) — `agents/adapters/llm/9router.ts` extends `OpenAiLlmAdapter`; env `NINEROUTER_URL` (default `http://127.0.0.1:20128`), `NINEROUTER_KEY`, `NINEROUTER_MODEL` (default `openrouter/minimax/minimax-m3:free`)
-- [x] **Gateway hardening** (4a1dae4) — `openai.ts` tolerant of leading whitespace + trailing `data: [DONE]` sentinel (Bun `res.json()` quirk)
-- [x] **Default wiring** (4a1dae4) — orchestrator consensus synthesis uses 9router by default; no OpenAI key required
-- [x] **route-test.ts import fix** (4a1dae4) — `AgentRegistryPort` from `@ports/agent-registry` (unblocked `bun run typecheck`)
+### IDE-Native Kit (v0.3.0) ✅
+- [x] ACP `diff` content type + `tool_call_update` stream
+- [x] `session/list|delete|resume` with `replayFrom`
+- [x] `MemoryStorePort` `SessionData` → `memory/sessions/session-<id>.json`
 
-## 🤖 Jarvis — Proactive Codebase Steward (v0.4.0)
-- [x] **Jarvis Agent** — `agents/core/jarvis.ts` + `agents/run/jarvis.ts` on port 1337
-- [x] **Scan capabilities** — codebase scan, dependency watch, test gap analysis, doc sync, AI enhancement identification
-- [x] **Profile generation** — auto-creates idempotent skills for recurring patterns
-- [x] **Integration** — [ADDRESS] (9router), SearchPort, McpToolPort, SkillStorePort, [ADDRESS] (MemPalace), [PERSON_NAME] (Headroom)
-- [x] **Script + dev** — `jarvis` script added, included in `bun run dev`
+### Coherence (v0.3.0) ✅
+- [x] Aliased imports (`@agents/*`, `@ports/*`, `@adapters/*`, `@utils/*`, `@run/*`)
+- [x] Hexagonal `DiscoveryPort` isolation
+- [x] Zero `//` slop, zero decorative headers
 
-## 🔬 Post-v0.4.0 Audit (repomix analysis, 2026-08-29)
+### 9router LLM Default (v0.3.0) ✅
+- [x] `NineRouterLlmAdapter` (default: `openrouter/minimax/minimax-m3:free`)
+- [x] Gateway hardening (whitespace + `data: [DONE]` tolerance)
 
-### Critical issues / smells (from `repomix-output.xml` review)
-- [x] **`scripts/demo.ts` out of sync** — posts to `/a2a` with `message/send`, polls `tasks/get`; current `a2a-server.ts` accepts only root `/` + `tasks/send` sync — **DONE (2026-08-29, `5d3abd5`):** rewritten to POST root `/` with `tasks/send`, read `result.text` inline, drop `waitForTask` polling + nonexistent `discover` call
-- [x] **Scientist diverges from `execute` contract** — `agents/run/scientist.ts` returns inline readonly card and `handleTask` not `execute`; not on `bun run dev` — **DONE (2026-08-29, `4add823`):** `handleTask` → `execute(taskId, text)`; already in `bun run dev`
-- [x] **Jarvis `execute` doesn't write to `taskStore`** — bypasses `TaskStorePort`, breaks world-state subscribers — **DONE (2026-08-29, `c0b90cc`):** added `TaskStorePort` to constructor; `execute()` now `updateState` + `appendMessage`
-- [x] **Handover is dead code** — `encodeHandover` defined, no specialist emits `%%HANDOVER%%`; specialists are deterministic keyword matchers — **RESOLVED**: oracle is now LLM-driven and emits `%%HANDOVER%%` on mis-routing; orchestrator honors `transferTo` (see line 100)
-- [x] **Naive `extractJson`** — slices first `{...}` regardless of nesting; breaks on nested objects in LLM output — **DONE (2026-08-29, `c0b90cc`):** depth-counter scanner respecting strings/escapes
-- [x] **Regex version-parse** — `/v?(\d+)\.(\d+)/` fragile; semver pre-release/build metadata dropped — **DONE (2026-08-29, `c0b90cc`):** hardened `fetchLatestVersion` with stricter semver regex + `results[0]?.snippet` guard
-- [x] **5 run files import `./serve` without `.ts`** — already resolved in code: all 5 (`designer`, `explorer`, `fixer`, `librarian`, `oracle`) import `./serve.ts` with extension; `bun run typecheck` clean. Only stale doc references remain (TODO + `agents/run/AGENTS.md`)
-- [x] **No lint / test scripts** — `bun run typecheck` only; no eslint, no test files. Add `bun test` using built-in `bun:test` (no vitest). — **DONE (2026-08-29, `66a99f2`):** `"test": "bun test"` + `tests/dynamic-registry.test.ts`; now 20+ tests across 3 files
-- [x] **`calculate` MCP tool uses `eval`** — security smell, sandbox-evading — **DONE (2026-08-29, `513ad16`):** replaced with tokenizer + recursive-descent Parser (precedence, right-assoc `^`, unary `+/-`); rejects `process.exit()` etc.
-- [x] **`AgentCard.name` mismatch** — runtime cards still say "Oracle"/"Librarian" while lore uses polymaths (JABIR/RUSHD/...); rebrand is skin-deep — **DONE (2026-08-29, `fb120ed`):** skin-deep rebrand to JABIR/RUSHD/FIHRIYA/BATTUTA/FIRNAS/TARIQ/KHWARIZMI/WAZIR (display strings only; routing keys by seed key, not card.name)
-- [x] **`memory-fs` resolves `process.cwd()`** — fragile for non-repo-root invocations — **DONE (2026-08-29, `e45d9e0`):** resolves from module location via `DEFAULT_MEMORY_DIR`; constructor takes `MemoryFSOptions { baseDir?, file? }`
-- [x] **`mcp-resources.ts` resource templates** — `listChanged` declared but not all resources emit `notifications/resources/updated` — **DONE (2026-08-29, `52e7948`):** wired subscribe/unsubscribe + per-resource `notifications/resources/updated` + `list_changed`
-- [x] **Jarvis LLM prompt `[ADDRESS]` placeholders** — threaded `agentEndpoint` (ORCHESTRATOR_URL, default http://localhost:4000) into scan + AI-enhancement prompts; no bare `[ADDRESS]` literals remain
-- [x] **`route-test.ts` MockRegistry diverges from real `DynamicRegistry`** — replaced MockRegistry with an offline `AgentRegistryPort` feeding the real `DynamicRegistry`; routing test now exercises the actual `matchAgent` algorithm (typecheck clean, self-check asserts explorer hit)
-- [x] **Consensus always queries ALL agents** — no opt-out; wasteful for narrow tasks — **DONE (2026-08-29, `27c1fe5`):** `executeConsensus(taskId, userText, agentNames?)` filters participants
+### Jarvis — Proactive Codebase Steward (v0.4.0) ✅
+- [x] `agents/core/jarvis.ts` + `agents/run/jarvis.ts` on port 1337
+- [x] Scan capabilities (codebase, dependency watch, test gap, doc sync, AI enhancement)
+- [x] Profile generation (idempotent skills for recurring patterns)
 
-### Top leverage fixes
-- [x] **Scientist: adopt `runAgent()` + standard contract** — `agents/run/scientist.ts` uses `runAgent` factory; `handleTask` → `execute`; add to `bun run dev`; return readonly card via standard channel — **DONE (2026-08-29, `4add823`)**
-- [x] **Handover: wire into [PERSON_NAME] OR delete** — pick one; if delete, drop `HandoverRequest`/`encodeHandover`/`MAX_HANDOVER_DEPTH`; if wire, add to [PERSON_NAME] (only LLM-driven specialist can reason about mis-routing)
-  - **DECISION (2026-08-29): WIRE it.** Handover stays; do NOT delete. Plan: make a specialist LLM-driven (start with oracle or a dedicated reasoning lane), then wire `encodeHandover` so it can genuinely reason about mis-routing before emitting `%%HANDOVER%%`. Prerequisite: an LLM-driven specialist must exist first (see Future Enhancements).
-  - **DONE (2026-08-29):** Oracle is now LLM-driven (`LlmPort` routing judge, `ROUTING_SYSTEM_PROMPT`, `VALID_TRANSFER_TARGETS`) and emits `%%HANDOVER%%` on mis-routing; orchestrator honors `transferTo` via `forcedAgentName` (falls back to registry re-routing when unresolvable). Committed `70a2e4f`.
-- [x] **Rebrand decision** — either update `AgentCard.name` to polymaths end-to-end (oracle→JABIR, etc.) or stop pretending; rename `agents/core/oracle.ts` → `agents/core/jabir.ts` to match lore — **DONE (2026-08-29, `fb120ed`):** skin-deep rebrand (display strings only). File renames (oracle.ts→jabir.ts) deferred — routing keys by seed key, so renaming is cosmetic.
+### Post-v0.4.0 Audit (2026-08-29) ✅
+- [x] `scripts/demo.ts` rewritten (root `/`, `tasks/send`, sync)
+- [x] Scientist adopts `runAgent()` + standard `execute` contract
+- [x] Jarvis writes to `taskStore` (fixes world-state subscribers)
+- [x] Oracle LLM-driven (emits `%%HANDOVER%%` on mis-routing)
+- [x] Naive `extractJson` → depth-counter scanner
+- [x] `memory-fs` resolves from module location (not `process.cwd()`)
+- [x] `mcp-resources.ts` wired for `notifications/resources/updated`
+- [x] `route-test.ts` uses real `DynamicRegistry`
+- [x] Consensus filters participants (no longer queries ALL agents)
+- [x] `bun test` script + 20+ tests (dynamic-registry, sqlite-stores, oracle-handover)
+- [x] `calculate` MCP tool: tokenizer + recursive-descent parser (no `eval`)
+- [x] Skin-deep rebrand to polymaths (JABIR/RUSHD/FIHRIYA/BATTUTA/FIRNAS/TARIQ/KHWARIZMI/WAZIR)
+- [x] Discovery timing race fixed (retry until ALL seed agents present)
+- [x] BUG: Orchestrator→specialist delegation `type` → `kind` (empty text fix)
+- [x] BUG: jarvis `taskStore.create(taskId)` before `execute`
+- [x] `memory/orchestrator.md` mirror disabled; sqlite dedup + cap (maxEntries 500)
+- [x] `getWorldState` uses `taskStore.listByState()` for real counts
+- [x] Verbose logging (A2A server+client, ACP bridge, DynamicRegistry, MCP tools)
 
-### What genuinely needs LLM
-- [ ] **Orchestrator route-decision LLM** — invoke when `DynamicRegistry.matchAgent` returns low-confidence (score < threshold or tie); currently always keyword
-- [ ] **Consensus synthesis** — already LLM-backed (oracle judge, temp 0.3); keep
-- [ ] **Jarvis proactive scans** — already LLM-driven; keep
-- [ ] **Scientist interpretation** — when `run_python` returns non-trivial data needing narrative; add to MCP layer
+---
 
-### What should stay rule-based
-- `oracle` / `librarian` / `explorer` / `designer` / `fixer` — keyword routing already works; deterministic + cheap; LLM adds latency + cost for no gain on narrow lanes
-- `DynamicRegistry.matchAgent` — tag-substring + keyword overlap scoring; deterministic; only escalate to LLM on low-confidence (see above)
+## Phase 1 — A2A v1.0 Compliance (2-3 weeks)
 
-## 🚀 Future Enhancements (2026-08-29)
+**Goal:** Pass A2A v1.0 conformance tests.
+**Priority:** 🔴 Critical
 
-- [x] **TDD with DDD** — adopt test-driven development + domain-driven design using Bun's built-in `bun:test` (no vitest needed — runtime is Bun 1.4). Add test files + `bun test` script. Ties into the "No lint / test scripts" audit item. — **DONE (2026-08-29, `66a99f2`):** `bun test` script + `tests/dynamic-registry.test.ts`; suite now 20+ tests (dynamic-registry, sqlite-stores, oracle-handover)
-- [x] **Persistent database with bun sqlite** — replace/augment in-memory `TaskMemory` (and possibly `memory-fs`) with `bun:sqlite` for durable task/session/memory persistence. Enables loop recovery across restarts. — **DONE (2026-08-29, `14a05d2`/`609ba5a`/`8c26935`/`2505a21`):** `SqliteTaskStore` + `SqliteMemoryStore` + `openJabrDb()`; wired orchestrator (memory/jabr.db) + ACP bridge (memory/jabr-bridge.db); specialists keep request-scoped `TaskMemory`; `listByState` added to port for loop recovery
-- [x] **LLM-driven specialist (prerequisite for handover wiring)** — make at least one specialist genuinely LLM-driven so it can reason about mis-routing; this unblocks the handover wiring decision above. — **DONE (2026-08-29):** oracle is LLM-driven (committed `70a2e4f`).
+### Task Lifecycle
+- [ ] Implement full 9-state task lifecycle (`SUBMITTED`, `WORKING`, `INPUT_REQUIRED`, `COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`, `AUTH_REQUIRED`, `UNKNOWN`)
+- [ ] Add `INPUT_REQUIRED` state (agent requests more info from caller)
+- [ ] Add `REJECTED` state (agent refuses the task)
+- [ ] Add `AUTH_REQUIRED` state (agent needs authentication)
+- [ ] Add `UNKNOWN` state (state cannot be determined)
+- [ ] Add state transition history tracking (audit trail)
 
-## 🧪 Post-audit Discoveries (live smoke test + e2e, 2026-08-29)
+### Streaming & Push
+- [ ] Add SSE streaming to `a2a-server.ts` (for long-running tasks)
+- [ ] Add push notification endpoint (`tasks/sendSubscribe`)
+- [ ] Implement `TaskStatusUpdateEvent` stream
+- [ ] Implement `TaskArtifactUpdateEvent` stream
 
-Findings from running the A2A ecosystem live and building `tests/e2e-live.test.ts` (73 tests, currently 72 pass / 1 fail — file untracked, pending commit).
+### Agent Card
+- [ ] Add `capabilities.streaming: true/false` flag
+- [ ] Add `capabilities.pushNotifications: true/false` flag
+- [ ] Add `capabilities.stateTransitionHistory: true/false` flag
+- [ ] Add `securityRequirements` array (`[oauth2, apiKey, mTLS, openid]`)
 
-### Fixed (committed)
-- [x] **Discovery timing race** — `discoverWithRetry` returned on ANY partial success, so parallel-booting agents were missed (orchestrator saw 4/2 agents, routing fell back to oracle). — **DONE (`7a70554`):** retry until ALL seed agents present or maxAttempts; logs "Agents ready" only on full discovery
-- [x] **BUG 1: Orchestrator→specialist delegation sends EMPTY text** — `a2a-client.ts:59` sent `parts: [{ type: "text", text }]` but `a2a-server.ts:85` reads `p.kind === "text"` → every delegated task arrived empty, specialists returned empty-text fallbacks. System looked healthy point-to-point but broken under orchestration. — **DONE (`f80dc5e`):** `type` → `kind`
-- [x] **BUG 2: jarvis always returns "No response"** — `run/jarvis.ts` onTask never called `taskStore.create(taskId)`, so `TaskMemory` silently no-op'd and `extractLastResponse` returned literal "No response" (steward actually ran). — **DONE (`0b29eaf`):** added `taskStore.create(taskId)` before `execute`
-- [x] **memory/orchestrator.md redundancy** — .md mirror is redundant (sqlite is source of truth), holds duplicates, grows unboundedly. — **DONE (`ebebd11`):** mirror disabled for orchestrator (`mirrorFile: null`); `SqliteMemoryStore` now dedups exact entries + caps to most recent `maxEntries` (default 500)
-- [x] **getWorldState task counts always 0** — counted nonexistent `task-*.json` files; tasks now in sqlite. — **DONE (`423f99b`):** uses `taskStore.listByState()` for real active/completed/failed/canceled counts
-- [x] **Verbose logging** — all endpoints had near-zero request logging. — **DONE (`c99eeaa`/`8b7fe28`/`fb14128`):** A2A server+client, ACP bridge+DynamicRegistry (incl. matchAgent scoring table), MCP tools (withLogging HOF)
+### Typed Artifacts
+- [ ] Define typed `Artifact` types (not just text)
+- [ ] Support structured data artifacts (JSON, binary)
+- [ ] Support multi-part artifacts
 
-### Open / needs decision
-- [ ] **BUG 3: routing tie-break** — "scan the codebase for improvements" matches jarvis `scan` tag (+2) AND fixer `code` tag (+2) → tie → fixer wins (first in iteration order). Needs design decision: tag specificity/priority vs first-match-on-tie. Only remaining e2e failure.
-- [ ] **Handover path not actually exercised** — §4 handover e2e test passes only because "review this code and fix the bug in it" routes DIRECTLY to fixer (score 4 > oracle 2); oracle `%%HANDOVER%%` chain never triggers through current routing+judge design. Worth design review.
-- [ ] **NINEROUTER env inconsistency** — `NINEROUTER_URL`/`NINEROUTER_KEY` set nowhere (no .env, not in shell, not in tmux runner). LLM 9router has hardcoded defaults (works); Search9Router degrades to `[]` (silently disabled); ImageGen9Router throws (crashes if invoked). **DECISION (2026-08-29): fix BOTH** — add `.env` (+ gitignored, `.env.example`) AND default fallbacks to Search/ImageGen mirroring llm/9router.ts.
-- [ ] **Capability finding** — live specialists are deterministic keyword matchers returning canned markdown; they cannot actually implement a new MCP tool end-to-end (the eval task "add a word_count tool" returned canned text, not a real implementation). Only jarvis (LLM) and oracle (LLM routing) are genuinely LLM-driven.
+### Auth (minimum viable)
+- [ ] Add API key auth middleware
+- [ ] Validate `X-API-Key` header on all agent endpoints
+- [ ] Return `401 Unauthorized` for missing/invalid keys
+- [ ] Return `403 Forbidden` for insufficient permissions
+
+---
+
+## Phase 2 — Production Hardening (2-3 weeks)
+
+**Goal:** Safe for internal deployment.
+**Priority:** 🔴 Critical
+
+### Reliability
+- [ ] Circular handoff detection (graph cycle detection)
+- [ ] Dead letter queue for failed tasks
+- [ ] Task retry with exponential backoff
+- [ ] Graceful shutdown handling (drain in-flight tasks)
+- [ ] Health check endpoints (`/health`, `/ready`)
+
+### Observability
+- [ ] Span-level tracing (OpenTelemetry)
+- [ ] Trace context propagation across A2A boundaries
+- [ ] Task duration metrics (p50, p95, p99)
+- [ ] Error rate tracking per agent
+- [ ] Cost attribution per task/agent
+- [ ] Structured logging (pino or similar)
+
+### Verification
+- [ ] Independent verification agent (cross-check outputs)
+- [ ] Consensus threshold for contested results
+- [ ] Audit trail for all agent decisions
+- [ ] Output validation (schema check on artifacts)
+
+### Security
+- [ ] Rate limiting per agent/caller
+- [ ] CORS configuration (replace `*` with allowlist)
+- [ ] Input validation on all endpoints
+- [ ] Secret management (API keys in env, not code)
+
+---
+
+## Phase 3 — Memory & Knowledge (3-4 weeks)
+
+**Goal:** Production-quality memory management.
+**Priority:** 🟡 High
+
+### Memory Infrastructure
+- [ ] Hierarchical memory distillation (summarize → compress → prune)
+- [ ] Memory compression (context window management)
+- [ ] Memory TTL/decay (auto-stale old entries)
+- [ ] Cross-agent shared knowledge graph (not just per-agent)
+- [ ] Conflict resolution (consensus for contradictory memories)
+
+### Knowledge Graph
+- [ ] Entity extraction + relationship typing
+- [ ] Graph traversal queries (relationship-aware retrieval)
+- [ ] Temporal versioning ("what did we know when?")
+- [ ] Knowledge validation (source attribution, confidence scoring)
+
+### Retrieval
+- [ ] Multi-signal retrieval (semantic + temporal + social)
+- [ ] Relevance scoring (recency, frequency, agent reputation)
+- [ ] Context injection optimization (top-K selection)
+
+---
+
+## Phase 4 — x402 Integration (1 week)
+
+**Goal:** Agent-to-agent payments working.
+**Priority:** 🟡 High
+
+### Payment Infrastructure
+- [ ] x402 server middleware (return 402 + payment requirements, verify on-chain)
+- [ ] Agent wallet infrastructure (smart contract or EOA per agent)
+- [ ] Payment client (sign and attach payment headers to A2A requests)
+- [ ] Agent Card pricing declarations
+- [ ] On-chain budget manager (balance tracking, auto-refill)
+
+### Economic Model
+- [ ] Define pricing per agent (Oracle: 0.02 USDC/review, etc.)
+- [ ] Orchestrator pays specialists on task delegation
+- [ ] Cross-agent hiring (pay external agents)
+- [ ] Resource markets (pay for GPU compute)
+
+---
+
+## Phase 5 — Decentralization (Research)
+
+**Goal:** Explore P2P agent coordination.
+**Priority:** 🟢 Future
+
+### P2P Coordination
+- [ ] Gossip protocol for ambient state diffusion (GEACL paper)
+- [ ] Raft consensus for decentralized coordination
+- [ ] Agent reputation system (track record influences routing)
+- [ ] Economic autonomy (agent wallets, payment channels)
+
+### Governance
+- [ ] Voting mechanism (agents vote on decisions)
+- [ ] Dispute resolution (independent arbitration agent)
+- [ ] Framework for adding/removing agents
+- [ ] DAO integration (on-chain governance)
+
+---
+
+## Open Issues (from v0.4.0 audit)
+
+### Needs Decision
+- [ ] **Routing tie-break** — "scan the codebase for improvements" matches jarvis `scan` tag (+2) AND fixer `code` tag (+2) → tie → fixer wins (first in iteration order). Design decision: tag specificity/priority vs first-match-on-tie.
+- [ ] **Handover path not exercised** — §4 handover e2e test passes only because "review this code and fix the bug in it" routes DIRECTLY to fixer (score 4 > oracle 2); oracle `%%HANDOVER%%` chain never triggers through current routing+judge design. Worth design review.
+- [x] **NINEROUTER env inconsistency** — `NINEROUTER_URL`/`NINEROUTER_KEY` set nowhere (no .env, not in shell, not in tmux runner). Add `.env` (+ gitignored, `.env.example`) AND default fallbacks to Search/ImageGen mirroring llm/9router.ts — **FIXED (2026-08-29, `d5f4a0c`):** defaults added to Search9Router + ImageGen9Router, `.env.example` created, typecheck clean.
+
+### Capability Gap
+- [ ] **Specialists are deterministic keyword matchers** — cannot actually implement a new MCP tool end-to-end. Only jarvis (LLM) and oracle (LLM routing) are genuinely LLM-driven. Decide: which specialists need LLM?
+
+---
+
+## What Genuinely Needs LLM
+
+- [ ] Orchestrator route-decision LLM (invoke when `DynamicRegistry.matchAgent` returns low-confidence)
+- [ ] Consensus synthesis (already LLM-backed — keep)
+- [ ] Jarvis proactive scans (already LLM-driven — keep)
+- [ ] Scientist interpretation (when `run_python` returns non-trivial data needing narrative)
+
+## What Should Stay Rule-based
+
+- `oracle` / `librarian` / `explorer` / `designer` / `fixer` — keyword routing already works; deterministic + cheap
+- `DynamicRegistry.matchAgent` — tag-substring + keyword overlap scoring; only escalate to LLM on low-confidence
