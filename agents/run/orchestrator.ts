@@ -17,7 +17,7 @@ if (import.meta.main) {
   const registryClient = new A2AClient(budget);
   const db = openJabrDb();                                  // memory/jabr.db
   const taskStore = new SqliteTaskStore(db);
-  const memory = new SqliteMemoryStore(db);                 // mirror → memory/orchestrator.md
+  const memory = new SqliteMemoryStore(db, { mirrorFile: null }); // sqlite is source of truth; no .md mirror
   const llmPort = new NineRouterLlmAdapter(budget);
 
   const seedUrls: Record<string, string> = {

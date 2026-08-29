@@ -149,6 +149,27 @@ describe("SqliteMemoryStore", () => {
     expect(store.read()).toBe("a\n\nb");
   });
 
+  test("memory log dedups exact-duplicate entries", () => {
+    const db = newMemoryDb();
+    const store = new SqliteMemoryStore(db, { mirrorFile: null });
+    store.append("dup");
+    store.append("dup");
+    store.append("unique");
+    store.append("dup");
+    expect(store.read()).toBe("dup\n\nunique");
+  });
+
+  test("memory log caps to most recent maxEntries", () => {
+    const db = newMemoryDb();
+    const store = new SqliteMemoryStore(db, { mirrorFile: null, maxEntries: 3 });
+    store.append("a");
+    store.append("b");
+    store.append("c");
+    store.append("d");
+    store.append("e");
+    expect(store.read()).toBe("c\n\nd\n\ne");
+  });
+
   test("sessions round-trip", () => {
     const db = newMemoryDb();
     const store = new SqliteMemoryStore(db, { mirrorFile: null });
