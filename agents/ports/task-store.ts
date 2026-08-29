@@ -2,7 +2,7 @@ import type { A2AMessage, A2APart } from "@agents/types";
 
 export interface Task {
   id: string;
-  state: "working" | "completed" | "failed" | "canceled";
+  state: "submitted" | "working" | "input-required" | "completed" | "failed" | "canceled" | "rejected" | "auth-required" | "unknown";
   messages: A2AMessage[];
   artifacts: Array<{ name: string; parts: A2APart[] }>;
 }
@@ -17,6 +17,7 @@ export interface TaskStorePort {
     artifact: { name: string; parts: A2APart[] },
   ): void;
   listByState(state: Task["state"]): Task[];
+  getTransitionHistory(taskId: string): Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }>;
 }
 
 console.log("[TaskStorePort] port interface loaded");

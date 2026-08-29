@@ -46,7 +46,7 @@ gateway:
 | `A2A_HOST` | `localhost` | Bind host for A2A gateway |
 | `A2A_PORT` | `9900` | Bind port for A2A gateway |
 | `A2A_AUTH_TOKEN` | — | Shared secret for A2A auth |
-| `A2A_REQUIRE_AUTH` | `false` | Require auth on A2A endpoints |
+|| `A2A_REQUIRE_AUTH` | `false` | Require auth on A2A endpoints (auto-enabled when `A2A_AUTH_TOKEN` is set) |
 | `A2A_REPLY_TIMEOUT` | `30` | Seconds to wait for agent reply |
 
 ## Skills

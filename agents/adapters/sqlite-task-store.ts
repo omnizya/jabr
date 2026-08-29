@@ -14,6 +14,8 @@ export class SqliteTaskStore implements TaskStorePort {
   private readonly stmtAppendMessage;
   private readonly stmtAppendArtifact;
   private readonly stmtListByState;
+  private readonly stmtRecordTransition;
+  private readonly stmtGetTransitions;
 
   constructor(db: Database) {
     db.exec("PRAGMA foreign_keys = ON");
@@ -21,7 +23,7 @@ export class SqliteTaskStore implements TaskStorePort {
     this.db = db;
 
     this.stmtCreate = db.query(
-      `INSERT OR REPLACE INTO tasks (id, state, created_at, updated_at) VALUES (?, 'working', ?, ?)`,
+      `INSERT OR REPLACE INTO tasks (id, state, created_at, updated_at) VALUES (?, 'submitted', ?, ?)`,
     );
     this.stmtGetTask = db.query(
       `SELECT id, state, created_at, updated_at FROM tasks WHERE id = ?`,
@@ -45,6 +47,12 @@ export class SqliteTaskStore implements TaskStorePort {
     );
     this.stmtListByState = db.query(
       `SELECT id, state, created_at, updated_at FROM tasks WHERE state = ? ORDER BY created_at`,
+    );
+    this.stmtRecordTransition = db.query(
+      `INSERT INTO task_transitions (task_id, from_state, to_state, timestamp) VALUES (?, ?, ?, ?)`,
+    );
+    this.stmtGetTransitions = db.query(
+      `SELECT from_state, to_state, timestamp FROM task_transitions WHERE task_id = ? ORDER BY id`,
     );
   }
 
@@ -102,7 +110,7 @@ export class SqliteTaskStore implements TaskStorePort {
       console.error(`[SqliteTaskStore] failed to create task ${taskId}: ${e}`);
       throw e;
     }
-    return { id: taskId, state: "working", messages: [], artifacts: [] };
+    return { id: taskId, state: "submitted", messages: [], artifacts: [] };
   }
 
   get(taskId: string): Task | undefined {
@@ -110,6 +118,22 @@ export class SqliteTaskStore implements TaskStorePort {
   }
 
   updateState(taskId: string, state: Task["state"]): void {
+    // Record the transition for audit trail, but only if the task exists.
+    const existing = this.reconstruct(taskId);
+    if (!existing) {
+      const now = new Date().toISOString();
+      this.stmtUpdateState.run(state, now, taskId);
+      return;
+    }
+    const from = existing.state;
+    if (from !== state) {
+      const now = new Date().toISOString();
+      try {
+        this.stmtRecordTransition.run(taskId, from, state, now);
+      } catch (e) {
+        console.error(`[SqliteTaskStore] transition record failed: ${e}`);
+      }
+    }
     const now = new Date().toISOString();
     this.stmtUpdateState.run(state, now, taskId);
   }
@@ -152,5 +176,18 @@ export class SqliteTaskStore implements TaskStorePort {
     return rows
       .map((r) => this.reconstruct(r.id))
       .filter((t): t is Task => t !== undefined);
+  }
+
+  getTransitionHistory(taskId: string): Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }> {
+    const rows = this.stmtGetTransitions.all(taskId) as Array<{
+      from_state: Task["state"];
+      to_state: Task["state"];
+      timestamp: string;
+    }>;
+    return rows.map((r) => ({
+      from: r.from_state,
+      to: r.to_state,
+      timestamp: r.timestamp,
+    }));
   }
 }

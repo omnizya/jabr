@@ -21,16 +21,21 @@ export function runAgent(config: {
 
   console.log(`[Serve] starting ${config.card.name} server on port ${config.port}`);
 
+  const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
+  const requireAuth = Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
+
   const server = new A2AServer({
     port: config.port,
     card: { ...config.card, url: `http://localhost:${config.port}` },
-    async onTask(text: string): Promise<string> {
+    onTask: async (text: string): Promise<string> => {
       const taskId = crypto.randomUUID();
       console.log(`[Serve] received task ${taskId} for ${config.card.name}`);
       taskStore.create(taskId);
       await config.execute(taskId, text);
       return format(taskStore, taskId);
     },
+    authToken,
+    requireAuth,
   });
 
   server.start();

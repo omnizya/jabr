@@ -6,9 +6,14 @@ const port = 4006;
 const mcpClient = new McpClientAdapter();
 const scientist = new ScientistAgent(mcpClient);
 
+const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
+const requireAuth = Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
+
 const server = new A2AServer({
   port,
   card: scientist.card,
+  authToken,
+  requireAuth,
   async onTask(message: string): Promise<string> {
     const taskId = crypto.randomUUID();
     console.log(`[Run:Scientist] received task ${taskId}`);

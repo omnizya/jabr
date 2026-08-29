@@ -5,6 +5,7 @@ import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { HeadroomAdapter } from "@adapters/headroom";
+import { RateLimiter } from "@adapters/rate-limit";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { SqliteTaskStore } from "@adapters/sqlite-task-store";
 import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
@@ -14,6 +15,7 @@ if (import.meta.main) {
   const PORT = 4000;
 
   const budget = new HeadroomAdapter();
+  const rateLimiter = new RateLimiter();
   const registryClient = new A2AClient(budget);
   const db = openJabrDb();                                  // memory/jabr.db
   const taskStore = new SqliteTaskStore(db);
@@ -38,9 +40,14 @@ if (import.meta.main) {
 
   const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace, kanban);
 
+  const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
+  const requireAuth = Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
+
   const server = new A2AServer({
     port: PORT,
     card: { ...ORCHESTRATOR_CARD, url: `http://localhost:${PORT}` },
+    authToken,
+    requireAuth,
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
       console.log(`[Run:Orchestrator] received task ${taskId}`);

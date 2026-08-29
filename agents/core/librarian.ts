@@ -140,6 +140,7 @@ export class LibrarianAgent {
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
+    this.taskStore.updateState(taskId, "working");
     const responseText = await this.executeTask(userText);
     this.taskStore.updateState(taskId, "completed");
     this.taskStore.appendMessage(taskId, {

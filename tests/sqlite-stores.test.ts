@@ -21,7 +21,7 @@ describe("SqliteTaskStore", () => {
     store.create(taskId);
     let task = store.get(taskId);
     expect(task).toBeDefined();
-    expect(task!.state).toBe("working");
+    expect(task!.state).toBe("submitted");
     expect(task!.messages).toEqual([]);
     expect(task!.artifacts).toEqual([]);
 
@@ -87,7 +87,7 @@ describe("SqliteTaskStore", () => {
 
     store.create(taskId); // overwrite
     const task = store.get(taskId);
-    expect(task!.state).toBe("working");
+    expect(task!.state).toBe("submitted");
     expect(task!.messages).toEqual([]);
     expect(task!.artifacts).toEqual([]);
   });
@@ -118,7 +118,42 @@ describe("SqliteTaskStore", () => {
     const db = newMemoryDb();
     const store = new SqliteTaskStore(db);
     store.create("task-3");
-    expect(() => store.updateState("task-3", "submitted" as never)).toThrow();
+    expect(() => store.updateState("task-3", "bogus-state" as never)).toThrow();
+  });
+
+  test("all 9 states are reachable via updateState", () => {
+    const db = newMemoryDb();
+    const store = new SqliteTaskStore(db);
+
+    store.create("s1");
+    store.create("w1");
+    store.create("i1");
+    store.create("c1");
+    store.create("f1");
+    store.create("ca1");
+    store.create("r1");
+    store.create("a1");
+    store.create("u1");
+
+    store.updateState("s1", "submitted");
+    store.updateState("w1", "working");
+    store.updateState("i1", "input-required");
+    store.updateState("c1", "completed");
+    store.updateState("f1", "failed");
+    store.updateState("ca1", "canceled");
+    store.updateState("r1", "rejected");
+    store.updateState("a1", "auth-required");
+    store.updateState("u1", "unknown");
+
+    expect(store.get("s1")!.state).toBe("submitted");
+    expect(store.get("w1")!.state).toBe("working");
+    expect(store.get("i1")!.state).toBe("input-required");
+    expect(store.get("c1")!.state).toBe("completed");
+    expect(store.get("f1")!.state).toBe("failed");
+    expect(store.get("ca1")!.state).toBe("canceled");
+    expect(store.get("r1")!.state).toBe("rejected");
+    expect(store.get("a1")!.state).toBe("auth-required");
+    expect(store.get("u1")!.state).toBe("unknown");
   });
 
   test("listByState filters and orders by created_at", () => {
@@ -137,6 +172,56 @@ describe("SqliteTaskStore", () => {
     expect(completed.every((t) => t.state === "completed")).toBe(true);
     const failed = store.listByState("failed");
     expect(failed.map((t) => t.id)).toEqual(["b"]);
+  });
+
+  test("transition history records every state change", () => {
+    const db = newMemoryDb();
+    const store = new SqliteTaskStore(db);
+    const taskId = "hist-1";
+
+    store.create(taskId);
+    store.updateState(taskId, "working");
+    store.updateState(taskId, "input-required");
+    store.updateState(taskId, "working");
+    store.updateState(taskId, "completed");
+
+    const history = store.getTransitionHistory(taskId);
+    expect(history).toHaveLength(4);
+    expect(history[0]).toEqual({ from: "submitted", to: "working", timestamp: expect.any(String) });
+    expect(history[1]).toEqual({ from: "working", to: "input-required", timestamp: expect.any(String) });
+    expect(history[2]).toEqual({ from: "input-required", to: "working", timestamp: expect.any(String) });
+    expect(history[3]).toEqual({ from: "working", to: "completed", timestamp: expect.any(String) });
+  });
+
+  test("re-create clears transitions", () => {
+    const db = newMemoryDb();
+    const store = new SqliteTaskStore(db);
+    const taskId = "recon-1";
+
+    store.create(taskId);
+    store.updateState(taskId, "working");
+    store.updateState(taskId, "completed");
+
+    store.create(taskId); // overwrite
+    const task = store.get(taskId);
+    expect(task!.state).toBe("submitted");
+    expect(task!.messages).toEqual([]);
+    expect(task!.artifacts).toEqual([]);
+
+    const history = store.getTransitionHistory(taskId);
+    expect(history).toHaveLength(0);
+  });
+
+  test("no-transition recorded when state unchanged", () => {
+    const db = newMemoryDb();
+    const store = new SqliteTaskStore(db);
+    const taskId = "noop-1";
+
+    store.create(taskId); // submitted
+    store.updateState(taskId, "submitted");
+
+    const history = store.getTransitionHistory(taskId);
+    expect(history).toHaveLength(0);
   });
 });
 

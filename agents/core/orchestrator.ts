@@ -90,7 +90,8 @@ export class OrchestratorAgent {
         recentSlugs = skillFiles.map(f => f.replace(".json", "")).reverse().slice(0, 5);
       }
 
-      // Task counts come from the task store (sqlite-backed), not filesystem.
+      // Task counts: 'working' is the active DoF; 'submitted' buffers before work starts.
+      const submitted = this.taskStore.listByState("submitted").length;
       const active = this.taskStore.listByState("working").length;
       const completed = this.taskStore.listByState("completed").length;
       const failed = this.taskStore.listByState("failed").length;
@@ -99,7 +100,7 @@ export class OrchestratorAgent {
       return {
         timestamp: new Date().toISOString(),
         agents,
-        tasks: { total: active + completed + failed + canceled, active, completed, failed, canceled },
+        tasks: { total: submitted + active + completed + failed + canceled, submitted, active, completed, failed, canceled },
         memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
         skills: { total: skillTotal, recentSlugs },
       };
@@ -188,6 +189,8 @@ export class OrchestratorAgent {
     forcedAgentName?: string,
   ): Promise<void> {
     try {
+      this.taskStore.updateState(taskId, "working");
+
       let augmentedText = userText;
       if (this.knowledge && depth === 0) {
         try {

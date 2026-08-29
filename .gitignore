@@ -1,9 +1,10 @@
-# dependencies (bun install)
+# dependencies
 node_modules
+bun.lockb
 
 # output
-out
 dist
+out
 *.tgz
 
 # code coverage
@@ -12,10 +13,10 @@ coverage
 
 # logs
 logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# dotenv environment variable files
+# dotenv
 .env
 .env.development.local
 .env.test.local
@@ -27,14 +28,39 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .cache
 *.tsbuildinfo
 
-# IntelliJ based IDEs
+# IDE
 .idea
+.vscode
+*.swp
+*.swo
 
-# Finder (MacOS) folder config
+# OS
 .DS_Store
+Thumbs.db
+
+# Repo mix
 repomix-output.xml
 
-# Jabr sqlite persistence
+# Jabr persistence
 memory/*.db
 memory/*.db-wal
 memory/*.db-shm
+memory/orchestrator.md
+memory/sessions/
+memory/palace/
+
+# Python environment (Scientist agent)
+.python_env/
+.python_env/**/__pycache__/
+.python_env/**/*.pyc
+.python_env/.venv/
+
+# Kanban
+.hermes/kanban/
+
+# Test artifacts
+tests/coverage/
+tests/.tmp/
+
+# Workspace
+.worktrees/

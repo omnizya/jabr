@@ -1,0 +1,17 @@
+{
+  "name": "general-research",
+  "description": "Auto-generated from task: \"hello\"",
+  "tags": [
+    "auto",
+    "librarian"
+  ],
+  "steps": [
+    "Parse user query intent",
+    "Search knowledge base",
+    "Structure findings",
+    "Return with citations"
+  ],
+  "createdAt": "2026-08-29T04:13:56.053Z",
+  "usageCount": 1,
+  "successRate": 1
+}

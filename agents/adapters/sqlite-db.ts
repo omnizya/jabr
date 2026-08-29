@@ -8,10 +8,19 @@ export const DEFAULT_BRIDGE_DB_PATH = join(DEFAULT_MEMORY_DIR, "jabr-bridge.db")
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS tasks (
   id         TEXT PRIMARY KEY,
-  state      TEXT NOT NULL CHECK (state IN ('working','completed','failed','canceled')),
+  state      TEXT NOT NULL CHECK (state IN ('submitted','working','input-required','completed','failed','canceled','rejected','auth-required','unknown')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS task_transitions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  from_state TEXT NOT NULL,
+  to_state   TEXT NOT NULL,
+  timestamp  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transitions_task_id ON task_transitions(task_id);
 
 CREATE TABLE IF NOT EXISTS messages (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

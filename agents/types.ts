@@ -209,6 +209,10 @@ export interface A2AServerConfig {
   port: number;
   card: AgentCard;
   onTask: (message: string) => Promise<string>;
+  /** Shared secret token; when set and requireAuth is true, X-API-Key must match */
+  authToken?: string;
+  /** Whether to enforce API key validation on POST / */
+  requireAuth?: boolean;
 }
 export interface RegistryEntry {
   url: string;

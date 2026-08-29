@@ -69,12 +69,12 @@
 **Priority:** 🔴 Critical
 
 ### Task Lifecycle
-- [ ] Implement full 9-state task lifecycle (`SUBMITTED`, `WORKING`, `INPUT_REQUIRED`, `COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`, `AUTH_REQUIRED`, `UNKNOWN`)
-- [ ] Add `INPUT_REQUIRED` state (agent requests more info from caller)
-- [ ] Add `REJECTED` state (agent refuses the task)
-- [ ] Add `AUTH_REQUIRED` state (agent needs authentication)
-- [ ] Add `UNKNOWN` state (state cannot be determined)
-- [ ] Add state transition history tracking (audit trail)
+- [x] Implement full 9-state task lifecycle (`SUBMITTED`, `WORKING`, `INPUT_REQUIRED`, `COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`, `AUTH_REQUIRED`, `UNKNOWN`)
+- [x] Add `INPUT_REQUIRED` state (agent requests more info from caller)
+- [x] Add `REJECTED` state (agent refuses the task)
+- [x] Add `AUTH_REQUIRED` state (agent needs authentication)
+- [x] Add `UNKNOWN` state (state cannot be determined)
+- [x] Add state transition history tracking (audit trail)
 
 ### Streaming & Push
 - [ ] Add SSE streaming to `a2a-server.ts` (for long-running tasks)
@@ -94,10 +94,10 @@
 - [ ] Support multi-part artifacts
 
 ### Auth (minimum viable)
-- [ ] Add API key auth middleware
-- [ ] Validate `X-API-Key` header on all agent endpoints
-- [ ] Return `401 Unauthorized` for missing/invalid keys
-- [ ] Return `403 Forbidden` for insufficient permissions
+- [x] Add API key auth middleware
+- [x] Validate `X-API-Key` header on all agent endpoints
+- [x] Return `401 Unauthorized` for missing/invalid keys
+- [x] Return `403 Forbidden` for insufficient permissions
 
 ---
 
@@ -128,8 +128,8 @@
 - [ ] Output validation (schema check on artifacts)
 
 ### Security
-- [ ] Rate limiting per agent/caller
-- [ ] CORS configuration (replace `*` with allowlist)
+- [x] Rate limiting per agent/caller
+- [x] CORS configuration (replace `*` with allowlist)
 - [ ] Input validation on all endpoints
 - [ ] Secret management (API keys in env, not code)
 

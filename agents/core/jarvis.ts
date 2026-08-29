@@ -425,6 +425,7 @@ Return JSON: {opportunities[{file, description, effort, impact}]}`;
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
+    this.taskStore.updateState(taskId, "working");
     const lower = userText.toLowerCase();
     const workspace = process.cwd();
     let text: string;

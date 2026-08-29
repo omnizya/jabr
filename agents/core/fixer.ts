@@ -104,6 +104,7 @@ export class FixerAgent {
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
+    this.taskStore.updateState(taskId, "working");
     const { text, artifact } = this.executeTask(userText);
     this.taskStore.updateState(taskId, "completed");
     this.taskStore.appendMessage(taskId, {

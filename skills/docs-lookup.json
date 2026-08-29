@@ -1,0 +1,18 @@
+{
+  "name": "docs-lookup",
+  "description": "Auto-generated from task: \"research the better-auth library\"",
+  "tags": [
+    "auto",
+    "librarian"
+  ],
+  "steps": [
+    "Identify the library or API in question",
+    "Locate official documentation",
+    "Extract relevant signatures and usage",
+    "Summarize key patterns",
+    "Return structured findings"
+  ],
+  "createdAt": "2026-08-29T04:32:36.198Z",
+  "usageCount": 1,
+  "successRate": 1
+}

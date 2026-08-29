@@ -45,10 +45,72 @@ export function err(
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-export const corsHeaders = { "Access-Control-Allow-Origin": "*" } as const;
+/**
+ * CORS header builders driven by the ALLOWED_ORIGINS env var.
+ *
+ * Unlike the old `corsHeaders` / `corsPreflightHeaders` constants (which
+ * returned `Access-Control-Allow-Origin: *`), these reflect the request's
+ * origin ONLY when it appears in the allowlist. When the origin is not
+ * allowed, they return null so the caller can omit CORS headers entirely
+ * (the browser will block the response).
+ *
+ * Defaults to localhost-only origins for development; production MUST set
+ * ALLOWED_ORIGINS to the real set of frontend/agent origins.
+ *
+ * See: AGENTS.md#CORS, CANONICAL.md (CORS allowlist).
+ */
+const ALLOWED_ORIGINS_LIST = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
+/** Default fallback when ALLOWED_ORIGINS is empty (dev convenience). */
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:8080",
+  "http://localhost:4000",
+  "http://localhost:4001",
+  "http://localhost:4002",
+  "http://localhost:4003",
+  "http://localhost:4004",
+  "http://localhost:4005",
+  "http://localhost:4006",
+  "http://localhost:1337",
+];
+
+function isOriginAllowed(origin: string | null): boolean {
+  if (!origin) return false;
+  const allowed = ALLOWED_ORIGINS_LIST.length > 0
+    ? ALLOWED_ORIGINS_LIST
+    : DEFAULT_ALLOWED_ORIGINS;
+  return allowed.includes(origin);
+}
+
+export function buildCorsHeaders(origin: string | null): Record<string, string> | null {
+  if (!isOriginAllowed(origin)) return null;
+  return { "Access-Control-Allow-Origin": origin! };
+}
+
+export function buildCorsPreflightHeaders(origin: string | null): Record<string, string> | null {
+  if (!isOriginAllowed(origin)) return null;
+  return {
+    "Access-Control-Allow-Origin": origin!,
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
+/**
+ * Legacy compatibility — kept for any consumer that still imports the old
+ * constant names. These return the wildcard `*` value and should NOT be used
+ * by new code; prefer `buildCorsHeaders` / `buildCorsPreflightHeaders`.
+ *
+ * TODO: remove once all consumers migrated (tracked in TODO.md).
+ */
+export const corsHeaders = { "Access-Control-Allow-Origin": "*" } as const;
 export const corsPreflightHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
 } as const;
