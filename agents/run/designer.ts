@@ -1,5 +1,5 @@
 import { TaskMemory } from "@adapters/task-memory";
-import { ImageGen9Router } from "@adapters/image-gen-9router";
+import { PollinationsImageAdapter } from "@adapters/pollinations-image";
 import { DesignerAgent, DESIGNER_CARD } from "@core/designer";
 import { runAgent } from "./serve.ts";
 import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
@@ -8,7 +8,9 @@ import { initLifecycle } from "./lifecycle.ts";
 
 if (import.meta.main) {
   const taskStore = new TaskMemory();
-  const agent = new DesignerAgent(taskStore, new ImageGen9Router());
+  const apiKey = process.env.POLLINATIONS_API_KEY ?? "";
+  const imageGen = apiKey ? new PollinationsImageAdapter({ apiKey }) : undefined;
+  const agent = new DesignerAgent(taskStore, imageGen);
 
   const realtimePort = Number(process.env.JABR_REALTIME_PORT);
   let realtime: RealtimePort;
