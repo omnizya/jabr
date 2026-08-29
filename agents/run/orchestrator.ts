@@ -75,7 +75,7 @@ if (import.meta.main) {
   for (const [agentName, card] of Object.entries(allCards)) {
     const agentUrl = seedUrls[agentName];
     if (agentUrl) {
-      x402Server.updateFromCard(card);
+      x402Server.updateFromCard(card, card.pricing?.settlement ?? undefined);
     }
   }
 

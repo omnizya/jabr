@@ -82,7 +82,7 @@ export class X402Server {
    * Update settlement expectations from an agent card.
    * Call this when the card is loaded or refreshed.
    */
-  updateFromCard(card: import("@agents/types").AgentCard): void {
+  updateFromCard(card: import("@agents/types").AgentCard, settlementPricing?: import("./types").SettlementPricing): void {
     const p = card.pricing;
     if (!p || !p.settlement) {
       this.expectsPayment = false;
@@ -91,8 +91,8 @@ export class X402Server {
       return;
     }
     this.expectsPayment = true;
-    // Use costPerTask as the minimum required payment.
-    this.requiredAmount = p.costPerTask ?? 0;
+    // Use settlement.costPerTask as the minimum required payment.
+    this.requiredAmount = settlementPricing?.costPerTask ?? p.costPerTask ?? 0;
     this.cardCache = card;
   }
 
