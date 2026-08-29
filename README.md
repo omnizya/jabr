@@ -2,56 +2,25 @@
 
 *Jabr (جبر) — Arabic for "restoration of broken parts," the root of algebra.*
 
-Experimental multi-agent system testing **ACP + A2A + MCP** together. Hexagonal architecture (Ports & Adapters). Version **0.3.0**.
+**Version:** 0.4.0
+**Status:** Experimental — not production-ready
+**License:** MIT
+
+Experimental multi-agent system testing **ACP + A2A + MCP** together. Hexagonal architecture (Ports & Adapters).
 
 Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` directly.
 
-## Architecture — Hexagonal (Ports & Adapters)
+---
 
-```
-agents/
-├── core/              # Domain logic — zero infrastructure imports
-│   ├── orchestrator.ts   # Keyword + tag routing, handover, consensus
-│   ├── cognitive-loop.ts # Consensus engine (weighted voting)
-│   ├── oracle.ts         # Review / simplification
-│   ├── fixer.ts          # Bug fixes / generation
-│   ├── librarian.ts      # Search + skill creation
-│   ├── explorer.ts       # Codebase recon
-│   └── designer.ts       # UI / image generation
-├── ports/             # Interfaces (type-only)
-├── adapters/          # Concrete implementations
-│   ├── http/a2a-server.ts, http/stdio-bridge.ts
-│   ├── dynamic-registry.ts, a2a-client.ts
-│   ├── mcp-resources.ts, subscription-manager.ts
-│   └── memory-fs.ts, skill-fs.ts, task-memory.ts
-├── run/               # Composition roots (wire ports → core)
-└── types.ts           # A2A v1.0 types
+## Documentation
 
-mcp-servers/tools.ts   # MCP server (world-state, tasks, skills, memory)
-```
+| Document | Purpose |
+|----------|---------|
+| **[CANONICAL.md](./CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
+| **[TODO.md](./TODO.md)** | Task tracker — completed work + future phases |
+| **[AGENTS.md](./AGENTS.md)** | Agent-specific notes (internal) |
 
-**Rule:** `core` never imports `adapters`. `adapters` implement `ports`. `run` wires everything.
-
-## Agents
-
-| Agent | Port | Protocol | Role |
-|---|---|---|---|
-| Orchestrator | 4000 | A2A | Routes, persists memory, self-improves, consensus |
-| Oracle | 4001 | A2A | Code review, simplification, architecture |
-| Librarian | 4002 | A2A | Web search (9Router), docs, skill synthesis |
-| Explorer | 4003 | A2A | Fast codebase recon, file search |
-| Designer | 4004 | A2A | UI/UX, image generation (9Router) |
-| Fixer | 4005 | A2A | Bug fixes, mechanical implementation |
-| ACP Bridge | stdio | ACP | IDE ↔ Orchestrator (diff + sessions) |
-| MCP Tool Server | stdio | MCP | `read_file`, `write_file`, `run_python`, `calculate`, `save_skill`, `list_skills` + resources |
-
-## Kits (Roadmap — all ✅ except roadmap tracking)
-
-- **PnP Kit (0.1.0)** — A2A v1.0 `AgentCard` (`supportedInterfaces`, `tags`), `DynamicRegistry` tag routing, `%%HANDOVER%%` recursive routing.
-- **Live Context Kit (0.2.0)** — MCP resources `jabr://world-state`, `jabr://tasks/{id}`, `jabr://skills`, `jabr://memory` + `SubscriptionManager` (`resources/subscribe` → `subscriptions/listen`), `runAgent()` DRY factory.
-- **Cognitive Loop Kit (0.2.0)** — `CognitiveLoop` weighted voting (`successRate`, relevance, tag hits), `delegateToMultiple` / `executeConsensus`.
-- **IDE-Native Kit (0.3.0)** — ACP `diff` content type + `tool_call_update` stream, `session/list|delete|resume` with `replayFrom`, `MemoryStorePort` `SessionData` → `memory/sessions/session-<id>.json`.
-- **Coherence** — aliased imports `@agents/@ports/@adapters/@utils/@run`, zero `//` slop, hexagonal `DiscoveryPort` isolation.
+---
 
 ## Quick Start
 
@@ -68,23 +37,78 @@ bun run librarian    # 4002
 bun run explorer     # 4003
 bun run designer     # 4004
 bun run fixer        # 4005
+bun run jarvis       # 1337
+bun agents/run/scientist.ts # 4006 (no script)
 
-# Integration test (agents must run first)
-bun run demo
-
-# Typecheck
+# Type check
 bun run typecheck
+
+# Test
+bun test
+
+# Integration test (agents must be running)
+bun run demo
 ```
+
+---
+
+## Architecture
+
+```
+agents/
+├── core/              # Domain logic — zero infrastructure imports
+├── ports/             # Interfaces (type-only)
+├── adapters/          # Concrete implementations
+├── run/               # Composition roots (wire ports → core)
+└── types.ts           # A2A v1.0 types
+
+mcp-servers/tools.ts   # MCP server (world-state, tasks, skills, memory)
+```
+
+**Rule:** `core` never imports `adapters`. `adapters` implement `ports`. `run` wires everything.
+
+---
+
+## Agents
+
+| Agent | Port | Protocol | Role |
+|-------|------|----------|------|
+| Orchestrator | 4000 | A2A | Routes, persists memory, self-improves, consensus |
+| Oracle | 4001 | A2A | Code review, simplification, architecture |
+| Librarian | 4002 | A2A | Web search, docs, skill synthesis |
+| Explorer | 4003 | A2A | Fast codebase recon, file search |
+| Designer | 4004 | A2A | UI/UX, image generation |
+| Fixer | 4005 | A2A | Bug fixes, mechanical implementation |
+| Scientist | 4006 | A2A | Python data analysis via MCP tools |
+| Jarvis | 1337 | A2A | Proactive codebase steward |
+| ACP Bridge | stdio | ACP | IDE ↔ Orchestrator |
+| MCP Tool Server | stdio | MCP | Tools + resources |
+
+---
 
 ## Protocol Layers
 
-- **ACP** (stdio nd-JSON) — IDE ↔ ACP bridge — JSON-RPC 2.0, one object per line; `diff` content, `tool_call_update`, `session/*`
-- **A2A** (HTTP JSON-RPC) — Orchestrator ↔ Specialists — Agent Cards at `/.well-known/agent-card.json`, polling 200 ms × 20
-- **MCP** (stdio) — Agents ↔ Tools — `bun mcp-servers/tools.ts` — tools + resources with subscriptions
+- **ACP** (stdio nd-JSON) — IDE ↔ Agent bridge
+- **A2A** (HTTP JSON-RPC) — Agent ↔ Agent delegation
+- **MCP** (stdio) — Agent ↔ Tool integration
 
-## IDE Integration (ACP)
+See [CANONICAL.md](./CANONICAL.md) for full protocol details.
 
-**Zed** `~/.config/zed/settings.json`:
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NINEROUTER_URL` | `http://127.0.0.1:20128` | LLM gateway URL |
+| `NINEROUTER_KEY` | — | LLM API key |
+| `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
+| `ORCHESTRATOR_URL` | `http://localhost:4000` | ACP bridge target |
+| `JABR_TOKEN_CAP_<AGENT>` | `100000` | Per-agent token budget |
+
+---
+
+## IDE Integration (Zed)
 
 ```json
 {
@@ -99,50 +123,20 @@ bun run typecheck
 }
 ```
 
-**JetBrains** `acp.json`:
+---
 
-```json
-{ "jabr": { "command": "bun", "args": ["agents/run/acp-bridge.ts"] } }
-```
+## Contributing
 
-`ORCHESTRATOR_URL` env overrides default `http://localhost:4000`.
+This is an experimental research project. Contributions welcome but expect rapid iteration.
 
-## MCP Tools & Resources
+**Before contributing:**
+1. Read [CANONICAL.md](./CANONICAL.md)
+2. Run `bun run typecheck` — must pass
+3. Run `bun test` — must pass
+4. Follow conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`)
 
-| Tool | Description |
-|---|---|
-| `read_file` | Read workspace file |
-| `write_file` | Write workspace file |
-| `run_python` | `uv run` Python (10 s) |
-| `calculate` | Safe arithmetic |
-| `save_skill` | Persist skill JSON (idempotent) |
-| `list_skills` | List saved skills |
-
-| Resource | URI |
-|---|---|
-| World-state | `jabr://world-state` |
-| Task | `jabr://tasks/{taskId}` |
-| Skills | `jabr://skills` |
-| Memory | `jabr://memory` |
-
-## Skills System
-
-`skills/builtin/*.md` (static, per-agent) + `skills/*.json` (auto-generated by Librarian, idempotent by slug). See `skills/` and `hermes.config.md`.
-
-## Self-Improvement Loop
-
-After each novel task, Librarian writes `skills/<slug>.json`. Same slug → skip.
+---
 
 ## License
 
 MIT — see [LICENSE](./LICENSE).
-
-## Aliased Imports
-
-`tsconfig.json` → `@agents/*` `./agents/*`, `@ports/*`, `@adapters/*`, `@run/*`, `@utils/*`, `@core/*`. Core uses only `type` imports from ports.
-
-## Notes
-
-- `bun run tsc --noEmit` for type checking — no separate lint/test scripts.
-- All A2A endpoints return `Access-Control-Allow-Origin: *`.
-- Unrecognized routing falls back to Librarian.
