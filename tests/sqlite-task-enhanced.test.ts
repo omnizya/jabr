@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { SqliteTaskStore } from "@adapters/sqlite-task-store";
 import { openJabrDb } from "@adapters/sqlite-db";
-import type { TaskStatus } from "@ports/task-store";
+import type { Task } from "@ports/task-store";
 import type { A2AMessage } from "@agents/types";
 
 function makeStore(): SqliteTaskStore {
@@ -70,7 +70,7 @@ describe("SqliteTaskStore", () => {
 
   test("handles all A2A v1.0 states", () => {
     const store = makeStore();
-    const states: TaskStatus[] = [
+    const states: Task["state"][] = [
       "submitted",
       "working",
       "input-required",
@@ -81,13 +81,13 @@ describe("SqliteTaskStore", () => {
       "auth-required",
       "unknown",
     ];
-    for (let i = 0; i < states.length; i++) {
+    states.forEach((state, i) => {
       store.create(`t-${i}`);
-      store.updateState(`t-${i}`, states[i]);
-    }
-    for (let i = 0; i < states.length; i++) {
+      store.updateState(`t-${i}`, state);
+    });
+    states.forEach((state, i) => {
       const got = store.get(`t-${i}`);
-      expect(got?.state).toBe(states[i]);
-    }
+      expect(got?.state).toBe(state);
+    });
   });
 });
