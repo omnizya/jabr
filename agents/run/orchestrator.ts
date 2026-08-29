@@ -25,6 +25,11 @@ if (import.meta.main) {
   const memory = new SqliteMemoryStore(db, { mirrorFile: null }); // sqlite is source of truth; no .md mirror
   const llmPort = new NineRouterLlmAdapter(budget);
 
+  // Real-time event transport: native Bun WebSocket server on port 4008.
+  // Clients subscribe to task-scoped rooms (task-{id}) to receive lifecycle
+  // events (task:created, task:progress, task:completed, task:failed).
+  const realtime: RealtimePort = startBunWebSocketAdapter({ port: 4008 });
+
   const seedUrls: Record<string, string> = {
     oracle: "http://localhost:4001",
     librarian: "http://localhost:4002",
