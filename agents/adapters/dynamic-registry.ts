@@ -43,16 +43,37 @@ export class DynamicRegistry implements DiscoveryPort {
   }
 
   private async discoverWithRetry(maxAttempts = 30, intervalMs = 1000): Promise<void> {
+    const totalSeeds = Object.keys(this.seedUrls).length;
+    if (totalSeeds === 0) return;
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await this.discover();
-      if (this.entries.size > 0) {
+      // Only consider discovery complete once EVERY seed agent is present,
+      // not just the first partial success. This prevents the registry from
+      // stopping early when agents boot in parallel and only some are up.
+      if (this.entries.size === totalSeeds) {
         console.log(`[DynamicRegistry] Agents ready after ${attempt + 1} attempt(s)`);
         return;
       }
-      console.log(`[DynamicRegistry] Waiting for agents (attempt ${attempt + 1}/${maxAttempts})...`);
-      await new Promise((r) => setTimeout(r, intervalMs));
+      if (attempt < maxAttempts - 1) {
+        console.log(`[DynamicRegistry] Waiting for agents (attempt ${attempt + 1}/${maxAttempts})...`);
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
     }
-    console.warn("[DynamicRegistry] No agents discovered after retries");
+
+    // maxAttempts exhausted. Keep whatever was discovered (partial discovery is
+    // better than none — routing still works for the discovered subset), but
+    // make it diagnosable by listing which seed agents are still missing.
+    if (this.entries.size > 0) {
+      const missing = Object.keys(this.seedUrls).filter((name) => !this.entries.has(name));
+      console.warn(
+        `[DynamicRegistry] Partial discovery after ${maxAttempts} attempts — ` +
+          `missing: ${missing.join(", ")}. ` +
+          `Routing will work for discovered subset: ${[...this.entries.keys()].join(", ")}`,
+      );
+    } else {
+      console.warn("[DynamicRegistry] No agents discovered after retries");
+    }
   }
 
   async addAgent(url: string): Promise<boolean> {

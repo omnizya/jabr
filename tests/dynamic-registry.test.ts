@@ -93,3 +93,92 @@ describe("DynamicRegistry.matchAgent", () => {
     expect(match).toBeNull();
   });
 });
+
+describe("DynamicRegistry.discoverWithRetry", () => {
+  test("keeps retrying until ALL seed agents are discovered", async () => {
+    const partialSeed = {
+      oracle: "http://localhost:4001",
+      fixer: "http://localhost:4005",
+      explorer: "http://localhost:4003",
+    };
+    const urlToPartial: Record<string, string> = {};
+    for (const [k, v] of Object.entries(partialSeed)) urlToPartial[v] = k;
+
+    // fixer is slow to boot: fetchCard returns null for it until the second
+    // discover() pass, so a partial-first-success strategy would stop early.
+    const calls: Record<string, number> = {};
+    const slowRegistry: AgentRegistryPort = {
+      async fetchCard(url: string): Promise<AgentCard | null> {
+        calls[url] = (calls[url] ?? 0) + 1;
+        const name = urlToPartial[url];
+        if (name === "fixer" && calls[url] < 2) return null;
+        if (!name) return null;
+        return {
+          name: `${name[0]?.toUpperCase()}${name.slice(1)} Agent`,
+          description: "",
+          url,
+          version: "1.0.0",
+          capabilities: {},
+          skills: SKILLS[name] ?? [],
+        };
+      },
+      async delegateTask() {
+        return "";
+      },
+    };
+
+    const dyn = new DynamicRegistry(slowRegistry, partialSeed);
+    // Drive the real retry loop directly with a tiny interval to keep the test fast.
+    await (dyn as unknown as { discoverWithRetry: (m: number, i: number) => Promise<void> }).discoverWithRetry(30, 1);
+
+    const names = await dyn.getAgentNames();
+    expect(names.sort()).toEqual(["explorer", "fixer", "oracle"]);
+  });
+
+  test("keeps partial discovery and warns when maxAttempts is exhausted", async () => {
+    const partialSeed = {
+      oracle: "http://localhost:4001",
+      fixer: "http://localhost:4005",
+    };
+    const urlToPartial: Record<string, string> = {};
+    for (const [k, v] of Object.entries(partialSeed)) urlToPartial[v] = k;
+
+    // fixer never comes up.
+    const downRegistry: AgentRegistryPort = {
+      async fetchCard(url: string): Promise<AgentCard | null> {
+        const name = urlToPartial[url];
+        if (name === "fixer") return null;
+        if (!name) return null;
+        return {
+          name: `${name[0]?.toUpperCase()}${name.slice(1)} Agent`,
+          description: "",
+          url,
+          version: "1.0.0",
+          capabilities: {},
+          skills: SKILLS[name] ?? [],
+        };
+      },
+      async delegateTask() {
+        return "";
+      },
+    };
+
+    const dyn = new DynamicRegistry(downRegistry, partialSeed);
+    const warn = console.warn;
+    let warned = "";
+    console.warn = (msg: string) => {
+      warned = msg;
+    };
+    try {
+      await (dyn as unknown as { discoverWithRetry: (m: number, i: number) => Promise<void> }).discoverWithRetry(2, 1);
+    } finally {
+      console.warn = warn;
+    }
+
+    // Partial set is retained (routing still works for the discovered subset).
+    const names = await dyn.getAgentNames();
+    expect(names).toEqual(["oracle"]);
+    expect(warned).toContain("Partial discovery");
+    expect(warned).toContain("fixer");
+  });
+});
