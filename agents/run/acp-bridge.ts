@@ -1,10 +1,12 @@
 import { StdioBridge } from "@adapters/http/stdio-bridge";
-import { MemoryFS, DEFAULT_MEMORY_DIR } from "@adapters/memory-fs";
+import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
+import { openJabrDb, DEFAULT_BRIDGE_DB_PATH } from "@adapters/sqlite-db";
 
 if (import.meta.main) {
+  const db = openJabrDb(DEFAULT_BRIDGE_DB_PATH);            // memory/jabr-bridge.db
   const bridge = new StdioBridge({
     orchestratorUrl: process.env.ORCHESTRATOR_URL ?? "http://localhost:4000",
-    memory: new MemoryFS({ baseDir: DEFAULT_MEMORY_DIR }),
+    memory: new SqliteMemoryStore(db, { mirrorFile: null }),
   });
   bridge.start();
   process.stderr.write(

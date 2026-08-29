@@ -1,21 +1,23 @@
 import { A2AServer } from "@adapters/http/a2a-server";
 import { A2AClient } from "@adapters/a2a-client";
 import { DynamicRegistry } from "@adapters/dynamic-registry";
-import { TaskMemory } from "@adapters/task-memory";
-import { MemoryFS, DEFAULT_MEMORY_DIR } from "@adapters/memory-fs";
 import { OrchestratorAgent, ORCHESTRATOR_CARD } from "@core/orchestrator";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { HeadroomAdapter } from "@adapters/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
+import { SqliteTaskStore } from "@adapters/sqlite-task-store";
+import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
+import { openJabrDb } from "@adapters/sqlite-db";
 
 if (import.meta.main) {
   const PORT = 4000;
 
   const budget = new HeadroomAdapter();
   const registryClient = new A2AClient(budget);
-  const taskStore = new TaskMemory();
-  const memory = new MemoryFS({ baseDir: DEFAULT_MEMORY_DIR });
+  const db = openJabrDb();                                  // memory/jabr.db
+  const taskStore = new SqliteTaskStore(db);
+  const memory = new SqliteMemoryStore(db);                 // mirror → memory/orchestrator.md
   const llmPort = new NineRouterLlmAdapter(budget);
 
   const seedUrls: Record<string, string> = {
