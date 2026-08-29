@@ -1,9 +1,9 @@
 # agents/core — Domain Logic (Ports & Adapters)
 
 The domain layer: pure agent behavior with ZERO infrastructure imports. Agents are
-deterministic keyword matchers (only `jarvis` and the orchestrator's consensus loop
-use an LLM). Everything an agent needs arrives via port interfaces injected in the
-constructor.
+deterministic keyword matchers (only `jarvis`, the orchestrator's consensus loop, and
+oracle's routing judge use an LLM). Everything an agent needs arrives via port
+interfaces injected in the constructor.
 
 ## Hard rules
 

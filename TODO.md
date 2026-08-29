@@ -82,7 +82,7 @@
 - [ ] **`scripts/demo.ts` out of sync** — posts to `/a2a` with `message/send`, polls `tasks/get`; current `a2a-server.ts` accepts only root `/` + `tasks/send` sync
 - [ ] **Scientist diverges from `execute` contract** — `agents/run/scientist.ts` returns inline readonly card and `handleTask` not `execute`; not on `bun run dev`
 - [ ] **Jarvis `execute` doesn't write to `taskStore`** — bypasses `TaskStorePort`, breaks world-state subscribers
-- [ ] **Handover is dead code** — `encodeHandover` defined, no specialist emits `%%HANDOVER%%`; specialists are deterministic keyword matchers
+- [x] **Handover is dead code** — `encodeHandover` defined, no specialist emits `%%HANDOVER%%`; specialists are deterministic keyword matchers — **RESOLVED**: oracle is now LLM-driven and emits `%%HANDOVER%%` on mis-routing; orchestrator honors `transferTo` (see line 100)
 - [ ] **Naive `extractJson`** — slices first `{...}` regardless of nesting; breaks on nested objects in LLM output
 - [ ] **Regex version-parse** — `/v?(\d+)\.(\d+)/` fragile; semver pre-release/build metadata dropped
 - [x] **5 run files import `./serve` without `.ts`** — already resolved in code: all 5 (`designer`, `explorer`, `fixer`, `librarian`, `oracle`) import `./serve.ts` with extension; `bun run typecheck` clean. Only stale doc references remain (TODO + `agents/run/AGENTS.md`)
@@ -97,8 +97,9 @@
 
 ### Top leverage fixes
 - [ ] **Scientist: adopt `runAgent()` + standard contract** — `agents/run/scientist.ts` uses `runAgent` factory; `handleTask` → `execute`; add to `bun run dev`; return readonly card via standard channel
-- [ ] **Handover: wire into [PERSON_NAME] OR delete** — pick one; if delete, drop `HandoverRequest`/`encodeHandover`/`MAX_HANDOVER_DEPTH`; if wire, add to [PERSON_NAME] (only LLM-driven specialist can reason about mis-routing)
+- [x] **Handover: wire into [PERSON_NAME] OR delete** — pick one; if delete, drop `HandoverRequest`/`encodeHandover`/`MAX_HANDOVER_DEPTH`; if wire, add to [PERSON_NAME] (only LLM-driven specialist can reason about mis-routing)
   - **DECISION (2026-08-29): WIRE it.** Handover stays; do NOT delete. Plan: make a specialist LLM-driven (start with oracle or a dedicated reasoning lane), then wire `encodeHandover` so it can genuinely reason about mis-routing before emitting `%%HANDOVER%%`. Prerequisite: an LLM-driven specialist must exist first (see Future Enhancements).
+  - **DONE (2026-08-29):** Oracle is now LLM-driven (`LlmPort` routing judge, `ROUTING_SYSTEM_PROMPT`, `VALID_TRANSFER_TARGETS`) and emits `%%HANDOVER%%` on mis-routing; orchestrator honors `transferTo` via `forcedAgentName` (falls back to registry re-routing when unresolvable). Committed `70a2e4f`.
 - [ ] **Rebrand decision** — either update `AgentCard.name` to polymaths end-to-end (oracle→JABIR, etc.) or stop pretending; rename `agents/core/oracle.ts` → `agents/core/jabir.ts` to match lore
 
 ### What genuinely needs LLM
@@ -115,4 +116,4 @@
 
 - [ ] **TDD with DDD** — adopt test-driven development + domain-driven design using Bun's built-in `bun:test` (no vitest needed — runtime is Bun 1.4). Add test files + `bun test` script. Ties into the "No lint / test scripts" audit item.
 - [ ] **Persistent database with bun sqlite** — replace/augment in-memory `TaskMemory` (and possibly `memory-fs`) with `bun:sqlite` for durable task/session/memory persistence. Enables loop recovery across restarts.
-- [ ] **LLM-driven specialist (prerequisite for handover wiring)** — make at least one specialist genuinely LLM-driven so it can reason about mis-routing; this unblocks the handover wiring decision above.
+- [x] **LLM-driven specialist (prerequisite for handover wiring)** — make at least one specialist genuinely LLM-driven so it can reason about mis-routing; this unblocks the handover wiring decision above. — **DONE (2026-08-29):** oracle is LLM-driven (committed `70a2e4f`).
