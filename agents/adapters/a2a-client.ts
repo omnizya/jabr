@@ -45,8 +45,10 @@ export class A2AClient implements AgentRegistryPort {
 
     if (this.budget && name) {
       if (this.budget.isExhausted(name)) {
+        console.error(`[A2AClient] budget exhausted for agent=${name} → ${agentUrl}`);
         throw new BudgetExhaustedError(name, await this.budget.remaining(name));
       }
+      console.log(`[A2AClient] budget ok for agent=${name} → ${agentUrl}`);
     }
 
     const body: JSONRPCRequest = {
@@ -62,11 +64,14 @@ export class A2AClient implements AgentRegistryPort {
     };
 
     try {
+      console.log(`[A2AClient] → tasks/send to ${agentUrl} (agent=${name ?? "unknown"}, textLen=${text.length}, id=${body.id})`);
+      const start = performance.now();
       const res = await fetch(agentUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const latency = Math.round(performance.now() - start);
 
       if (!res.ok) {
         const msg = `[A2AClient] delegateTask failed: ${res.status} ${res.statusText}`;
@@ -92,15 +97,21 @@ export class A2AClient implements AgentRegistryPort {
 
       // The A2A server returns the flat `{ text }` shape (a2a-server.ts:88).
       if (result?.text) {
+        console.log(`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${result.text.length}`);
         return result.text;
       }
       if (result?.artifacts?.[0]?.parts?.[0]?.text) {
-        return result.artifacts[0].parts[0].text;
+        const t = result.artifacts[0].parts[0].text;
+        console.log(`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${t.length}`);
+        return t;
       }
       if (result?.message?.parts?.[0]?.text) {
-        return result.message.parts[0].text;
+        const t = result.message.parts[0].text;
+        console.log(`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${t.length}`);
+        return t;
       }
 
+      console.log(`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms (no text content)`);
       return "[A2AClient] delegateTask: no text content in response";
     } catch (err) {
       const msg = `[A2AClient] delegateTask error: ${String(err)}`;
