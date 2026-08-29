@@ -115,6 +115,9 @@ if (import.meta.main) {
         const taskId = crypto.randomUUID();
         console.log(`[Run:Orchestrator] received task ${taskId}`);
         taskStore.create(taskId);
+        // Emit task:created so subscribed clients (e.g. dashboards, CLI watchers)
+        // receive an immediate lifecycle signal before execution starts.
+        realtime.emitTo(`task-${taskId}`, { type: "task:created", taskId, agent: "orchestrator" });
         await agent.execute(taskId, text);
         const task = taskStore.get(taskId);
         const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
