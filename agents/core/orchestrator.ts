@@ -223,13 +223,14 @@ export class OrchestratorAgent {
     referenceTaskIds: string[] = [],
     forcedAgentName?: string,
   ): Promise<void> {
-    // Emit task:progress (0%) at entry — covers task:created already implied by
-    // the caller's taskStore.create, but clients subscribed to the task room want
-    // an immediate lifecycle signal.
-    this.emitTaskProgress(taskId, 0, "started");
+    // Emit task:created at entry — the lifecycle signal that a task has been received
+    // and is about to be worked on. Clients subscribed to the task room use this to
+    // show task appearance before any progress is reported.
+    this.emitTaskCreated(taskId, "JABIR");
 
     try {
       this.taskStore.updateState(taskId, "working");
+      this.emitTaskProgress(taskId, 5, "queued");
 
       let augmentedText = userText;
       if (this.knowledge && depth === 0) {
@@ -347,6 +348,7 @@ export class OrchestratorAgent {
         this.memory.append(
           `[depth=${depth}] Handover chain completed. Result length: ${childResult.length} chars`,
         );
+        this.emitTaskCompleted(taskId, childResult);
         return;
       }
 
@@ -403,7 +405,17 @@ export class OrchestratorAgent {
 
   // ---- realtime lifecycle emissions ----
 
-  /** Emit task:progress to the task's room; also emit task:created once per task. */
+  /** Emit task:created to the task's room. */
+  private emitTaskCreated(taskId: string, agent: string): void {
+    if (!this.realtime) return;
+    this.realtime.emitTo(`task-${taskId}`, {
+      type: "task:created",
+      taskId,
+      agent,
+    });
+  }
+
+  /** Emit task:progress to the task's room. */
   private emitTaskProgress(taskId: string, percent: number, message: string): void {
     if (!this.realtime) return;
     this.realtime.emitTo(`task-${taskId}`, {
