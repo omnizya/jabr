@@ -2,8 +2,8 @@ import type { TaskStorePort } from "@ports/task-store";
 import type { AgentCard } from "@agents/types";
 
 export const EXPLORER_CARD: AgentCard = {
-  name: "Explorer Agent",
-  description: "Explores codebases, finds files and patterns, maps project structure. Fast reconnaissance.",
+  name: "BATTUTA",
+  description: "BATTUTA (ابن بطوطة) — Astrolabe Voyager. Explores codebases, finds files and patterns, maps project structure. Fast reconnaissance.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },

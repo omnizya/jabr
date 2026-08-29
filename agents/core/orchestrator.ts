@@ -11,9 +11,9 @@ import type { KnowledgePort } from "@ports/knowledge-port";
 
 
 export const ORCHESTRATOR_CARD: AgentCard = {
-  name: "Orchestrator",
+  name: "JABIR",
   description:
-    "Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
+    "JABIR (جابر) — Alchemical Operator. Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: false, pushNotifications: false },

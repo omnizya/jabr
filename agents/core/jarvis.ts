@@ -9,9 +9,9 @@ import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
 
 export const JARVIS_CARD: AgentCard = {
-  name: "Jarvis Agent",
+  name: "WAZIR",
   description:
-    "Proactive codebase steward — scans for improvements, generates profiles, watches dependencies, identifies AI/automation opportunities.",
+    "WAZIR — The Steward. Proactive codebase steward — scans for improvements, generates profiles, watches dependencies, identifies AI/automation opportunities.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },

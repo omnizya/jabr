@@ -3,8 +3,8 @@ import type { SkillStorePort } from "@ports/skill-store";
 import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const ORACLE_CARD: AgentCard = {
-  name: "Oracle Agent",
-  description: "Reviews code, simplifies implementations, makes architecture decisions. Senior-level advisor.",
+  name: "RUSHD",
+  description: "RUSHD (ابن رشد) — Rational Sage. Reviews code, simplifies implementations, makes architecture decisions. Senior-level advisor.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },

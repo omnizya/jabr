@@ -3,8 +3,8 @@ import type { ImageGenPort } from "@ports/image-gen-port";
 import type { AgentCard } from "@agents/types";
 
 export const DESIGNER_CARD: AgentCard = {
-  name: "Designer Agent",
-  description: "Designs UI/UX, creates responsive layouts, applies visual polish. Frontend design specialist.",
+  name: "FIRNAS",
+  description: "FIRNAS (Abbas ibn Firnas) — Flying Polymath. Designs UI/UX, creates responsive layouts, applies visual polish. Frontend design specialist.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },

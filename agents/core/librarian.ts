@@ -5,8 +5,8 @@ import type { KnowledgePort } from "@ports/knowledge-port";
 import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const LIBRARIAN_CARD: AgentCard = {
-  name: "Librarian Agent",
-  description: "Researches documentation, looks up library APIs, summarizes findings, and manages skills. External knowledge specialist.",
+  name: "FIHRIYA",
+  description: "FIHRIYA (Fatima al-Fihriya) — Keeper of Knowledge. Researches documentation, looks up library APIs, summarizes findings, and manages skills. External knowledge specialist.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },

@@ -3,9 +3,9 @@ import type { SkillStorePort } from "@ports/skill-store";
 import type { AgentCard, A2AMessage } from "@agents/types";
 
 export const FIXER_CARD: AgentCard = {
-  name: "Fixer Agent",
+  name: "TARIQ",
   description:
-    "Fixes bugs, generates code, runs reviews, executes Python. Bounded implementation specialist.",
+    "TARIQ (Tariq ibn Ziyad) — The Vanguard. Fixes bugs, generates code, runs reviews, executes Python. Bounded implementation specialist.",
   url: "",
   version: "1.0.0",
   capabilities: { streaming: true, pushNotifications: false },
