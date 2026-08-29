@@ -12,6 +12,7 @@ import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
 import { openJabrDb } from "@adapters/sqlite-db";
 import { GitHubWebhookAdapter } from "@adapters/http/github-webhook";
 import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
+import { initLifecycle } from "./lifecycle.ts";
 import type { RealtimePort } from "@ports/realtime-port";
 import { SettlementLedger } from "@adapters/x402/settlement-ledger";
 import { X402Client } from "@adapters/x402/x402-client";
@@ -46,6 +47,15 @@ if (import.meta.main) {
   // Clients subscribe to task-scoped rooms (task-{id}) to receive lifecycle
   // events (task:created, task:progress, task:completed, task:failed).
   const realtime: RealtimePort = startBunWebSocketAdapter({ port: 4008 });
+
+  // Wire orchestrator lifecycle events — agent:online on start, agent:offline
+  // on SIGINT/SIGTERM, agent:error on uncaught exceptions and unhandled rejections.
+  const orchestratorLifecycle = initLifecycle(realtime, "orchestrator", PORT);
+  orchestratorLifecycle.announceOnline();
+  process.on("uncaughtException", (e) => {
+    orchestratorLifecycle.uncaughtHandler(e);
+    console.error(`[Run:Orchestrator] uncaught exception:`, e);
+  });
 
   const seedUrls: Record<string, string> = {
     oracle: "http://localhost:4001",
@@ -115,9 +125,6 @@ if (import.meta.main) {
         const taskId = crypto.randomUUID();
         console.log(`[Run:Orchestrator] received task ${taskId}`);
         taskStore.create(taskId);
-        // Emit task:created so subscribed clients (e.g. dashboards, CLI watchers)
-        // receive an immediate lifecycle signal before execution starts.
-        realtime.emitTo(`task-${taskId}`, { type: "task:created", taskId, agent: "orchestrator" });
         await agent.execute(taskId, text);
         const task = taskStore.get(taskId);
         const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
