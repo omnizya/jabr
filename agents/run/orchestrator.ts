@@ -11,6 +11,8 @@ import { SqliteTaskStore } from "@adapters/sqlite-task-store";
 import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
 import { openJabrDb } from "@adapters/sqlite-db";
 import { GitHubWebhookAdapter } from "@adapters/http/github-webhook";
+import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
+import type { RealtimePort } from "@ports/realtime-port";
 
 if (import.meta.main) {
   const PORT = 4000;

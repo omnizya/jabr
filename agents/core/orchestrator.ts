@@ -43,6 +43,7 @@ export const MAX_HANDOVER_DEPTH = 3;
 
 export class OrchestratorAgent {
   private cognitiveLoop: CognitiveLoop;
+  private x402Client?: X402Client;
 
   constructor(
     private registry: AgentRegistryPort,
@@ -55,8 +56,10 @@ export class OrchestratorAgent {
     private kanban?: KanbanPort,
     private budget?: BudgetPort,
     private realtime?: RealtimePort,
+    x402Client?: X402Client,
   ) {
     this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
+    this.x402Client = x402Client;
   }
 
   get card(): AgentCard {
@@ -70,6 +73,17 @@ export class OrchestratorAgent {
       return { agentName: match.name, label: match.label };
     }
     return null;
+  }
+
+  /**
+   * Delegate a task to an agent, using the x402 client when configured.
+   * Falls back to the raw registry (no payment) when x402Client is absent.
+   */
+  async delegateTask(agentUrl: string, text: string, agentName?: string): Promise<string> {
+    if (this.x402Client) {
+      return this.x402Client.delegateTask(agentUrl, text, agentName);
+    }
+    return this.registry.delegateTask(agentUrl, text, agentName);
   }
 
   async getWorldState(): Promise<any> {
@@ -147,7 +161,7 @@ export class OrchestratorAgent {
               await this.budget.consume(name, costTokens);
             }
           }
-          const response = await this.registry.delegateTask(url, userText, name);
+          const response = await this.delegateTask(url, userText, name);
           const card = await this.dynamicRegistry?.getCard(name);
           if (!card) return null;
           return { agentName: name, card, response } satisfies ConsensusInput;
