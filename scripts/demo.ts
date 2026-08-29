@@ -330,6 +330,67 @@ await check("Handover sentinel processed without crash", async () => {
   console.log(`     → ${response.slice(0, 80)}…`);
 });
 
+// ── 8. Pollinations image generation ──────────────────────────────────────────
+step("8 · Pollinations image generation");
+
+await check("PollinationsImageAdapter generates a real image", async () => {
+  const { PollinationsImageAdapter } = await import(
+    "@adapters/pollinations-image"
+  );
+  const apiKey = process.env.POLLINATIONS_API_KEY;
+  if (!apiKey) {
+    console.log("     ⚠ POLLINATIONS_API_KEY not set — skipping live test");
+    return;
+  }
+  const adapter = new PollinationsImageAdapter({ apiKey });
+  const url = await adapter.generate("a cute cat in space");
+  if (!url.startsWith("https://gen.pollinations.ai/image/"))
+    throw new Error(`Unexpected URL format: ${url}`);
+  console.log(`     → ${url.slice(0, 70)}…`);
+
+  // Verify the generated image is actually reachable (HTTP 200 + image/jpeg).
+  const res = await fetch(url, { method: "HEAD" });
+  if (!res.ok)
+    throw new Error(`Generated image not reachable: HTTP ${res.status}`);
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.startsWith("image/"))
+    throw new Error(`Expected image content-type, got: ${ct}`);
+  console.log(`     → HTTP ${res.status} · content-type: ${ct}`);
+});
+
+// ── 9. Pollinations wallet → x402 bridge ──────────────────────────────────────
+step("9 · Pollen wallet → x402 settlement bridge");
+
+await check("PollinationsWallet.getBalance reads Pollen balance", async () => {
+  const { PollinationsWallet } = await import(
+    "@adapters/x402/pollinations-wallet"
+  );
+  const apiKey = process.env.POLLINATIONS_API_KEY;
+  if (!apiKey) {
+    console.log("     ⚠ POLLINATIONS_API_KEY not set — skipping live test");
+    return;
+  }
+  const wallet = new PollinationsWallet({ apiKey });
+  const balance = await wallet.getBalance();
+  if (typeof balance.balance !== "number" || balance.balance < 0)
+    throw new Error(`Invalid balance: ${JSON.stringify(balance)}`);
+  console.log(`     → balance: ${balance.balance} Pollen`);
+});
+
+await check("PollinationsWallet.declarePricing builds AgentCard pricing", async () => {
+  const { PollinationsWallet } = await import(
+    "@adapters/x402/pollinations-wallet"
+  );
+  const pricing = PollinationsWallet.declarePricing(0.5, 0.01);
+  if (pricing.costPerTask !== 0.5)
+    throw new Error(`Wrong costPerTask: ${pricing.costPerTask}`);
+  if (pricing.costPerToken !== 0.01)
+    throw new Error(`Wrong costPerToken: ${pricing.costPerToken}`);
+  if (pricing.currency !== "pollen")
+    throw new Error(`Wrong currency: ${pricing.currency}`);
+  console.log(`     → ${JSON.stringify(pricing)}`);
+});
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(60)}`);
 console.log(`Results: ${passed} passed · ${failed} failed`);
