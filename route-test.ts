@@ -1,31 +1,50 @@
 import { DynamicRegistry } from "@adapters/dynamic-registry";
-import type { AgentCard } from "@agents/types";
+import type { AgentCard, AgentSkill } from "@agents/types";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 
-class MockRegistry implements AgentRegistryPort {
-  constructor(private seed: Record<string,string>) {}
-  async fetchCard(url: string): Promise<AgentCard|null> {
-    const inv: Record<string,string> = {};
-    for (const [k,v] of Object.entries(this.seed)) inv[v]=k;
-    const name = inv[url];
-    if (!name) return null;
-    return { name: `${name} Agent`, description:"", url, version:"1.0.0", capabilities:{}, skills: MOCK_SKILLS[name] } as AgentCard;
-  }
-  async delegateTask(): Promise<string> { return ""; }
-}
-
-const MOCK_SKILLS: Record<string, AgentCard["skills"]> = {
-  oracle: [{name:"",description:"",tags:["review","simplify","refactor","architecture","audit"]}],
-  librarian: [{name:"",description:"",tags:["research","doc","api","library","how-to","summarize"]}],
-  explorer: [{name:"",description:"",tags:["find","files","map","structure","grep","search"]}],
-  designer: [{name:"",description:"",tags:["layout","responsive","ui","component","button","ux","color","palette"]}],
-  fixer: [{name:"",description:"",tags:["fix","bug","error","patch","repair","debug","code","implement","function","algorithm","typescript","write","python","review"]}],
+// Offline registry: returns cards keyed by seed URL. Same shape DynamicRegistry
+// would see from A2AClient.fetchCard against a running agent — keeps routing
+// test on the real matchAgent algorithm without needing live agents.
+const SKILLS: Record<string, AgentSkill[]> = {
+  oracle: [{ name: "Code Review", description: "", tags: ["review", "simplify", "refactor", "architecture", "audit"] }],
+  librarian: [{ name: "Research", description: "", tags: ["research", "doc", "api", "library", "how-to", "summarize"] }],
+  explorer: [{ name: "Scan", description: "", tags: ["find", "files", "map", "structure", "grep", "search"] }],
+  designer: [{ name: "UI", description: "", tags: ["layout", "responsive", "ui", "component", "button", "ux", "color", "palette"] }],
+  fixer: [{ name: "Implement", description: "", tags: ["fix", "bug", "error", "patch", "repair", "debug", "code", "implement", "function", "algorithm", "typescript", "write", "python", "review"] }],
 };
 
-const seed = { oracle:"http://localhost:4001", librarian:"http://localhost:4002", explorer:"http://localhost:4003", designer:"http://localhost:4004", fixer:"http://localhost:4005" };
-const dyn = new DynamicRegistry(new MockRegistry(seed), seed);
+const seed = { oracle: "http://localhost:4001", librarian: "http://localhost:4002", explorer: "http://localhost:4003", designer: "http://localhost:4004", fixer: "http://localhost:4005" };
+const urlToName: Record<string, string> = {};
+for (const [k, v] of Object.entries(seed)) urlToName[v] = k;
+
+const offlineRegistry: AgentRegistryPort = {
+  async fetchCard(url: string): Promise<AgentCard | null> {
+    const name = urlToName[url];
+    if (!name) return null;
+    return {
+      name: `${name[0]?.toUpperCase()}${name.slice(1)} Agent`,
+      description: "",
+      url,
+      version: "1.0.0",
+      capabilities: {},
+      skills: SKILLS[name] ?? [],
+    };
+  },
+  async delegateTask() { return ""; },
+};
+
+const dyn = new DynamicRegistry(offlineRegistry, seed);
 await dyn.initialize();
+
 for (const t of ["find all TODO comments", "review this function for edge cases", "review this module for architecture concerns", "review the edge cases in this design"]) {
   const m = await dyn.matchAgent(t);
   console.log(JSON.stringify(t), "->", m?.name, m?.label);
 }
+
+// Self-check: matchAgent must hit the real DynamicRegistry path.
+const explorerHit = await dyn.matchAgent("find all TODO comments");
+if (explorerHit?.name !== "explorer") {
+  console.error(`FAIL: expected explorer, got ${explorerHit?.name}`);
+  process.exit(1);
+}
+console.log("ok");
