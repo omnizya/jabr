@@ -127,7 +127,7 @@ export class BunWebSocketAdapter implements RealtimePort {
       // The `fetch` handler still runs for non-WebSocket HTTP requests (health
       // check, CORS preflight on the HTTP side, root info, and the POST /emit
       // endpoint used by agent runners to broadcast lifecycle events).
-      fetch(req) {
+      async fetch(req) {
         const url = new URL(req.url);
         if (req.method === "OPTIONS") {
           const origin = req.headers.get("Origin");
