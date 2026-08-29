@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { ServerCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { registerResources } from "@adapters/mcp-resources";
 import { SubscriptionManager } from "@adapters/subscription-manager";
 import pkg from "../package.json";
@@ -19,12 +20,18 @@ function ensurePythonEnv() {
 }
 
 const server = new McpServer(
-
   { name: "jabr-tools", version: pkg.version },
   {
-    capabilities: { resources: { subscribe: true, listChanged: true } },
+    // Advertise elicitation (form mode) support so clients know this server
+    // can pause tool execution and ask the user for structured input.
+    capabilities: {
+      elicitation: { form: {} },
+      resources: { subscribe: true, listChanged: true },
+    } as ServerCapabilities,
   },
 );
+
+// ── helpers ──────────────────────────────────────────────────────────
 
 function sanitizeArgs(args: unknown): unknown {
   if (args === null || typeof args !== "object") return args;
@@ -81,6 +88,8 @@ function withLogging<Args, R>(name: string, handler: (args: Args) => R): (args: 
   };
 }
 
+// ── existing tools ───────────────────────────────────────────────────
+
 server.registerTool("read_file", {
   description: "Read a file from the project workspace",
   inputSchema: { path: z.string().describe("Relative file path") },
@@ -96,7 +105,7 @@ server.registerTool("write_file", {
   inputSchema: { path: z.string(), content: z.string() },
 }, withLogging("write_file", ({ path, content }) => {
   const full = join(process.cwd(), path);
-  mkdirSync(join(full, ".."), { recursive: true });
+  mkdirSync(dirname(full), { recursive: true });
   writeFileSync(full, content, "utf-8");
   return { content: [{ type: "text", text: `Written ${content.length} chars to ${path}` }] };
 }));
@@ -106,9 +115,7 @@ server.registerTool("install_python_dependency", {
   inputSchema: { pkgName: z.string().describe("Package name (e.g. 'requests', 'pandas')") },
 }, withLogging("install_python_dependency", ({ pkgName }) => {
   ensurePythonEnv();
-  const proc = Bun.spawnSync(["uv", "add", pkgName], {
-    cwd: PYTHON_ENV_DIR,
-  });
+  const proc = Bun.spawnSync(["uv", "add", pkgName], { cwd: PYTHON_ENV_DIR });
   if (proc.exitCode !== 0) {
     const stderr = new TextDecoder().decode(proc.stderr);
     throw new Error(`Failed to install ${pkgName}: ${stderr}`);
@@ -123,17 +130,116 @@ server.registerTool("run_python", {
   ensurePythonEnv();
   const mainPath = join(PYTHON_ENV_DIR, "main.py");
   writeFileSync(mainPath, code, "utf-8");
-  
+
   const proc = Bun.spawnSync(["uv", "run", "--project", PYTHON_ENV_DIR, "python", "main.py"], {
     timeout: 10_000,
   });
-  
+
   const stdout = new TextDecoder().decode(proc.stdout);
   const stderr = new TextDecoder().decode(proc.stderr);
   if (proc.exitCode !== 0) throw new Error(stderr || "Python error");
   return { content: [{ type: "text", text: stdout || "(no output)" }] };
 }));
 
+// ── elicitation demo tools ────────────────────────────────────────────
+
+/**
+ * Elicitation (MCP SEP-2322) lets a server pause mid-tool-call and ask the
+ * client to collect structured user input. Two modes:
+ *
+ *   form  – in-band JSON Schema form rendered by the client (non-sensitive)
+ *   url   – out-of-band URL the user visits in a browser (sensitive/OAuth)
+ *
+ * The SDK's McpServer.server.elicitInput() sends an elicitation/create request.
+ * The client's elicitation callback decides how to surface it (CLI prompt,
+ * gateway notify, etc.) and returns an ElicitResult.
+ */
+
+server.registerTool("elicit_payment", {
+  description: "Authorize a payment by collecting confirmation from the user via form elicitation",
+  inputSchema: {
+    amount: z.number().describe("Amount in USD"),
+    recipient: z.string().describe("Payee name"),
+  },
+}, withLogging("elicit_payment", async ({ amount, recipient }) => {
+  // Form-mode elicitation: the client renders a JSON Schema form and collects
+  // the user's response. The schema restricts fields to primitives the spec
+  // admits (string, boolean, enum/oneOf, array of enums).
+  const result = await server.server.elicitInput({
+    mode: "form",
+    message: `Authorize a payment of $${amount.toFixed(2)} to ${recipient}?`,
+    requestedSchema: {
+      type: "object",
+      properties: {
+        approved: {
+          type: "boolean",
+          title: "Approve payment",
+          description: "Confirm you want to send this payment",
+        },
+        note: {
+          type: "string",
+          title: "Memo (optional)",
+          description: "Optional note attached to the payment",
+        },
+      },
+      required: ["approved"],
+    },
+  });
+
+  if (result.action === "accept" && result.content) {
+    const { approved, note } = result.content as { approved: boolean; note?: string };
+    if (!approved) {
+      return { content: [{ type: "text", text: "Payment declined by user." }], isError: false };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: `Payment of $${amount.toFixed(2)} to ${recipient} approved${note ? ` (${note})` : ""}.`,
+      }],
+    };
+  }
+  if (result.action === "decline") {
+    return { content: [{ type: "text", text: "Payment request declined by user." }], isError: false };
+  }
+  // cancel – user/connection timed out
+  return { content: [{ type: "text", text: "Payment request cancelled (timeout or disconnect)." }], isError: true };
+}));
+
+server.registerTool("elicit_url_auth", {
+  description: "Trigger a URL-mode elicitation for sensitive out-of-band authentication (OAuth / payment flows)",
+  inputSchema: {
+    provider: z.string().describe("Auth provider name (e.g. 'example-oauth')"),
+  },
+}, withLogging("elicit_url_auth", async ({ provider }) => {
+  // URL-mode elicitation: the server provides a URL the user visits in a browser.
+  // Hermes' Python elicitation handler declines URL mode (not implemented), so this
+  // will return decline. For a full implementation the client must open a browser
+  // and wait for notifications/elicitation/complete.
+  const result = await server.server.elicitInput({
+    mode: "url",
+    message: `Connect your ${provider} account to continue. Open the link to authenticate.`,
+    url: `https://auth.example.com/oauth/authorize?provider=${encodeURIComponent(provider)}`,
+    elicitationId: `url-auth-${provider}-${Date.now()}`,
+  });
+
+  if (result.action === "accept") {
+    return {
+      content: [{ type: "text", text: `Authorization flow accepted — please complete authentication at the URL provided.` }],
+    };
+  }
+  if (result.action === "decline") {
+    return {
+      content: [{ type: "text", text: `Authorization declined by user.` }],
+      isError: false,
+    };
+  }
+  return {
+    content: [{ type: "text", text: "Authorization cancelled (timeout or disconnect)." }],
+    isError: true,
+  };
+}));
+
+// ── parser/calculator tools (unchanged) ───────────────────────────────
 
 type Token =
   | { kind: "num"; value: number }
@@ -146,10 +252,7 @@ function tokenize(expression: string): Token[] {
   let i = 0;
   while (i < expression.length) {
     const ch = expression[i]!;
-    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
-      i++;
-      continue;
-    }
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") { i++; continue; }
     if (ch >= "0" && ch <= "9" || ch === ".") {
       let num = "";
       while (i < expression.length && ((expression[i]! >= "0" && expression[i]! <= "9") || expression[i] === ".")) {
@@ -169,23 +272,12 @@ function tokenize(expression: string): Token[] {
   return tokens;
 }
 
-// Recursive-descent parser with precedence:
-//   expr   := term (('+' | '-') term)*
-//   term   := power (('*' | '/' | '%') power)*
-//   power  := unary ('^' unary)*        (right-associative)
-//   unary  := ('+' | '-') unary | primary
-//   primary:= number | '(' expr ')'
 class Parser {
   private pos = 0;
   constructor(private tokens: Token[]) {}
 
-  private peek(): Token | undefined {
-    return this.tokens[this.pos];
-  }
-
-  private next(): Token | undefined {
-    return this.tokens[this.pos++];
-  }
+  private peek(): Token | undefined { return this.tokens[this.pos]; }
+  private next(): Token | undefined { return this.tokens[this.pos++]; }
 
   parse(): number {
     if (this.tokens.length === 0) throw new Error("Empty expression");
@@ -230,7 +322,7 @@ class Parser {
     const tok = this.peek();
     if (tok && tok.kind === "op" && tok.value === "^") {
       this.next();
-      const exp = this.parsePower(); // right-associative
+      const exp = this.parsePower();
       return Math.pow(base, exp);
     }
     return base;
@@ -326,10 +418,10 @@ registerResources(server, {
       return await res.json();
     } catch (e) {
       console.error("[MCP tools] getWorldState failed:", e);
-      return { 
-        timestamp: new Date().toISOString(), 
-        agents: [], 
-        error: `Could not fetch world state from Orchestrator: ${String(e)}` 
+      return {
+        timestamp: new Date().toISOString(),
+        agents: [],
+        error: `Could not fetch world state from Orchestrator: ${String(e)}`,
       };
     }
   },
