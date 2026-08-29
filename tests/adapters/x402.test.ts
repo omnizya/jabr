@@ -99,23 +99,35 @@ describe("SettlementLedger", () => {
 
   test("rejects a token not addressed to this agent", () => {
     const ledger = new SettlementLedger({ hmacSecret: "secret" });
-    const token = ledger.mintToken("http://from", "http://other", 10, "task");
-    // Verify against the wrong `to`.
-    const result = ledger.verify(token);
-    // Token was minted to http://other, so verifying as-is means the `to` matches
-    // the mint record. We need to test the case where `to` in the token differs
-    // from what the ledger expects. The ledger only checks that `mint.to === token.to`,
-    // so we test by creating a token with a different `to` than mint.
-    //
-    // Actually, the mint record stores `to`. The token carries its own `to`.
-    // Verification checks `mint.to !== token.to`. Let's create a mismatch.
-    //
-    // Simpler: mint for A, then modify the token's `to` to B before verifying.
-    const mismatched: PaymentToken = {
-      ...token,
-      to: "http://mismatch",
+    // Mint a token for http://other, then re-sign with a different `to`.
+    // We can't re-use a minted token's txId with a different `to` because
+    // the signature is tied to the mint record. Instead, mint one for A,
+    // then construct a new token with a different txId but pointing `to` to
+    // the wrong agent — the ledger won't have a mint record for it.
+    const badToken: PaymentToken = {
+      txId: crypto.randomUUID(),
+      from: "http://from",
+      to: "http://wrong-agent",
+      amount: 10,
+      issuedAt: new Date().toISOString(),
+      purpose: "task",
+      proof: "x",
+      signature: "bad",
     };
-    const r2 = ledger.verify(mismatched);
+    const r = ledger.verify(badToken);
+    expect(r.valid).toBe(false);
+    expect(r.reason).toBe("unknown txId (not minted)");
+    // Now mint for the right agent and verify — then mutate `to` and re-sign
+    // with a tampered signature to test the "not addressed" path specifically.
+    const token = ledger.mintToken("http://from", "http://worker", 10, "task");
+    const tampered = { ...token, to: "http://wrong" };
+    // Re-compute signature with tampered `to`.
+    const Hmac = (await import("node:crypto")).createHmac;
+    tampered.signature = Hmac("sha256", "secret")
+      .update(`${tampered.txId}\n${tampered.from}\n${tampered.to}\n${tampered.amount}\n${tampered.issuedAt}\n${tampered.purpose}\n${tampered.proof}`)
+      .digest("hex");
+    // This token has a valid sig but `to` doesn't match the mint record.
+    const r2 = ledger.verify(tampered);
     expect(r2.valid).toBe(false);
     expect(r2.reason).toContain("not addressed to this agent");
   });
