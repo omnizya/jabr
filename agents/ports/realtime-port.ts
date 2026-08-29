@@ -4,7 +4,7 @@
 // Events schema lives in REBRANDING.md §5 — consumers import both.
 
 export type RealtimeEvent =
-  | { type: "agent:online";  agent: string; port: number }
+  | { type: "agent:online";  agent: string; port?: number }
   | { type: "agent:offline"; agent: string }
   | { type: "agent:error";   agent: string; error: string }
   | { type: "task:created";  taskId: string; agent: string }

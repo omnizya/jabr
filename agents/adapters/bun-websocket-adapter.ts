@@ -127,8 +127,19 @@ export class BunWebSocketAdapter implements RealtimePort {
       // The `fetch` handler still runs for non-WebSocket HTTP requests (health
       // check, CORS preflight on the HTTP side, root info, and the POST /emit
       // endpoint used by agent runners to broadcast lifecycle events).
-      async fetch(req) {
+      async fetch(req, server) {
         const url = new URL(req.url);
+
+        // WebSocket upgrade: use server.upgrade() then return undefined.
+        // Bun sends a 101 Switching Protocols and invokes the websocket callbacks.
+        if (
+          req.method === "GET" &&
+          (req.headers.get("Upgrade") ?? "").toLowerCase() === "websocket"
+        ) {
+          server.upgrade(req, { data: undefined });
+          return undefined;
+        }
+
         if (req.method === "OPTIONS") {
           const origin = req.headers.get("Origin");
           const headers = buildCorsPreflightHeaders(origin);
@@ -137,49 +148,8 @@ export class BunWebSocketAdapter implements RealtimePort {
         }
 
         // POST /emit — broadcast a realtime event to all connected clients.
-        // Used by agent runners in separate processes to publish lifecycle events.
         if (req.method === "POST" && url.pathname === "/emit") {
-          let raw: string;
-          try {
-            raw = await req.text();
-          } catch {
-            return new Response(
-              JSON.stringify({ error: { code: -32700, message: "Parse error" } }),
-              {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          }
-          let event: RealtimeEvent;
-          try {
-            event = JSON.parse(raw);
-          } catch {
-            return new Response(
-              JSON.stringify({ error: { code: -32600, message: "Invalid JSON" } }),
-              {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          }
-          if (!isValidRealtimeEvent(event)) {
-            return new Response(
-              JSON.stringify({
-                error: { code: -32602, message: "Unknown event type" },
-              }),
-              {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          }
-          self.broadcast(event);
-          const origin = req.headers.get("Origin");
-          const headers = buildCorsHeaders(origin) ?? {
-            "Content-Type": "application/json",
-          };
-          return Response.json({ ok: true }, { headers });
+          return await BunWebSocketAdapter.handleEmit(req, self);
         }
 
         if (url.pathname === "/health") {
@@ -246,6 +216,11 @@ export class BunWebSocketAdapter implements RealtimePort {
   // ---- RealtimePort ----
 
   broadcast(event: RealtimeEvent): void {
+    // Fire subscribers registered via the port's on() method.
+    const handlerSet = this.handlers.get(event.type);
+    if (handlerSet) {
+      for (const handler of handlerSet) handler(event);
+    }
     // Send to every connected client, regardless of room.
     this.sendToAll(JSON.stringify(event));
   }
@@ -290,7 +265,7 @@ export class BunWebSocketAdapter implements RealtimePort {
     if (typeof msg !== "string") return;
     try {
       const parsed =
-        (JSON.parse(msg) as { type?: unknown; room?: unknown }) | undefined;
+        JSON.parse(msg) as { type?: unknown; room?: unknown } | undefined;
       if (parsed && typeof parsed.type === "string" && parsed.type === "join-room" && typeof parsed.room === "string") {
         this.joinRoom(ws, parsed.room as string);
         return;
@@ -299,6 +274,58 @@ export class BunWebSocketAdapter implements RealtimePort {
       // Not JSON — ignore.
     }
     console.warn(`[BunWebSocketAdapter] unrecognised client message: ${msg}`);
+  }
+
+  /**
+   * Async handler for POST /emit. Extracted so the `fetch` handler can stay
+   * synchronous (returning `undefined` for WebSocket upgrades is only valid
+   * from a non-async function in Bun 1.x).
+   */
+  private static async handleEmit(
+    req: Request,
+    self: BunWebSocketAdapter,
+  ): Promise<Response> {
+    let raw: string;
+    try {
+      raw = await req.text();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: { code: -32700, message: "Parse error" } }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    let event: RealtimeEvent;
+    try {
+      event = JSON.parse(raw);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: { code: -32600, message: "Invalid JSON" } }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (!isValidRealtimeEvent(event)) {
+      return new Response(
+        JSON.stringify({
+          error: { code: -32602, message: "Unknown event type" },
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    self.broadcast(event);
+    const origin = req.headers.get("Origin");
+    const headers = buildCorsHeaders(origin) ?? {
+      "Content-Type": "application/json",
+    };
+    return Response.json({ ok: true }, { headers });
   }
 
   private onClose(ws: WebSocket, _code: number, _reason: string): void {

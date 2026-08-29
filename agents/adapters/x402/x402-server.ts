@@ -8,6 +8,7 @@
 
 import type { PaymentToken, VerificationResult } from "./types";
 import { SettlementLedger } from "./settlement-ledger";
+import type { SomeId } from "@utils/rpc";
 import { err } from "@utils/rpc";
 
 const X_PAYMENT_TOKEN = "X-Payment-Token";
@@ -20,7 +21,7 @@ const PAYMENT_REQUIRED_MESSAGE = "Payment required — attach a valid X-Payment-
  * Build the 402 JSON-RPC response body.
  */
 function paymentRequiredResponse(rpcId: unknown): Response {
-  const body = err(rpcId ?? null, PAYMENT_REQUIRED_CODE, PAYMENT_REQUIRED_MESSAGE);
+  const body = err((rpcId ?? null) as SomeId, PAYMENT_REQUIRED_CODE, PAYMENT_REQUIRED_MESSAGE);
   return new Response(JSON.stringify(body), {
     status: 402,
     headers: { "Content-Type": "application/json" },
@@ -101,7 +102,7 @@ export class X402Server {
    * Returns a PaymentCheckResult. When `paid` is false, the caller should
    * respond with a 402 payment-required and not dispatch the task.
    */
-  check(req: import("bun").Request): PaymentCheckResult {
+  check(req: Request): PaymentCheckResult {
     // If the agent doesn't expect payment, allow (but still check if a token
     // is present — it may be a courtesy payment).
     if (!this.expectsPayment) {
@@ -158,7 +159,7 @@ export class X402Server {
  * Call after parsing the RPC id but before dispatching.
  */
 export function x402Reject(rpcId: unknown, reason: string): Response {
-  const body = err(rpcId ?? null, PAYMENT_REQUIRED_CODE, `${PAYMENT_REQUIRED_MESSAGE} ${reason}`);
+  const body = err((rpcId ?? null) as SomeId, PAYMENT_REQUIRED_CODE, `${PAYMENT_REQUIRED_MESSAGE} ${reason}`);
   return new Response(JSON.stringify(body), {
     status: 402,
     headers: { "Content-Type": "application/json" },
