@@ -30,6 +30,7 @@ if (import.meta.main) {
     card: { ...JARVIS_CARD, url: `http://localhost:${port}` },
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
+      taskStore.create(taskId);
       await jarvis.execute(taskId, text);
       return extractLastResponse(taskStore, taskId);
     },
