@@ -23,8 +23,13 @@ export interface AgentPricing {
   costPerTask: number;
   /** Optional per-token surcharge on top of costPerTask; multiplied by input length. */
   costPerToken?: number;
-  /** Optional settlement/currency extension for cross-agent payment (x402). */
+  /** Optional settlement/currency extension for cross-agent payment (x402).
+   *  `costPerTask` is duplicated here so this object satisfies the x402 `SettlementPricing` type. */
   settlement?: {
+    /** Base cost per task (mirrors AgentPricing.costPerTask for x402 compatibility). */
+    costPerTask: number;
+    /** Optional per-token surcharge. */
+    costPerToken?: number;
     /** Settlement currency/ledger identifier. When unset, uses the local Jabr ledger. */
     currency?: string;
     /** Maximum unpaid balance before auto-refill is triggered (0 = no auto-refill). */
