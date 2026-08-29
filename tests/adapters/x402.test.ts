@@ -7,10 +7,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { SettlementLedger } from "@adapters/x402/settlement-ledger";
-import { X402Server } from "@adapters/x402/x402-server";
+import { X402Server, x402Reject } from "@adapters/x402/x402-server";
 import { X402Client } from "@adapters/x402/x402-client";
 import type { AgentCard } from "@agents/types";
-import type { PaymentToken, SettlementReceipt } from "@adapters/x402/types";
+import type { PaymentToken } from "@adapters/x402/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -405,8 +405,3 @@ function makeReq(paymentHeader: string | null): import("bun").Request {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tasks/send", params: {} }),
   }) as import("bun").Request;
 }
-
-/**
- * Re-export for test convenience (x402Reject is named in x402-server.ts).
- */
-import { x402Reject } from "@adapters/x402/x402-server";
