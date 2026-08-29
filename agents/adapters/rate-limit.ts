@@ -35,7 +35,6 @@ export class RateLimiter {
 
     const used = alive.length;
     const allowed = used < this.maxRequests;
-    const remaining = Math.max(0, this.maxRequests - used);
 
     let resetAt = new Date(Date.now() + this.windowMs);
     let retryAfterMs = this.windowMs;
@@ -52,6 +51,9 @@ export class RateLimiter {
       alive.push(now);
       this.windows.set(caller, alive);
     }
+
+    // Report remaining AFTER recording this request (post-consumption semantics).
+    const remaining = Math.max(0, this.maxRequests - alive.length);
 
     return { allowed, remaining, resetAt, retryAfterMs };
   }

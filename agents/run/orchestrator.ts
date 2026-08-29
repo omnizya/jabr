@@ -10,6 +10,7 @@ import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { SqliteTaskStore } from "@adapters/sqlite-task-store";
 import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
 import { openJabrDb } from "@adapters/sqlite-db";
+import { GitHubWebhookAdapter } from "@adapters/http/github-webhook";
 
 if (import.meta.main) {
   const PORT = 4000;
@@ -42,6 +43,22 @@ if (import.meta.main) {
 
   const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
   const requireAuth = Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
+
+  // GitHub webhook adapter: receives X-Hub-Signature-256-verified events on port
+  // 4007 and delegates them to the orchestrator over A2A. The webhook secret and
+  // a GitHub PAT (for comment / check-run actions) are read from env so the
+  // adapter stays usable in CI without local secrets.
+  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET ?? "change-me";
+  const ghToken = process.env.GITHUB_TOKEN ?? undefined;
+  const ghDelegate = process.env.GITHUB_WEBHOOK_DELEGATE_URL ?? `http://localhost:${PORT}`;
+  const githubWebhook = new GitHubWebhookAdapter({
+    webhookSecret,
+    token: ghToken,
+    port: 4007,
+    delegateUrl: ghDelegate,
+    defaultRepo: process.env.GITHUB_REPO ?? "omnizya/jabr",
+  });
+  githubWebhook.start();
 
   const server = new A2AServer({
     port: PORT,

@@ -5,13 +5,15 @@ import { DEFAULT_MEMORY_DIR } from "@adapters/memory-fs";
 export const DEFAULT_DB_PATH = join(DEFAULT_MEMORY_DIR, "jabr.db");
 export const DEFAULT_BRIDGE_DB_PATH = join(DEFAULT_MEMORY_DIR, "jabr-bridge.db");
 
-export const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS tasks (
+const TASKS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS tasks (
   id         TEXT PRIMARY KEY,
   state      TEXT NOT NULL CHECK (state IN ('submitted','working','input-required','completed','failed','canceled','rejected','auth-required','unknown')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);
+);`;
+
+export const SCHEMA_SQL = `
+${TASKS_TABLE_SQL}
 
 CREATE TABLE IF NOT EXISTS task_transitions (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,8 +61,43 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 `;
 
+/**
+ * Migrate a pre-A2A-v1.0 `tasks` table (4-state CHECK constraint) to the
+ * current 9-state schema. SQLite cannot ALTER a CHECK constraint, so the table
+ * is rebuilt while preserving existing rows. Foreign keys are disabled around
+ * the rebuild; dependent tables (task_transitions, messages, artifacts)
+ * reference `tasks(id)` by name and remain valid after the rename.
+ */
+export function migrateTasksTable(db: Database): void {
+  const row = db
+    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'")
+    .get() as { sql: string } | undefined;
+  if (!row) return; // no tasks table yet — SCHEMA_SQL will create it
+  if (row.sql.includes("'submitted'")) return; // already current schema
+
+  console.warn("[SqliteDb] migrating tasks table schema (state CHECK constraint)");
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.exec("BEGIN");
+    db.exec("DROP TABLE IF EXISTS tasks_new");
+    db.exec(TASKS_TABLE_SQL.replace("CREATE TABLE IF NOT EXISTS tasks", "CREATE TABLE tasks_new"));
+    db.exec(
+      "INSERT INTO tasks_new (id, state, created_at, updated_at) SELECT id, state, created_at, updated_at FROM tasks",
+    );
+    db.exec("DROP TABLE tasks");
+    db.exec("ALTER TABLE tasks_new RENAME TO tasks");
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
 export function initSchema(db: Database): void {
   db.exec(SCHEMA_SQL);
+  migrateTasksTable(db);
 }
 
 export function openJabrDb(path: string = DEFAULT_DB_PATH): Database {

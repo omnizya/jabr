@@ -1,71 +1,74 @@
 import { describe, test, expect } from "bun:test";
 import { SqliteTaskStore } from "@adapters/sqlite-task-store";
-import type { Task, TaskStatus } from "@ports/task-store";
+import { openJabrDb } from "@adapters/sqlite-db";
+import type { TaskStatus } from "@ports/task-store";
+import type { A2AMessage } from "@agents/types";
 
 function makeStore(): SqliteTaskStore {
-  return new SqliteTaskStore({ maxEntries: 100, mirrorFile: null });
+  return new SqliteTaskStore(openJabrDb(":memory:"));
 }
 
-function makeTask(id: string, state: TaskStatus): Task {
+function makeMessage(role: A2AMessage["role"], text: string): A2AMessage {
   return {
-    id,
-    state,
-    text: `task-${id}`,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    messages: [],
-    artifacts: [],
+    messageId: `msg-${role}-${text}`,
+    role,
+    kind: "message",
+    parts: [{ kind: "text", text }],
+    contextId: "ctx-1",
   };
 }
 
 describe("SqliteTaskStore", () => {
-  test("creates and retrieves a task", async () => {
+  test("creates and retrieves a task", () => {
     const store = makeStore();
-    const task = makeTask("t-1", "submitted");
-    await store.create(task);
-    const got = await store.get("t-1");
+    store.create("t-1");
+    const got = store.get("t-1");
     expect(got).toBeDefined();
     expect(got?.id).toBe("t-1");
     expect(got?.state).toBe("submitted");
   });
 
-  test("updates task state", async () => {
+  test("updates task state", () => {
     const store = makeStore();
-    await store.create(makeTask("t-1", "submitted"));
-    await store.updateState("t-1", "working");
-    const got = await store.get("t-1");
+    store.create("t-1");
+    store.updateState("t-1", "working");
+    const got = store.get("t-1");
     expect(got?.state).toBe("working");
   });
 
-  test("lists tasks by state", async () => {
+  test("lists tasks by state", () => {
     const store = makeStore();
-    await store.create(makeTask("t-1", "submitted"));
-    await store.create(makeTask("t-2", "working"));
-    await store.create(makeTask("t-3", "completed"));
-    await store.create(makeTask("t-4", "completed"));
+    store.create("t-1"); // stays submitted
+    store.create("t-2");
+    store.updateState("t-2", "working");
+    store.create("t-3");
+    store.updateState("t-3", "completed");
+    store.create("t-4");
+    store.updateState("t-4", "completed");
 
-    const submitted = await store.listByState("submitted");
+    const submitted = store.listByState("submitted");
     expect(submitted.length).toBe(1);
-    const completed = await store.listByState("completed");
+    const completed = store.listByState("completed");
     expect(completed.length).toBe(2);
   });
 
-  test("appends messages to task", async () => {
+  test("appends messages to task", () => {
     const store = makeStore();
-    await store.create(makeTask("t-1", "submitted"));
-    await store.appendMessage("t-1", { role: "user", content: "hello" });
-    await store.appendMessage("t-1", { role: "agent", content: "hi" });
-    const got = await store.get("t-1");
+    store.create("t-1");
+    store.appendMessage("t-1", makeMessage("user", "hello"));
+    store.appendMessage("t-1", makeMessage("agent", "hi"));
+    const got = store.get("t-1");
     expect(got?.messages.length).toBe(2);
+    expect(got?.messages[0]?.parts[0]).toEqual({ kind: "text", text: "hello" });
   });
 
-  test("returns undefined for missing task", async () => {
+  test("returns undefined for missing task", () => {
     const store = makeStore();
-    const got = await store.get("nonexistent");
+    const got = store.get("nonexistent");
     expect(got).toBeUndefined();
   });
 
-  test("handles all A2A v1.0 states", async () => {
+  test("handles all A2A v1.0 states", () => {
     const store = makeStore();
     const states: TaskStatus[] = [
       "submitted",
@@ -79,10 +82,11 @@ describe("SqliteTaskStore", () => {
       "unknown",
     ];
     for (let i = 0; i < states.length; i++) {
-      await store.create(makeTask(`t-${i}`, states[i]));
+      store.create(`t-${i}`);
+      store.updateState(`t-${i}`, states[i]);
     }
     for (let i = 0; i < states.length; i++) {
-      const got = await store.get(`t-${i}`);
+      const got = store.get(`t-${i}`);
       expect(got?.state).toBe(states[i]);
     }
   });
