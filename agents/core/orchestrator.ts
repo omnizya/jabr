@@ -195,7 +195,7 @@ export class OrchestratorAgent {
           await this.budget.consume(agentName, costTokens);
         }
       }
-      return this.registry.delegateTask(url, userText, agentName);
+      return this.delegateTask(url, userText, agentName);
     }
 
     this.memory.append(`[consensus] Delegating to ${participants.length} agents`);
@@ -275,7 +275,7 @@ export class OrchestratorAgent {
         }
       }
 
-      let result = await this.registry.delegateTask(agentUrl, augmentedText, agentName);
+      let result = await this.delegateTask(agentUrl, augmentedText, agentName);
 
       const handover = decodeHandover(result);
 
