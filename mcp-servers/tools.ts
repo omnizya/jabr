@@ -80,13 +80,142 @@ server.registerTool("run_python", {
 });
 
 
+type Token =
+  | { kind: "num"; value: number }
+  | { kind: "op"; value: string }
+  | { kind: "lparen" }
+  | { kind: "rparen" };
+
+function tokenize(expression: string): Token[] {
+  const tokens: Token[] = [];
+  let i = 0;
+  while (i < expression.length) {
+    const ch = expression[i]!;
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+      i++;
+      continue;
+    }
+    if (ch >= "0" && ch <= "9" || ch === ".") {
+      let num = "";
+      while (i < expression.length && ((expression[i]! >= "0" && expression[i]! <= "9") || expression[i] === ".")) {
+        num += expression[i];
+        i++;
+      }
+      const value = Number(num);
+      if (!Number.isFinite(value)) throw new Error(`Invalid number: ${num}`);
+      tokens.push({ kind: "num", value });
+      continue;
+    }
+    if (ch === "(") { tokens.push({ kind: "lparen" }); i++; continue; }
+    if (ch === ")") { tokens.push({ kind: "rparen" }); i++; continue; }
+    if ("+-*/%^".includes(ch)) { tokens.push({ kind: "op", value: ch }); i++; continue; }
+    throw new Error(`Unsafe expression: illegal character "${ch}"`);
+  }
+  return tokens;
+}
+
+// Recursive-descent parser with precedence:
+//   expr   := term (('+' | '-') term)*
+//   term   := power (('*' | '/' | '%') power)*
+//   power  := unary ('^' unary)*        (right-associative)
+//   unary  := ('+' | '-') unary | primary
+//   primary:= number | '(' expr ')'
+class Parser {
+  private pos = 0;
+  constructor(private tokens: Token[]) {}
+
+  private peek(): Token | undefined {
+    return this.tokens[this.pos];
+  }
+
+  private next(): Token | undefined {
+    return this.tokens[this.pos++];
+  }
+
+  parse(): number {
+    if (this.tokens.length === 0) throw new Error("Empty expression");
+    const result = this.parseExpr();
+    if (this.pos < this.tokens.length) throw new Error("Unexpected trailing input");
+    return result;
+  }
+
+  private parseExpr(): number {
+    let left = this.parseTerm();
+    let tok = this.peek();
+    while (tok && tok.kind === "op" && (tok.value === "+" || tok.value === "-")) {
+      this.next();
+      const right = this.parseTerm();
+      left = tok.value === "+" ? left + right : left - right;
+      tok = this.peek();
+    }
+    return left;
+  }
+
+  private parseTerm(): number {
+    let left = this.parsePower();
+    let tok = this.peek();
+    while (tok && tok.kind === "op" && (tok.value === "*" || tok.value === "/" || tok.value === "%")) {
+      this.next();
+      const right = this.parsePower();
+      if (tok.value === "*") left = left * right;
+      else if (tok.value === "/") {
+        if (right === 0) throw new Error("Division by zero");
+        left = left / right;
+      } else {
+        if (right === 0) throw new Error("Modulo by zero");
+        left = left % right;
+      }
+      tok = this.peek();
+    }
+    return left;
+  }
+
+  private parsePower(): number {
+    const base = this.parseUnary();
+    const tok = this.peek();
+    if (tok && tok.kind === "op" && tok.value === "^") {
+      this.next();
+      const exp = this.parsePower(); // right-associative
+      return Math.pow(base, exp);
+    }
+    return base;
+  }
+
+  private parseUnary(): number {
+    const tok = this.peek();
+    if (tok && tok.kind === "op" && (tok.value === "+" || tok.value === "-")) {
+      this.next();
+      const val = this.parseUnary();
+      return tok.value === "-" ? -val : val;
+    }
+    return this.parsePrimary();
+  }
+
+  private parsePrimary(): number {
+    const tok = this.next();
+    if (!tok) throw new Error("Unexpected end of expression");
+    if (tok.kind === "num") return tok.value;
+    if (tok.kind === "lparen") {
+      const inner = this.parseExpr();
+      const close = this.next();
+      if (!close || close.kind !== "rparen") throw new Error("Missing closing parenthesis");
+      return inner;
+    }
+    throw new Error("Unexpected token in expression");
+  }
+}
+
+function safeCalculate(expression: string): number {
+  if (!/^[\d\s+\-*/.()%^]+$/.test(expression))
+    throw new Error("Unsafe expression");
+  return new Parser(tokenize(expression)).parse();
+}
+
 server.registerTool("calculate", {
   description: "Safe arithmetic evaluator",
   inputSchema: { expression: z.string().describe("Math expression") },
 }, ({ expression }) => {
-  if (!/^[\d\s+\-*/.()%^]+$/.test(expression))
-    throw new Error("Unsafe expression");
-  const result = eval(expression);
+  const result = safeCalculate(expression);
   return { content: [{ type: "text", text: String(result) }] };
 });
 
