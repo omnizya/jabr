@@ -12,7 +12,7 @@ ports → adapters → core.
   agents, `@agents/types` for types. Do NOT use `@agents/adapters/...` or
   `@agents/core/...` (see inconsistencies).
 - **Relative imports MUST carry the `.ts` extension.** `from "./serve"` is WRONG —
-  write `from "./serve.ts"`. A known violation in 5 files; do not repeat it.
+  write `from "./serve.ts"`. All standard specialists already do this; keep it that way.
 - **Prefer the `runAgent()` factory** from `./serve.ts` for standard specialists.
   Only wire `A2AServer` directly when the agent needs extra config (orchestrator,
   jarvis, scientist).
@@ -50,8 +50,8 @@ if (import.meta.main) {
 
 - `run/scientist.ts` uses `@agents/adapters/...` and `@agents/core/...` — use
   `@adapters/...` / `@core/...`.
-- 5 files (`designer`, `explorer`, `fixer`, `librarian`, `oracle`) import `./serve`
-  WITHOUT `.ts` — always add the extension.
+- All 5 standard specialists (`designer`, `explorer`, `fixer`, `librarian`, `oracle`)
+  import `./serve.ts` WITH the `.ts` extension — keep it that way.
 - Scientist bypasses `runAgent()`; acceptable, but keep direct-wiring style
   consistent with orchestrator/jarvis if you touch it.
 
