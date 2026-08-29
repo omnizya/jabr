@@ -56,7 +56,7 @@ export class A2AClient implements AgentRegistryPort {
       params: {
         message: {
           role: "user",
-          parts: [{ type: "text", text }],
+          parts: [{ kind: "text", text }],
         },
       },
     };
