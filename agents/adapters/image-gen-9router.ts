@@ -18,19 +18,13 @@ export class ImageGen9Router implements ImageGenPort {
     model?: string;
     size?: string;
   }) {
-    this.baseUrl = opts?.baseUrl ?? process.env.NINEROUTER_URL ?? "";
-    this.apiKey = opts?.apiKey ?? process.env.NINEROUTER_KEY ?? "";
+    this.baseUrl = opts?.baseUrl ?? process.env.NINEROUTER_URL ?? "http://127.0.0.1:20128";
+    this.apiKey = opts?.apiKey ?? process.env.NINEROUTER_KEY ?? "sk-ac4453b102b24d2f-9eda9y-838fcb60";
     this.model = opts?.model ?? "gemini/gemini-3-pro-image-preview";
     this.size = opts?.size;
   }
 
   async generate(prompt: string): Promise<string> {
-    if (!this.baseUrl || !this.apiKey) {
-      throw new Error(
-        "[ImageGen9Router] NINEROUTER_URL and NINEROUTER_KEY must be set",
-      );
-    }
-
     const payload: Record<string, unknown> = {
       model: this.model,
       prompt,

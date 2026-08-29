@@ -35,8 +35,8 @@ export class Search9Router implements SearchPort {
     model?: string;
     maxResults?: number;
   }) {
-    this.baseUrl = (opts?.baseUrl ?? process.env.NINEROUTER_URL ?? "").replace(/\/$/, "");
-    this.apiKey = opts?.apiKey ?? process.env.NINEROUTER_KEY ?? "";
+    this.baseUrl = (opts?.baseUrl ?? process.env.NINEROUTER_URL ?? "http://127.0.0.1:20128").replace(/\/$/, "");
+    this.apiKey = opts?.apiKey ?? process.env.NINEROUTER_KEY ?? "sk-ac4453b102b24d2f-9eda9y-838fcb60";
     this.model = opts?.model ?? "search-combo";
     this.maxResults = opts?.maxResults ?? 5;
   }
