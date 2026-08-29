@@ -33,4 +33,8 @@ export class TaskMemory implements TaskStorePort {
     const task = this.tasks.get(taskId);
     if (task) task.artifacts.push(artifact);
   }
+
+  listByState(state: Task["state"]): Task[] {
+    return [...this.tasks.values()].filter((t) => t.state === state);
+  }
 }

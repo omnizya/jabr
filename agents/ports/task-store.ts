@@ -16,4 +16,5 @@ export interface TaskStorePort {
     taskId: string,
     artifact: { name: string; parts: A2APart[] },
   ): void;
+  listByState(state: Task["state"]): Task[];
 }
