@@ -34,6 +34,40 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:1337",
 ];
 
+function isValidRealtimeEvent(event: unknown): event is RealtimeEvent {
+  if (!event || typeof event !== "object") return false;
+  const e = event as Record<string, unknown>;
+  if (typeof e.type !== "string") return false;
+  switch (e.type) {
+    case "agent:online":
+      return typeof e.agent === "string" && typeof e.port === "number";
+    case "agent:offline":
+      return typeof e.agent === "string";
+    case "agent:error":
+      return typeof e.agent === "string" && typeof e.error === "string";
+    case "task:created":
+      return typeof e.taskId === "string" && typeof e.agent === "string";
+    case "task:progress":
+      return (
+        typeof e.taskId === "string" &&
+        typeof e.percent === "number" &&
+        typeof e.message === "string"
+      );
+    case "task:completed":
+      return typeof e.taskId === "string";
+    case "task:failed":
+      return typeof e.taskId === "string" && typeof e.error === "string";
+    case "system:health":
+      return Array.isArray(e.agents) && Array.isArray(e.tasks) && Array.isArray(e.memory);
+    case "system:alert":
+      return (
+        e.level === "info" || e.level === "warning" || e.level === "error"
+      ) && typeof e.message === "string";
+    default:
+      return false;
+  }
+}
+
 /**
  * Native Bun WebSocket server implementing {@link RealtimePort}.
  *
@@ -59,7 +93,10 @@ export class BunWebSocketAdapter implements RealtimePort {
   private rooms = new Map<string, Set<WebSocket>>();
 
   /** event type → ordered set of handlers. */
-  private handlers = new Map<RealtimeEvent["type"], Set<(payload: RealtimeEvent) => void>>();
+  private handlers = new Map<
+    RealtimeEvent["type"],
+    Set<(payload: RealtimeEvent) => void>
+  >();
 
   /** All live WebSocket connections (for getConnectionCount + ping). */
   private allConnections = new Set<WebSocket>();
@@ -88,7 +125,8 @@ export class BunWebSocketAdapter implements RealtimePort {
       port: this.port,
       // Bun.serve WebSocket upgrade is triggered by the `websocket` key.
       // The `fetch` handler still runs for non-WebSocket HTTP requests (health
-      // check, CORS preflight on the HTTP side, root info).
+      // check, CORS preflight on the HTTP side, root info, and the POST /emit
+      // endpoint used by agent runners to broadcast lifecycle events).
       fetch(req) {
         const url = new URL(req.url);
         if (req.method === "OPTIONS") {
@@ -97,14 +135,67 @@ export class BunWebSocketAdapter implements RealtimePort {
           if (!headers) return new Response(null, { status: 204 });
           return new Response(null, { headers });
         }
+
+        // POST /emit — broadcast a realtime event to all connected clients.
+        // Used by agent runners in separate processes to publish lifecycle events.
+        if (req.method === "POST" && url.pathname === "/emit") {
+          let raw: string;
+          try {
+            raw = await req.text();
+          } catch {
+            return new Response(
+              JSON.stringify({ error: { code: -32700, message: "Parse error" } }),
+              {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+          let event: RealtimeEvent;
+          try {
+            event = JSON.parse(raw);
+          } catch {
+            return new Response(
+              JSON.stringify({ error: { code: -32600, message: "Invalid JSON" } }),
+              {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+          if (!isValidRealtimeEvent(event)) {
+            return new Response(
+              JSON.stringify({
+                error: { code: -32602, message: "Unknown event type" },
+              }),
+              {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+          self.broadcast(event);
+          const origin = req.headers.get("Origin");
+          const headers = buildCorsHeaders(origin) ?? {
+            "Content-Type": "application/json",
+          };
+          return Response.json({ ok: true }, { headers });
+        }
+
         if (url.pathname === "/health") {
-          return Response.json({ status: "ok", ws: self.url, connections: self.getConnectionCount() });
+          return Response.json({
+            status: "ok",
+            ws: self.url,
+            connections: self.getConnectionCount(),
+          });
         }
         const headers = buildCorsHeaders(url.origin);
-        return new Response("Jabr WebSocket server — connect to " + self.url, {
-          status: 200,
-          headers: headers ?? { "Content-Type": "text/plain" },
-        });
+        return new Response(
+          "Jabr WebSocket server — connect to " + self.url, {
+            status: 200,
+            headers: headers ?? { "Content-Type": "text/plain" },
+          },
+        );
       },
       websocket: {
         open(ws) {
@@ -128,11 +219,19 @@ export class BunWebSocketAdapter implements RealtimePort {
     }
 
     console.log(`\n🟢 BunWebSocketAdapter → ${self.url}`);
-    console.log(`   CORS origins: ${self.allowedOrigins.length > 0 ? self.allowedOrigins.join(", ") : "default localhost set"}`);
+    console.log(
+      `   CORS origins: ${self
+        .allowedOrigins.length > 0
+        ? self.allowedOrigins.join(", ")
+        : "default localhost set"}`,
+    );
     if (self.pingIntervalMs && self.pingIntervalMs > 0) {
       console.log(`   Ping interval: ${self.pingIntervalMs}ms`);
     }
-    console.log(`   Health:   ${self.url.replace("wss://", "http://").replace("/websocket", "")}/health\n`);
+    console.log(
+      `   Health:   ${self.url.replace("wss://", "http://").replace("/websocket", "")}/health`,
+    );
+    console.log(`   Emit:    POST ${self.url.replace("wss://", "http://")}/emit\n`);
   }
 
   stop(): void {
@@ -162,7 +261,10 @@ export class BunWebSocketAdapter implements RealtimePort {
     }
   }
 
-  on(eventType: RealtimeEvent["type"], handler: (payload: RealtimeEvent) => void): void {
+  on(
+    eventType: RealtimeEvent["type"],
+    handler: (payload: RealtimeEvent) => void,
+  ): void {
     let set = this.handlers.get(eventType);
     if (!set) {
       set = new Set();
@@ -179,15 +281,18 @@ export class BunWebSocketAdapter implements RealtimePort {
 
   private onOpen(ws: WebSocket): void {
     this.allConnections.add(ws);
-    console.log(`[BunWebSocketAdapter] open  → ${this.getConnectionCount()} connection(s)`);
+    console.log(
+      `[BunWebSocketAdapter] open  → ${this.getConnectionCount()} connection(s)`,
+    );
   }
 
   private onMessage(ws: WebSocket, msg: unknown): void {
     if (typeof msg !== "string") return;
     try {
-      const parsed = JSON.parse(msg);
-      if (parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).type === "join-room" && typeof (parsed as Record<string, unknown>).room === "string") {
-        this.joinRoom(ws, (parsed as JoinRoomMessage).room);
+      const parsed =
+        (JSON.parse(msg) as { type?: unknown; room?: unknown }) | undefined;
+      if (parsed && typeof parsed.type === "string" && parsed.type === "join-room" && typeof parsed.room === "string") {
+        this.joinRoom(ws, parsed.room as string);
         return;
       }
     } catch {
@@ -202,7 +307,9 @@ export class BunWebSocketAdapter implements RealtimePort {
     for (const [, roomSet] of this.rooms) {
       roomSet.delete(ws);
     }
-    console.log(`[BunWebSocketAdapter] close → ${this.getConnectionCount()} connection(s)`);
+    console.log(
+      `[BunWebSocketAdapter] close → ${this.getConnectionCount()} connection(s)`,
+    );
   }
 
   /**
@@ -219,7 +326,9 @@ export class BunWebSocketAdapter implements RealtimePort {
       this.rooms.set(room, set);
     }
     set.add(ws);
-    console.log(`[BunWebSocketAdapter] join  → ${room} (${set.size} member(s))`);
+    console.log(
+      `[BunWebSocketAdapter] join  → ${room} (${set.size} member(s))`,
+    );
   }
 
   /**
@@ -251,7 +360,9 @@ export class BunWebSocketAdapter implements RealtimePort {
       for (const [, roomSet] of this.rooms) roomSet.delete(ws);
     }
     if (dead.length > 0) {
-      console.log(`[BunWebSocketAdapter] cleaned up ${dead.length} dead connection(s)`);
+      console.log(
+        `[BunWebSocketAdapter] cleaned up ${dead.length} dead connection(s)`,
+      );
     }
   }
 
@@ -269,7 +380,9 @@ export class BunWebSocketAdapter implements RealtimePort {
       for (const [, roomSet] of this.rooms) roomSet.delete(ws);
     }
     if (dead.length > 0) {
-      console.log(`[BunWebSocketAdapter] ping cleanup: ${dead.length} dead connection(s)`);
+      console.log(
+        `[BunWebSocketAdapter] ping cleanup: ${dead.length} dead connection(s)`,
+      );
     }
   }
 }
@@ -292,7 +405,9 @@ export interface JoinRoomMessage {
  * Start a BunWebSocketAdapter from env + config, mirroring how the other
  * adapters are started in `agents/run/*.ts`.
  */
-export function startBunWebSocketAdapter(config: BunWebSocketAdapterConfig): BunWebSocketAdapter {
+export function startBunWebSocketAdapter(
+  config: BunWebSocketAdapterConfig,
+): BunWebSocketAdapter {
   const adapter = new BunWebSocketAdapter(config);
   adapter.start();
   return adapter;
