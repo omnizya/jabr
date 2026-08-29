@@ -20,6 +20,20 @@ import { X402Server } from "@adapters/x402/x402-server";
 if (import.meta.main) {
   const PORT = 4000;
 
+  // --- Settlement infrastructure ---
+  const ledger = new SettlementLedger({
+    hmacSecret: process.env.JABR_X402_HMAC_SECRET ?? "dev-secret-change-in-prod",
+    chainEndpoint: process.env.JABR_X402_CHAIN_ENDPOINT ?? undefined,
+    defaultAutoRefillThreshold: Number(process.env.JABR_X402_AUTO_REFILL_THRESHOLD) || 0,
+    defaultAutoRefillAmount: Number(process.env.JABR_X402_AUTO_REFILL_AMOUNT) || 0,
+  });
+  const x402Client = new X402Client({
+    ledger,
+    delegatorUrl: `http://localhost:${PORT}`,
+    defaultCurrency: process.env.JABR_X402_CURRENCY ?? undefined,
+  });
+  const x402Server = new X402Server(ledger, `http://localhost:${PORT}`);
+
   const budget = new HeadroomAdapter();
   const rateLimiter = new RateLimiter();
   const registryClient = new A2AClient(budget);
@@ -46,10 +60,31 @@ if (import.meta.main) {
   const dynamicRegistry = new DynamicRegistry(registryClient, seedUrls);
   await dynamicRegistry.initialize();
 
+  // Wire agent cards into the x402 server so it knows which agents expect payment.
+  const allCards = await dynamicRegistry.getAllCards();
+  for (const [agentName, card] of Object.entries(allCards)) {
+    const agentUrl = seedUrls[agentName];
+    if (agentUrl) {
+      x402Server.updateFromCard(card);
+    }
+  }
+
   const palace = new MemPalaceAdapter();
   const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
 
-  const agent = new OrchestratorAgent(registryClient, taskStore, memory, dynamicRegistry, llmPort, undefined, palace, kanban, budget);
+  const agent = new OrchestratorAgent(
+    registryClient,
+    taskStore,
+    memory,
+    dynamicRegistry,
+    llmPort,
+    undefined,
+    palace,
+    kanban,
+    undefined,
+    realtime,
+    x402Client,
+  );
 
   const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
   const requireAuth = Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
@@ -70,24 +105,28 @@ if (import.meta.main) {
   });
   githubWebhook.start();
 
-  const server = new A2AServer({
-    port: PORT,
-    card: { ...ORCHESTRATOR_CARD, url: `http://localhost:${PORT}` },
-    authToken,
-    requireAuth,
-    async onTask(text: string): Promise<string> {
-      const taskId = crypto.randomUUID();
-      console.log(`[Run:Orchestrator] received task ${taskId}`);
-      taskStore.create(taskId);
-      await agent.execute(taskId, text);
-      const task = taskStore.get(taskId);
-      const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
-      return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
+  const server = new A2AServer(
+    {
+      port: PORT,
+      card: { ...ORCHESTRATOR_CARD, url: `http://localhost:${PORT}` },
+      authToken,
+      requireAuth,
+      async onTask(text: string): Promise<string> {
+        const taskId = crypto.randomUUID();
+        console.log(`[Run:Orchestrator] received task ${taskId}`);
+        taskStore.create(taskId);
+        await agent.execute(taskId, text);
+        const task = taskStore.get(taskId);
+        const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
+        return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
+      },
+      async onWorldState() {
+        return agent.getWorldState();
+      },
     },
-    async onWorldState() {
-      return agent.getWorldState();
-    },
-  });
+    rateLimiter,
+    x402Server,
+  );
 
   server.start();
 }
