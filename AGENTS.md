@@ -218,6 +218,12 @@ Core modules use relative imports for ports/types only.
 - **Memory**: Append-only markdown. Orchestrator writes to `memory/orchestrator.md`. Compatible with Hermes `memory.md` pattern.
 - **Skills**: JSON files in `skills/` with `name`, `description`, `tags`, `steps`, `createdAt`, `usageCount`, `successRate`.
 
+## Git conventions
+
+- **Always stage and commit changes by topic and domain.** Group related changes into one commit per concern (e.g. one commit for a routing fix, one for an adapter fix, one for docs). Do not bundle unrelated changes into a single commit, and do not leave deliberate source changes uncommitted.
+- Use conventional-commit prefixes: `feat`, `fix`, `test`, `docs`, `tooling`, `refactor`, `chore`.
+- Runtime/generated artifacts (`memory/orchestrator.md` append-only log, `repomix-output.xml`) are not deliberate source changes — leave them out of topic commits unless explicitly requested.
+
 ## Notes
 
 - `bun run typecheck` runs `tsc --noEmit`; no lint or test scripts configured
