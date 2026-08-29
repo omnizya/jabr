@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+1|import { createHmac as nodeCreateHmac } from "node:crypto";
 import type { GitHubWebhookEvent, GitHubEventType, GitHubEventAction } from "@ports/github-bot-port";
 
 /**
@@ -6,7 +6,7 @@ import type { GitHubWebhookEvent, GitHubEventType, GitHubEventAction } from "@po
  * Synchronous so verifySignature can be a pure function.
  */
 export function computeHmac(payload: string, secret: string): string {
-  const hmac = createHmac("sha256", secret);
+  const hmac = nodeCreateHmac("sha256", secret);
   hmac.update(payload, "utf8");
   return "sha256=" + hmac.digest("hex");
 }
@@ -57,7 +57,6 @@ export function parseGitHubEvent(
   }
 
   const normalized = normalizeRepository(repository);
-  const sender = body.sender as Record<string, unknown> | undefined;
 
   // Map a raw GitHub event name to our GitHubEventType union.
   const type = toEventType(eventName);
@@ -71,8 +70,8 @@ export function parseGitHubEvent(
     type,
     action,
     payload,
-    timestamp: (body.head_commit as Record<string, unknown>)?.timestamp
-      ? String((body.head_commit as Record<string, unknown>).timestamp)
+    timestamp: body.head_commit && typeof body.head_commit === "object"
+      ? String((body.head_commit as Record<string, unknown>).timestamp ?? "")
       : new Date().toISOString(),
   };
 }
@@ -80,13 +79,14 @@ export function parseGitHubEvent(
 // ---- internal helpers ----
 
 function normalizeRepository(raw: Record<string, unknown>): NonNullable<GitHubWebhookEvent["payload"]["repository"]> {
+  const owner = raw.owner as Record<string, unknown> | undefined;
   return {
     full_name: String(raw.full_name ?? ""),
     default_branch: String(raw.default_branch ?? "main"),
     name: String(raw.name ?? ""),
     owner: {
-      login: String((raw.owner as Record<string, unknown>)?.login ?? ""),
-      id: Number((raw.owner as Record<string, unknown>)?.id ?? 0),
+      login: String(owner?.login ?? ""),
+      id: Number(owner?.id ?? 0),
     },
   };
 }
@@ -114,7 +114,6 @@ function toEventAction(raw?: string): GitHubEventAction | undefined {
   ) {
     return raw as GitHubEventAction;
   }
-  // Keep unknown actions out of the typed union — just drop them.
   return undefined;
 }
 
@@ -123,13 +122,14 @@ function buildPayload(
   type: GitHubEventType,
   repo: NonNullable<GitHubWebhookEvent["payload"]["repository"]>,
 ): GitHubWebhookEvent["payload"] {
+  const sender = body.sender as Record<string, unknown> | undefined;
   const base: GitHubWebhookEvent["payload"] = {
     repository: repo,
-    sender: body.sender
+    sender: sender
       ? {
-          login: String((body.sender as Record<string, unknown>).login ?? ""),
-          id: Number((body.sender as Record<string, unknown>).id ?? 0),
-          avatar_url: String((body.sender as Record<string, unknown>).avatar_url ?? ""),
+          login: String(sender.login ?? ""),
+          id: Number(sender.id ?? 0),
+          avatar_url: String(sender.avatar_url ?? ""),
         }
       : { login: "", id: 0, avatar_url: "" },
   };
@@ -137,33 +137,36 @@ function buildPayload(
   // Pull request fields.
   const pr = body.pull_request as Record<string, unknown> | undefined;
   if (pr && (type === "pull_request" || type === "issues")) {
+    const prHead = pr.head as Record<string, unknown> | undefined;
+    const prBase = pr.base as Record<string, unknown> | undefined;
     base.pull_request = {
       number: Number(pr.number ?? 0),
       title: String(pr.title ?? ""),
       state: String(pr.state ?? ""),
       head: {
-        sha: String((pr.head as Record<string, unknown>)?.sha ?? ""),
-        branch: { name: String(((pr.head as Record<string, unknown>)?.branch as Record<string, unknown>)?.name ?? "") },
+        sha: String(prHead?.sha ?? ""),
+        branch: { name: String(prHead?.branch?.name ?? "") },
       },
       base: {
-        sha: String((pr.base as Record<string, unknown>)?.sha ?? ""),
-        branch: { name: String(((pr.base as Record<string, unknown>)?.branch as Record<string, unknown>)?.name ?? "") },
+        sha: String(prBase?.sha ?? ""),
+        branch: { name: String(prBase?.branch?.name ?? "") },
       },
       body: String(pr.body ?? ""),
-      user: { login: String((pr.user as Record<string, unknown>)?.login ?? "") },
+      user: { login: String(pr.user?.login ?? "") },
     };
   }
 
   // Issue fields.
   const issue = body.issue as Record<string, unknown> | undefined;
   if (issue && (type === "issues" || type === "pull_request")) {
+    const labels = issue.labels as Array<Record<string, unknown>> | undefined;
     base.issue = {
       number: Number(issue.number ?? 0),
       title: String(issue.title ?? ""),
       body: String(issue.body ?? ""),
       state: String(issue.state ?? ""),
-      user: { login: String((issue.user as Record<string, unknown>)?.login ?? "") },
-      labels: (issue.labels as Array<Record<string, unknown>> | undefined)?.map((l) => ({ name: String(l.name ?? "") })) ?? [],
+      user: { login: String(issue.user?.login ?? "") },
+      labels: labels?.map((l) => ({ name: String(l.name ?? "") })) ?? [],
     };
   }
 
@@ -171,13 +174,14 @@ function buildPayload(
   const cr = body.check_run as Record<string, unknown> | undefined;
   if (cr) {
     const suite = cr.check_suite as Record<string, unknown> | undefined;
+    const crCon = cr.conclusion as GitHubWebhookEvent["payload"]["check_run"]["conclusion"] | undefined;
     base.check_run = {
       id: Number(cr.id ?? 0),
       status: (cr.status as "queued" | "in_progress" | "completed" | undefined) ?? "queued",
-      conclusion: (cr.conclusion as GitHubWebhookEvent["payload"]["check_run"]["conclusion"]) ?? null,
+      conclusion: crCon ?? null,
       name: String(cr.name ?? ""),
       check_suite: {
-        id: Number((suite?.id ?? 0)),
+        id: Number(suite?.id ?? 0),
         pull_requests: [],
       },
     };
@@ -204,8 +208,8 @@ function buildPayload(
         sha: String(c.sha ?? ""),
         message: String(c.message ?? ""),
         author: {
-          name: String((c.author as Record<string, unknown>)?.name ?? ""),
-          email: String((c.author as Record<string, unknown>)?.email ?? ""),
+          name: String(c.author?.name ?? ""),
+          email: String(c.author?.email ?? ""),
         },
       }));
     }

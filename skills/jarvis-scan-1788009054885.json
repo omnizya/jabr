@@ -1,0 +1,22 @@
+{
+  "name": "Jarvis Pattern: security, anti-pattern, complexity, dead-code",
+  "description": "Auto-generated profile for recurring security/anti-pattern/complexity/dead-code patterns detected by Jarvis scan.",
+  "tags": [
+    "jarvis",
+    "auto-generated",
+    "security",
+    "anti-pattern",
+    "complexity",
+    "dead-code"
+  ],
+  "steps": [
+    "Run Jarvis codebase scan",
+    "Identify security, anti-pattern, complexity, dead-code patterns",
+    "Review findings and prioritize fixes",
+    "Apply automated fixes where possible",
+    "Track improvements in kanban"
+  ],
+  "createdAt": "2026-08-29T13:10:54.885Z",
+  "usageCount": 1,
+  "successRate": 1
+}

@@ -53,9 +53,10 @@ export class GitHubWebhookAdapter implements GitHubBotPort {
           return new Response("Bad request", { status: 400 });
         }
 
-        // 1. Signature verification
+        // 1. Signature verification — the adapter's secret is baked into the
+        // config, so verify against it directly.
         const sig = req.headers.get("X-Hub-Signature-256") ?? "";
-        if (!self.verifySignature(raw, sig)) {
+        if (!verifySignature(raw, sig, self.webhookSecret)) {
           console.warn("[GitHubWebhookAdapter] rejected: bad signature");
           return new Response("Unauthorized", { status: 401 });
         }

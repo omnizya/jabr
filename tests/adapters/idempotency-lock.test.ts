@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from "bun:test";
-import { IdempotencyLock, idempotencyConflictResponse, type IdempotencyLockConfig } from "@adapters/idempotency-lock";
+import { IdempotencyLock, idempotencyConflictResponse } from "@adapters/idempotency-lock";
 
 describe("IdempotencyLock", () => {
   test("acquire returns acquired:true for a fresh eventId", () => {
@@ -99,11 +99,12 @@ describe("IdempotencyLock", () => {
     expect(result.ttlRemainingMs).toBe(12_000);
   });
 
-  test("ttlRemainingMs decays as time passes for an active lock", () => {
+  test("ttlRemainingMs decays as time passes for an active lock", async () => {
     const lock = new IdempotencyLock({ ttlMs: 500 });
     const first = lock.acquire("evt-1");
     expect(first.ttlRemainingMs).toBe(500);
-    // Small sleep to observe decay
+    // Wait long enough that the remaining TTL is visibly less than the cap.
+    await new Promise((r) => setTimeout(r, 100));
     const second = lock.acquire("evt-1");
     expect(second.acquired).toBe(false);
     expect(second.ttlRemainingMs).toBeLessThan(500);
@@ -115,11 +116,12 @@ describe("idempotencyConflictResponse", () => {
   test("returns 409 status with JSON-RPC error shape", () => {
     const resp = idempotencyConflictResponse("evt-42");
     expect(resp.status).toBe(409);
-    expect(resp.body.jsonrpc).toBe("2.0");
-    expect(resp.body.id).toBe(null);
-    expect(resp.body.error.code).toBe(-32003);
-    expect(resp.body.error.message).toBe("Duplicate webhook event — already processed.");
-    expect(resp.body.error.data.eventId).toBe("evt-42");
+    const body = resp.body as { jsonrpc: string; id: unknown; error: { code: number; message: string; data: { eventId: string; ttlRemainingMs: number } } };
+    expect(body.jsonrpc).toBe("2.0");
+    expect(body.id).toBe(null);
+    expect(body.error.code).toBe(-32003);
+    expect(body.error.message).toBe("Duplicate webhook event — already processed.");
+    expect(body.error.data.eventId).toBe("evt-42");
   });
 
   test("sets X-Idempotency-Replay header to true", () => {

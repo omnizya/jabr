@@ -1,11 +1,19 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import type { BunRequest } from "bun";
-import { WebhookServer, type WebhookPayload } from "./webhook-server.ts";
 import type {
   WhatsAppBotPort,
   WhatsAppMessageType,
   WhatsAppInteractiveMessage,
   WhatsAppWebhookEvent,
+  WhatsAppInboundMessage,
+  isTextMessage,
+  isImageMessage,
+  isAudioMessage,
+  isDocumentMessage,
+  isVideoMessage,
+  isStickerMessage,
+  isLocationMessage,
+  isInteractiveMessage,
 } from "@ports/whatsapp-bot-port";
 
 /**
@@ -63,89 +71,138 @@ function apiBaseUrl(
   return `https://graph.facebook.com/${apiVersion}/${businessAccountId}/phone_numbers/${phoneNumberId}`;
 }
 
-/** Normalize a single WhatsApp Cloud message into our internal event shape. */
-function normalizeMessage(
-  msg: {
-    from: string;
-    id: string;
-    timestamp: string;
-    text?: { body: string };
-    image?: { id: string; caption?: string };
-    audio?: { id: string };
-    document?: { id: string; filename?: string; caption?: string };
-    video?: { id: string; caption?: string };
-    sticker?: { id: string };
-    location?: { latitude: number; longitude: number; address?: string };
-    interactive?: {
-      type: string;
-      sender_name?: string;
-      // buttonReply / listReply vary by type
-      button_reply?: { id: string; title: string };
-      list_reply?: { id: string; title: string };
-    };
-  },
-  phoneNumberId: string,
-): WhatsAppWebhookEvent["payload"]["entry"][0]["changes"][0]["value"]["messages"][0] {
-  const base = {
-    from: msg.from,
-    id: msg.id,
-    timestamp: msg.timestamp,
+/**
+ * Raw WhatsApp Cloud message as delivered by the webhook.
+ * The real payload has no `type` field — we compute it during normalisation.
+ */
+type RawWhatsAppMessage = {
+  from: string;
+  id: string;
+  timestamp: string;
+  text?: { body: string };
+  image?: { id: string; caption?: string };
+  audio?: { id: string };
+  document?: { id: string; filename?: string; caption?: string };
+  video?: { id: string; caption?: string };
+  sticker?: { id: string };
+  location?: { latitude: number; longitude: number; address?: string };
+  interactive?: {
+    type: string;
+    sender_name?: string;
+    button_reply?: { id: string; title: string };
+    list_reply?: { id: string; title: string };
   };
+};
 
-  if (msg.text !== undefined) {
-    return { ...base, text: { body: msg.text.body } };
-  }
-  if (msg.image !== undefined) {
+/**
+ * Normalise a raw WhatsApp Cloud message into a typed `WhatsAppInboundMessage`.
+ * The port's type guards (`isTextMessage`, etc.) discriminate on the `type` field.
+ */
+function normalizeMessage(
+  raw: RawWhatsAppMessage,
+): WhatsAppInboundMessage {
+  // Text messages have the `text` field.
+  if (raw.text !== undefined) {
     return {
-      ...base,
-      image: { id: msg.image.id, caption: msg.image.caption ?? "" },
-    };
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "text",
+      text: { body: raw.text.body },
+    } as WhatsAppInboundMessage;
   }
-  if (msg.audio !== undefined) {
-    return { ...base, audio: { id: msg.audio.id } };
-  }
-  if (msg.document !== undefined) {
+  // Image.
+  if (raw.image !== undefined) {
     return {
-      ...base,
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "image",
+      image: { id: raw.image.id, caption: raw.image.caption ?? "" },
+    } as WhatsAppInboundMessage;
+  }
+  // Audio.
+  if (raw.audio !== undefined) {
+    return {
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "audio",
+      audio: { id: raw.audio.id },
+    } as WhatsAppInboundMessage;
+  }
+  // Document.
+  if (raw.document !== undefined) {
+    return {
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "document",
       document: {
-        id: msg.document.id,
-        filename: msg.document.filename ?? "",
-        caption: msg.document.caption ?? "",
+        id: raw.document.id,
+        filename: raw.document.filename ?? "",
+        caption: raw.document.caption ?? "",
       },
-    };
+    } as WhatsAppInboundMessage;
   }
-  if (msg.video !== undefined) {
+  // Video.
+  if (raw.video !== undefined) {
     return {
-      ...base,
-      video: { id: msg.video.id, caption: msg.video.caption ?? "" },
-    };
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "video",
+      video: { id: raw.video.id, caption: raw.video.caption ?? "" },
+    } as WhatsAppInboundMessage;
   }
-  if (msg.sticker !== undefined) {
-    return { ...base, sticker: { id: msg.sticker.id } };
-  }
-  if (msg.location !== undefined) {
+  // Sticker.
+  if (raw.sticker !== undefined) {
     return {
-      ...base,
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "sticker",
+      sticker: { id: raw.sticker.id },
+    } as WhatsAppInboundMessage;
+  }
+  // Location.
+  if (raw.location !== undefined) {
+    return {
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "location",
       location: {
-        latitude: msg.location.latitude,
-        longitude: msg.location.longitude,
-        address: msg.location.address ?? "",
+        latitude: raw.location.latitude,
+        longitude: raw.location.longitude,
+        address: raw.location.address ?? "",
       },
-    };
+    } as WhatsAppInboundMessage;
   }
-  if (msg.interactive !== undefined) {
-    const interactive: WhatsAppWebhookEvent["payload"]["entry"][0]["changes"][0]["value"]["messages"][0]["interactive"] =
-      {
-        type: msg.interactive.type,
-        sender_name: msg.interactive.sender_name ?? "",
-        button_reply: msg.interactive.button_reply ?? undefined,
-        list_reply: msg.interactive.list_reply ?? undefined,
-      };
-    return { ...base, interactive };
+  // Interactive (button or list reply).
+  if (raw.interactive !== undefined) {
+    return {
+      from: raw.from,
+      id: raw.id,
+      timestamp: raw.timestamp,
+      type: "interactive",
+      interactive: {
+        type: raw.interactive.type,
+        sender_name: raw.interactive.sender_name ?? "",
+        button_reply: raw.interactive.button_reply ?? undefined,
+        list_reply: raw.interactive.list_reply ?? undefined,
+      },
+    } as WhatsAppInboundMessage;
   }
 
-  // Unknown message type — keep the raw shape for forward-compatibility.
-  return base as WhatsAppWebhookEvent["payload"]["entry"][0]["changes"][0]["value"]["messages"][0];
+  // Unknown — fall back to text with the raw body as a placeholder.
+  return {
+    from: raw.from,
+    id: raw.id,
+    timestamp: raw.timestamp,
+    type: "text",
+    text: { body: "" },
+  } as WhatsAppInboundMessage;
 }
 
 /** Parse the raw WhatsApp Cloud webhook body into our typed event. */
@@ -153,7 +210,9 @@ export function parseWhatsAppEvent(rawBody: string): WhatsAppWebhookEvent {
   const body = JSON.parse(rawBody || "{}");
 
   if (!body.object || body.object !== "whatsapp") {
-    throw new Error(`[WhatsAppWebhookAdapter] unexpected webhook object: ${body.object ?? "undefined"}`);
+    throw new Error(
+      `[WhatsAppWebhookAdapter] unexpected webhook object: ${body.object ?? "undefined"}`,
+    );
   }
 
   const entries = body.entry;
@@ -162,19 +221,51 @@ export function parseWhatsAppEvent(rawBody: string): WhatsAppWebhookEvent {
   }
 
   const firstEntry = entries[0];
+  if (!firstEntry) {
+    throw new Error("[WhatsAppWebhookAdapter] first entry is undefined");
+  }
   const changes = firstEntry.changes;
   if (!Array.isArray(changes) || changes.length === 0) {
     throw new Error("[WhatsAppWebhookAdapter] empty entry changes");
   }
 
   const change = changes[0];
-  const value = change.value;
+  if (!change) {
+    throw new Error("[WhatsAppWebhookAdapter] first change is undefined");
+  }
 
-  const messages = value.messages ?? [];
-  const statuses = value.statuses ?? [];
+  const rawValue = change.value as {
+    messaging_product?: string;
+    metadata?: { display_phone_number: string; phone_number_id: string };
+    messages?: RawWhatsappMessage[];
+    statuses?: Array<{
+      id: string;
+      recipient_id: string;
+      status: string;
+      timestamp: string;
+    }>;
+  };
+
+  const messages = rawValue.messages ?? [];
+  const statuses = rawValue.statuses ?? [];
 
   const eventType: WhatsAppWebhookEvent["type"] =
     messages.length > 0 ? "message" : statuses.length > 0 ? "status" : "message";
+
+  const normalizedMessages: WhatsAppInboundMessage[] | undefined =
+    messages.length > 0
+      ? messages.map((m) => normalizeMessage(m))
+      : undefined;
+
+  const typedStatuses: WhatsAppWebhookEvent["payload"]["entry"][0]["changes"][0]["value"]["statuses"] | undefined =
+    statuses.length > 0
+      ? statuses.map((s) => ({
+          id: s.id,
+          recipient_id: s.recipient_id,
+          status: s.status as "sent" | "delivered" | "read" | "failed",
+          timestamp: s.timestamp,
+        }))
+      : undefined;
 
   const payload: WhatsAppWebhookEvent["payload"] = {
     entry: [
@@ -182,32 +273,14 @@ export function parseWhatsAppEvent(rawBody: string): WhatsAppWebhookEvent {
         id: firstEntry.id,
         changes: [
           {
-            ...change,
             value: {
-              ...value,
               messaging_product: "whatsapp",
-              metadata: value.metadata ?? {
+              metadata: rawValue.metadata ?? {
                 display_phone_number: "",
                 phone_number_id: "",
               },
-              messages: messages.length > 0
-                ? messages.map((m: unknown) => normalizeMessage(m as never, value.metadata?.phone_number_id ?? ""))
-                : undefined,
-              statuses: statuses.length > 0
-                ? statuses.map(
-                    (s: {
-                      id: string;
-                      recipient_id: string;
-                      status: string;
-                      timestamp: string;
-                    }) => ({
-                      id: s.id,
-                      recipient_id: s.recipient_id,
-                      status: s.status as WhatsAppWebhookEvent["payload"]["entry"][0]["changes"][0]["value"]["statuses"][0]["status"],
-                      timestamp: s.timestamp,
-                    }),
-                  )
-                : undefined,
+              messages: normalizedMessages,
+              statuses: typedStatuses,
             },
           },
         ],
@@ -215,13 +288,10 @@ export function parseWhatsAppEvent(rawBody: string): WhatsAppWebhookEvent {
     ],
   };
 
-  // sessionId = the user phone number (E.164) for conversation continuity.
+  // sessionId = user phone number for conversation continuity.
   const firstMsg = messages[0];
   const firstStatus = statuses[0];
-  const sessionId =
-    (firstMsg && (firstMsg as { from: string }).from) ??
-    (firstStatus && (firstStatus as { recipient_id: string }).recipient_id) ??
-    "";
+  const sessionId = firstMsg?.from ?? firstStatus?.recipient_id ?? "";
 
   return {
     source: "whatsapp",
@@ -266,11 +336,7 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
   start(): void {
     if (this.server) return;
 
-    const baseUrl = apiBaseUrl(
-      this.phoneNumberId,
-      this.businessAccountId,
-      this.apiVersion,
-    );
+    const adapter = this; // capture `this` for use inside the fetch closure.
 
     this.server = Bun.serve({
       port: this.port,
@@ -289,32 +355,18 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
           return new Response("Bad request", { status: 400 });
         }
 
-        // 1. Signature verification.
-        //    WhatsApp sends the signature in X-WA-Webhook-Signature.
-        //    WebhookServer.verifySignature handles the HMAC-SHA256 check.
+        // 1. Signature verification (HMAC-SHA256 via node:crypto).
         const sigHeader = req.headers.get("x-wa-webhook-signature") ?? "";
         const sig = sigHeader.startsWith("sha256=")
           ? sigHeader.slice("sha256=".length)
           : sigHeader;
 
-        const expected = createHash("sha256")
-          .update(rawBody)
-          .digest("hex");
-
-        const hmac = createHash("sha256")
-          .update(rawBody)
-          .digest("hex");
-
-        // Use node crypto HMAC for the actual verification.
-        const { createHmac } = await import("node:crypto");
-        const computed = createHmac("sha256", this.webhookSecret)
+        const computed = createHmac("sha256", adapter.webhookSecret)
           .update(rawBody)
           .digest("hex");
 
         if (computed !== sig) {
-          console.warn(
-            `[WhatsAppWebhookAdapter] rejected: bad signature (expected ${sig.slice(0, 16)}..., got ${computed.slice(0, 16)}...)`,
-          );
+          console.warn("[WhatsAppWebhookAdapter] rejected: bad signature");
           return new Response("Unauthorized", { status: 401 });
         }
 
@@ -328,11 +380,12 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
         }
 
         // 3. Route to handler (fire-and-forget so HTTP response returns fast).
-        this.route(event).catch((e) =>
-          console.error(
-            `[WhatsAppWebhookAdapter] handler error for session ${event.sessionId}:`,
-            e,
-          ),
+        adapter.route(event).catch(
+          (e: Error) =>
+            console.error(
+              `[WhatsAppWebhookAdapter] handler error for session ${event.sessionId}:`,
+              e,
+            ),
         );
 
         return new Response("OK", { status: 200 });
@@ -356,46 +409,51 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
 
   private async route(event: WhatsAppWebhookEvent): Promise<void> {
     if (event.type === "message") {
-      const msgs = event.payload.entry[0].changes[0].value.messages;
+      const entries = event.payload.entry;
+      const firstEntry = entries[0];
+      if (!firstEntry) return;
+
+      const changes = firstEntry.changes;
+      const firstChange = changes[0];
+      if (!firstChange) return;
+
+      const msgs = firstChange.value.messages;
       if (!msgs || msgs.length === 0) return;
 
       for (const msg of msgs) {
         // Mark as read before processing.
         if (msg.id) {
-          this.markAsRead(msg.id).catch((e) =>
-            console.error(
-              `[WhatsAppWebhookAdapter] markAsRead failed for ${msg.id}:`,
-              e,
-            ),
+          this.markAsRead(msg.id).catch(
+            (e: Error) =>
+              console.error(
+                `[WhatsAppWebhookAdapter] markAsRead failed for ${msg.id}:`,
+                e,
+              ),
           );
         }
 
+        // Extract a text description to forward to the agent.
         let text: string | undefined;
 
-        if (msg.text?.body) {
+        if (isTextMessage(msg)) {
           text = msg.text.body;
-        } else if (msg.interactive) {
-          // Button or list reply — build a readable description.
-          text = `[${msg.interactive.type.toUpperCase()}] ` +
+        } else if (isInteractiveMessage(msg)) {
+          text =
+            `[${msg.interactive.type.toUpperCase()}] ` +
             (msg.interactive.button_reply?.title ??
               msg.interactive.list_reply?.title ??
               "interaction");
-        } else if (msg.image?.caption) {
-          text = msg.image.caption;
-        } else if (msg.document?.caption) {
-          text = msg.document.caption;
-        } else if (msg.video?.caption) {
-          text = msg.video.caption;
-        } else {
+        } else if (isImageMessage(msg)) {
+          text = msg.image.caption ?? undefined;
+        } else if (isDocumentMessage(msg)) {
+          text = msg.document.caption ?? undefined;
+        } else if (isVideoMessage(msg)) {
+          text = msg.video.caption ?? undefined;
+        }
+
+        if (!text) {
           // Non-text message type — signal the agent with a summary.
-          const type: WhatsAppMessageType =
-            msg.image ? "image" :
-            msg.audio ? "audio" :
-            msg.document ? "document" :
-            msg.video ? "video" :
-            msg.sticker ? "sticker" :
-            msg.location ? "location" :
-            msg.interactive ? "interactive" : "text";
+          const type: WhatsAppMessageType = msg.type as WhatsAppMessageType;
           text = `[${type}] message received (id: ${msg.id}) from ${msg.from}`;
         }
 
@@ -404,8 +462,15 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
         }
       }
     } else if (event.type === "status") {
-      // Status updates (sent / delivered / read / failed) — log for observability.
-      const statuses = event.payload.entry[0].changes[0].value.statuses;
+      const entries = event.payload.entry;
+      const firstEntry = entries[0];
+      if (!firstEntry) return;
+
+      const changes = firstEntry.changes;
+      const firstChange = changes[0];
+      if (!firstChange) return;
+
+      const statuses = firstChange.value.statuses;
       if (!statuses || statuses.length === 0) return;
 
       for (const status of statuses) {
@@ -507,6 +572,61 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
     });
   }
 
+  async sendTemplateMessage(
+    to: string,
+    template: import("@ports/whatsapp-bot-port").WhatsAppTemplateMessage,
+  ): Promise<void> {
+    if (!this.accessToken) {
+      console.warn(
+        `[WhatsAppWebhookAdapter] sendTemplateMessage: no accessToken — skipped (to=${to})`,
+      );
+      return;
+    }
+    if (!template.name) {
+      throw new Error("[WhatsAppWebhookAdapter] sendTemplateMessage: template.name is required");
+    }
+    const payload: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "template",
+      template: {
+        name: template.name,
+        language: {
+          code: template.languageCode ?? "en_US",
+        },
+      },
+    };
+    if (template.components && template.components.length > 0) {
+      payload.template.components = template.components.map((c) => ({
+        type: c.type,
+        parameters: c.parameters?.map((p) => ({
+          type: p.type,
+          text: p.text ?? undefined,
+          media: p.media ? { link: p.media.link ?? "" } : undefined,
+          fallback: p.fallback ?? undefined,
+        })),
+      }));
+    }
+    const res = await fetch(`${this.apiBaseUrl}/messages`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `[WhatsAppWebhookAdapter] sendTemplateMessage failed ${res.status}: ${text}`,
+      );
+    }
+    console.log(
+      `[WhatsAppWebhookAdapter] sent template ${template.name} to ${to}`,
+    );
+  }
+
   async markAsRead(messageId: string): Promise<void> {
     if (!this.accessToken) {
       console.warn(
@@ -575,18 +695,21 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
       payload.type = "text";
       payload.text = { body: body.text };
     } else if (body.type === "interactive") {
+      const interactive = body.interactive;
+      if (!interactive) return;
       payload.type = "interactive";
       payload.interactive = {
-        type: body.interactive.type,
-        header: { type: "text", text: body.interactive.header },
-        body: { text: body.interactive.body },
-        footer: body.interactive.footer ? { text: body.interactive.footer } : undefined,
-        buttons: body.interactive.buttons.map((b) => ({
-          type: "reply",
+        type: interactive.type,
+        header: { type: "text", text: interactive.header },
+        body: { text: interactive.body },
+        footer: interactive.footer
+          ? { text: interactive.footer }
+          : undefined,
+        buttons: interactive.buttons.map((b) => ({
+          type: "reply" as const,
           reply: { id: b.id, title: b.title },
         })),
       };
-      // Remove undefined footer.
       if (!payload.interactive.footer) {
         delete payload.interactive.footer;
       }
