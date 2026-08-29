@@ -12,28 +12,6 @@ import { SettlementLedger } from "./settlement-ledger";
 
 const X_PAYMENT_TOKEN = "X-Payment-Token";
 
-/** How to compute the required payment amount from an agent card. */
-function requiredAmount(card: AgentCard): number {
-  const p = card.pricing;
-  if (!p) return 0;
-  const base = p.costPerTask ?? 0;
-  const perToken = p.costPerToken ?? 0;
-  // Surrogate token count: text length / 100 (ceil).
-  const textTokens = Math.ceil(base > 0 ? 0 : 0); // placeholder; refined at mint time
-  return base + perToken * textTokens;
-}
-
-/** Compute the exact payment from a card + input text length. */
-function computeAmount(card: AgentCard, textLen: number): number {
-  const p = card.pricing;
-  if (!p) return 0;
-  const base = p.costPerTask ?? 0;
-  const perToken = p.costPerToken ?? 0;
-  // Tokenize: rough char-based estimate (1 token ~= 4 chars).
-  const tokens = Math.max(1, Math.ceil(textLen / 4));
-  return base + perToken * tokens;
-}
-
 export interface X402ClientConfig {
   /** Settlement ledger used to mint tokens and track balances. */
   ledger: SettlementLedger;
@@ -66,7 +44,7 @@ export class X402Client {
   /** Cached agent cards (fetched on demand). */
   private cache = new Map<string, AgentCard | null>();
   /** Cached settlement pricing per agent URL. */
-  private settlementCache = new Map<string, import("./types").SettlementPricing | null>();
+  private settlementCache = new Map<string, SettlementPricing | null>();
 
   constructor(config: X402ClientConfig) {
     this.ledger = config.ledger;
@@ -133,7 +111,7 @@ export class X402Client {
   async delegateWithPayment(
     agentUrl: string,
     text: string,
-    settlement: import("./types").SettlementPricing,
+    settlement: SettlementPricing,
     agentName?: string,
   ): Promise<string> {
     // Compute the required amount from the settlement + input length.
@@ -155,7 +133,7 @@ export class X402Client {
       agentUrl,
       amount,
       purpose,
-      { proof: `mint:${Date.now()}`, chainEndpoint: this.ledger.chainEndpointUrl },
+      { proof: `mint:${Date.now()}` },
     );
 
     console.log(`[X402Client] minted PaymentToken txId=${token.txId} amount=${amount} → ${agentUrl}`);

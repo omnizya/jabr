@@ -46,7 +46,7 @@ export class SettlementLedger {
   private autoRefillThreshold: number;
   private autoRefillAmount: number;
 
-  /** Mint records: txId → { from, to, amount, issuedAt, purpose, proof, signature, chainEndpoint } */
+  /** Mint records: txId → { from, to, amount, issuedAt, purpose, proof, signature } */
   private mints = new Map<string, {
     from: string;
     to: string;
@@ -55,7 +55,6 @@ export class SettlementLedger {
     purpose: string;
     proof: string;
     signature: string;
-    chainEndpoint?: string;
   }>();
 
   /** Settlement receipts: txId → SettlementReceipt */
@@ -84,12 +83,11 @@ export class SettlementLedger {
     to: string,
     amount: number,
     purpose: string,
-    opts?: { proof?: string; chainEndpoint?: string },
+    opts?: { proof?: string },
   ): PaymentToken {
     const txId = crypto.randomUUID();
     const issuedAt = new Date().toISOString();
     const proof = opts?.proof ?? `mint:${txId}`.slice(0, 64);
-    const chainEndpoint = opts?.chainEndpoint ?? this.chainEndpoint;
     const payload = `${txId}\n${from}\n${to}\n${amount}\n${issuedAt}\n${purpose}\n${proof}`;
     const signature = Hmac("sha256", this.hmacSecret)
       .update(payload)
@@ -103,7 +101,6 @@ export class SettlementLedger {
       purpose,
       proof,
       signature,
-      chainEndpoint,
     });
 
     // Credit the recipient's balance immediately on mint.
@@ -180,12 +177,12 @@ export class SettlementLedger {
           reason: `on-chain proof not confirmed: ${proof.error}`,
         };
       }
-      // Reuse the chain reference from the proof for the receipt.
+      // Record the chain reference on the token for the receipt.
       token.proof = proof.chainRef ?? token.proof;
     }
 
-    // 6. Deduct from sender's balance (always succeeds in local mode; in chain
-    //    mode this is a no-op since the chain already settled the transfer).
+    // 6. Deduct from sender's balance.
+    // In chain mode, the on-chain tx already moved funds — just record.
     const fromKey = this.agentKey(token.from);
     const fromBal = this.balances.get(fromKey);
     if (fromBal && this.chainEndpoint) {
@@ -278,7 +275,7 @@ export class SettlementLedger {
 
   // --- Queries ---
 
-  /** The configured chain endpoint (public read access for clients). */
+  /** Configured chain RPC endpoint (undefined = local dev mode). */
   get chainEndpointUrl(): string | undefined {
     return this.chainEndpoint;
   }
