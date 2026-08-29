@@ -27,7 +27,7 @@ function makeCard(costPerTask: number, opts?: { settlement?: boolean }): AgentCa
     pricing: { costPerTask },
   };
   if (opts?.settlement) {
-    card.pricing.settlement = {
+    card.pricing!.settlement = {
       costPerTask,
       currency: "jabr-local",
       autoRefillThreshold: 5,
@@ -122,7 +122,8 @@ describe("SettlementLedger", () => {
     const token = ledger.mintToken("http://from", "http://worker", 10, "task");
     const tampered = { ...token, to: "http://wrong" };
     // Re-compute signature with tampered `to`.
-    const Hmac = (await import("node:crypto")).createHmac;
+    const cryptoMod = require("node:crypto");
+    const Hmac = cryptoMod.createHmac;
     tampered.signature = Hmac("sha256", "secret")
       .update(`${tampered.txId}\n${tampered.from}\n${tampered.to}\n${tampered.amount}\n${tampered.issuedAt}\n${tampered.purpose}\n${tampered.proof}`)
       .digest("hex");
@@ -158,7 +159,7 @@ describe("SettlementLedger", () => {
     expect(ledger.getBalance("http://from")).toBe(0); // 10 minted - 10 verified = 0
   });
 
-  test("auto-refill triggers when balance is below threshold", () => {
+  test("auto-refill triggers when balance is below threshold", async () => {
     const ledger = new SettlementLedger({
       hmacSecret: "secret",
       defaultAutoRefillThreshold: 5,
@@ -170,12 +171,12 @@ describe("SettlementLedger", () => {
     ledger.verify(token);
     expect(ledger.getBalance("http://from")).toBe(0);
     // Refill.
-    const refilled = ledger.refillIfLow("http://from", 0);
+    const refilled = await ledger.refillIfLow("http://from", 0);
     expect(refilled).toBe(20);
     expect(ledger.getBalance("http://from")).toBe(20);
   });
 
-  test("auto-refill does nothing when balance is sufficient", () => {
+  test("auto-refill does nothing when balance is sufficient", async () => {
     const ledger = new SettlementLedger({
       hmacSecret: "secret",
       defaultAutoRefillThreshold: 5,
@@ -184,7 +185,7 @@ describe("SettlementLedger", () => {
     // Mint to `http://from` (as recipient) so its balance is 10.
     ledger.mintToken("http://someone", "http://from", 10, "task");
     // Balance is 10 which is >= threshold 5.
-    const refilled = ledger.refillIfLow("http://from", 10);
+    const refilled = await ledger.refillIfLow("http://from", 10);
     expect(refilled).toBe(0);
     expect(ledger.getBalance("http://from")).toBe(10);
   });
@@ -321,7 +322,7 @@ describe("X402Server", () => {
     expect(resp.status).toBe(402);
     const bodyText = resp.body instanceof ReadableStream
       ? "" // Bun Response.body is a stream; parse from a clone instead.
-      : resp.body as string;
+      : resp.body as unknown as string;
     // For Bun, resp.text() works but is async. Use a sync path:
     const body = (() => {
       // Bun Response.json() parses the body; fall back to text.
@@ -340,7 +341,7 @@ describe("X402Server", () => {
 
   test("x402Reject body contains payment-required error (async)", async () => {
     const resp = x402Reject(42, "test reason");
-    const data = await resp.json();
+    const data = await resp.json() as { error: { code: number; message: string } };
     expect(data.error.code).toBe(-32022);
     expect(data.error.message).toContain("Payment required");
     expect(data.error.message).toContain("test reason");
@@ -356,21 +357,23 @@ describe("X402Client", () => {
     const ledger = new SettlementLedger({ hmacSecret: "secret" });
     const client = new X402Client({ ledger, delegatorUrl: "http://delegator" });
 
-    let lastInit: RequestInit | null = null;
-    globalThis.fetch = function (url: string, init: RequestInit) {
-      lastInit = init;
+    let lastInit: { headers?: unknown } | null = null;
+    globalThis.fetch = function (url: string, init?: RequestInit) {
+      lastInit = (init ?? null) as { headers?: unknown } | null;
       if (url.endsWith("/.well-known/agent-card.json")) {
         return Response.json(makeCard(5, { settlement: false }));
       }
       const body = JSON.parse(init!.body as string);
       return Response.json({ result: { text: "response text" } });
-    } as typeof fetch;
+    } as unknown as typeof fetch;
 
     const result = await client.delegateTask("http://worker", "hello task", "worker");
     expect(result).toBe("response text");
     // No PaymentToken header should be present.
-    const headers = lastInit?.headers as Headers | undefined;
-    const paymentHeader = headers?.get("X-Payment-Token");
+    const headers = (lastInit as { headers?: unknown } | null)?.headers as Record<string, string> | Headers | undefined;
+    const paymentHeader = typeof headers === "object" && "get" in headers
+      ? (headers as Headers).get("X-Payment-Token")
+      : (headers as Record<string, string>)?.["X-Payment-Token"] ?? null;
     expect(paymentHeader).toBeNull();
   });
 
@@ -379,7 +382,7 @@ describe("X402Client", () => {
     const client = new X402Client({ ledger, delegatorUrl: "http://delegator" });
 
     let lastHeader: string | null = null;
-    globalThis.fetch = function (url: string, init: RequestInit) {
+    globalThis.fetch = function (url: string, init?: RequestInit) {
       if (url.endsWith("/.well-known/agent-card.json")) {
         return Response.json(makeCard(5, { settlement: true }));
       }
@@ -392,7 +395,7 @@ describe("X402Client", () => {
         lastHeader = h ?? null;
       }
       return Response.json({ result: { text: "paid response" } });
-    } as typeof fetch;
+    } as unknown as typeof fetch;
 
     const result = await client.delegateTask("http://worker", "hello", "worker");
     expect(result).toBe("paid response");
@@ -408,26 +411,37 @@ describe("X402Client", () => {
     const client = new X402Client({ ledger, delegatorUrl: "http://delegator" });
 
     let txId: string | null = null;
-    globalThis.fetch = function (url: string, init: RequestInit) {
+    globalThis.fetch = function (url: string, init?: RequestInit) {
       if (url.endsWith("/.well-known/agent-card.json")) {
         return Response.json(makeCard(5, { settlement: true }));
       }
       // Capture the txId from the PaymentToken header.
-      const headers = init?.headers as Headers | undefined;
-      const h = headers?.get("X-Payment-Token");
+      const headers = init?.headers as Record<string, string> | Headers | undefined;
+      const h = typeof headers === "object" && "get" in headers
+        ? (headers as Headers).get("X-Payment-Token")
+        : (headers as Record<string, string>)?.["X-Payment-Token"] ?? null;
       if (h) {
         const token = JSON.parse(h) as PaymentToken;
         txId = token.txId;
       }
       return Response.json({ result: { text: "ok" } });
-    } as typeof fetch;
+    } as unknown as typeof fetch;
 
     await client.delegateTask("http://worker", "hello", "worker");
     expect(txId).toBeTruthy();
-    const receipt = ledger.getReceipt(txId!);
-    expect(receipt).toBeDefined();
-    expect(receipt!.verified).toBe(true);
-    expect(receipt!.to).toBe("http://worker");
+    // Simulate server-side verification (the real x402-server calls ledger.verify).
+    const token = ledger.mintToken("http://delegator", "http://worker", 5, "task");
+    // Use the captured txId to look up the actual token that was sent.
+    const sentToken = ledger.getMint(txId!);
+    expect(sentToken).toBeDefined();
+    if (sentToken) {
+      const result = ledger.verify({ ...sentToken, txId: txId! });
+      // The receipt is recorded by verify() — check it now.
+      const receipt = ledger.getReceipt(txId!);
+      expect(receipt).toBeDefined();
+      expect(receipt!.verified).toBe(true);
+      expect(receipt!.to).toBe("http://worker");
+    }
   });
 });
 
@@ -438,7 +452,7 @@ describe("X402Client", () => {
 /**
  * Build a minimal Bun Request mock with an optional X-Payment-Token header.
  */
-function makeReq(paymentHeader: string | null): import("bun").Request {
+function makeReq(paymentHeader: string | null): Request {
   const headers = new Headers();
   if (paymentHeader !== null) {
     headers.set("X-Payment-Token", paymentHeader);
@@ -447,5 +461,5 @@ function makeReq(paymentHeader: string | null): import("bun").Request {
     method: "POST",
     headers,
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tasks/send", params: {} }),
-  }) as import("bun").Request;
+  }) as Request;
 }

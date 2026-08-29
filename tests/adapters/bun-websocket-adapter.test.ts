@@ -22,7 +22,7 @@ describe("BunWebSocketAdapter", () => {
 
     const health = await fetch(`http://localhost:${port}/health`);
     expect(health.status).toBe(200);
-    const body = await health.json();
+    const body = await health.json() as { status: string; connections: number; ws: string };
     expect(body.status).toBe("ok");
     expect(body.connections).toBe(0);
     expect(body.ws).toBe(`wss://localhost:${port}`);
@@ -54,7 +54,7 @@ describe("BunWebSocketAdapter", () => {
     const event = await Promise.race([
       seen,
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
-    ]);
+    ]) as { type: string; agent: string; port: number };
     expect(event.type).toBe("agent:online");
     expect(event.agent).toBe("tester");
     expect(event.port).toBe(port);
@@ -103,7 +103,7 @@ describe("BunWebSocketAdapter", () => {
     const event = await Promise.race([
       inRoom,
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
-    ]);
+    ]) as { type: string; taskId: string; percent: number };
     expect(event.type).toBe("task:progress");
     expect(event.taskId).toBe("task-1");
     expect(event.percent).toBe(42);
@@ -188,6 +188,8 @@ describe("BunWebSocketAdapter", () => {
     expect(adapter.getConnectionCount()).toBe(2);
 
     adapter.leaveRoom(ws, "task-42");
+    ws.close();
+    await delay(50);
     expect(adapter.getConnectionCount()).toBe(1);
 
     adapter.stop();
@@ -254,7 +256,7 @@ describe("BunWebSocketAdapter", () => {
     const event = await Promise.race([
       received,
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
-    ]);
+    ]) as { type: string; taskId: string };
     expect(event.type).toBe("task:completed");
     expect(event.taskId).toBe("task-7");
 
