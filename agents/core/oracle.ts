@@ -15,6 +15,7 @@ export const ORACLE_CARD: AgentCard = {
     { name: "Simplify code", description: "Behavior-preserving simplification for readability", tags: ["simplify", "refactor", "readability"], inputModes: ["text"], outputModes: ["text"] },
     { name: "Architecture advice", description: "System design decisions, trade-offs, refactoring strategy", tags: ["architecture", "design", "trade-off"], inputModes: ["text"], outputModes: ["text"] },
   ],
+  pricing: { costPerTask: 15 },
 };
 
 /**

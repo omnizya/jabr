@@ -39,6 +39,7 @@ export const FIXER_CARD: AgentCard = {
       outputModes: ["text"],
     },
   ],
+  pricing: { costPerTask: 20 },
 };
 
 export class FixerAgent {

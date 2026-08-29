@@ -15,6 +15,7 @@ export const LIBRARIAN_CARD: AgentCard = {
     { name: "Summarize text", description: "Condenses long text into key bullets", tags: ["summarize", "summary"], inputModes: ["text"], outputModes: ["text"] },
     { name: "Save skill", description: "Persists a reusable skill document (self-improvement loop)", tags: ["skill", "self-improvement", "persist"], inputModes: ["text", "data"], outputModes: ["text"] },
   ],
+  pricing: { costPerTask: 8 },
 };
 
 export class LibrarianAgent {

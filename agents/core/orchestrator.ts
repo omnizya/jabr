@@ -5,9 +5,12 @@ import type { TaskStorePort } from "@ports/task-store";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { DiscoveryPort } from "@ports/discovery-port";
 import type { KanbanPort } from "@ports/kanban-port";
+import type { RealtimePort } from "@ports/realtime-port";
+import { X402Client } from "@adapters/x402/x402-client";
 import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
 import type { LlmPort } from "@ports/llm-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
+import type { BudgetPort } from "@ports/budget-port";
 
 
 export const ORCHESTRATOR_CARD: AgentCard = {
@@ -33,6 +36,7 @@ export const ORCHESTRATOR_CARD: AgentCard = {
       outputModes: ["data"],
     },
   ],
+  pricing: { costPerTask: 10 },
 };
 
 export const MAX_HANDOVER_DEPTH = 3;
@@ -49,6 +53,8 @@ export class OrchestratorAgent {
     cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
     private knowledge?: KnowledgePort,
     private kanban?: KanbanPort,
+    private budget?: BudgetPort,
+    private realtime?: RealtimePort,
   ) {
     this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
   }
@@ -133,6 +139,14 @@ export class OrchestratorAgent {
         const url = await this.getAgentUrl(name);
         if (!url) return null;
         try {
+          // Deduct per-agent pricing from the target's budget before delegation.
+          if (this.budget) {
+            const card = await this.dynamicRegistry?.getCard(name);
+            if (card?.pricing) {
+              const costTokens = card.pricing.costPerTask + (card.pricing.costPerToken ?? 0) * userText.length;
+              await this.budget.consume(name, costTokens);
+            }
+          }
           const response = await this.registry.delegateTask(url, userText, name);
           const card = await this.dynamicRegistry?.getCard(name);
           if (!card) return null;
@@ -160,6 +174,13 @@ export class OrchestratorAgent {
       const agentName = participants[0] ?? "librarian";
       const url = await this.getAgentUrl(agentName);
       if (!url) return "No agents available for consensus";
+      if (this.budget) {
+        const card = await this.dynamicRegistry?.getCard(agentName);
+        if (card?.pricing) {
+          const costTokens = card.pricing.costPerTask + (card.pricing.costPerToken ?? 0) * userText.length;
+          await this.budget.consume(agentName, costTokens);
+        }
+      }
       return this.registry.delegateTask(url, userText, agentName);
     }
 
@@ -188,6 +209,11 @@ export class OrchestratorAgent {
     referenceTaskIds: string[] = [],
     forcedAgentName?: string,
   ): Promise<void> {
+    // Emit task:progress (0%) at entry — covers task:created already implied by
+    // the caller's taskStore.create, but clients subscribed to the task room want
+    // an immediate lifecycle signal.
+    this.emitTaskProgress(taskId, 0, "started");
+
     try {
       this.taskStore.updateState(taskId, "working");
 
@@ -220,6 +246,20 @@ export class OrchestratorAgent {
 
       const agentUrl = await this.getAgentUrl(agentName);
       if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
+
+      // Deduct per-agent pricing from the target's budget before delegation.
+      if (this.budget) {
+        const card = await this.dynamicRegistry?.getCard(agentName);
+        if (card?.pricing) {
+          const costPerTask = card.pricing.costPerTask;
+          const costPerToken = card.pricing.costPerToken ?? 0;
+          const costTokens = costPerTask + costPerToken * augmentedText.length;
+          await this.budget.consume(agentName, costTokens);
+          this.memory.append(
+            `[depth=${depth}] Budget: deducted ${costTokens} tokens from ${agentName} (pricing=${JSON.stringify(card.pricing)})`,
+          );
+        }
+      }
 
       let result = await this.registry.delegateTask(agentUrl, augmentedText, agentName);
 
@@ -339,5 +379,38 @@ export class OrchestratorAgent {
     } catch (err) {
       console.error("[Orchestrator] Kanban sync failed:", err);
     }
+  }
+
+  // ---- realtime lifecycle emissions ----
+
+  /** Emit task:progress to the task's room; also emit task:created once per task. */
+  private emitTaskProgress(taskId: string, percent: number, message: string): void {
+    if (!this.realtime) return;
+    this.realtime.emitTo(`task-${taskId}`, {
+      type: "task:progress",
+      taskId,
+      percent,
+      message,
+    });
+  }
+
+  /** Emit task:completed to the task's room. */
+  private emitTaskCompleted(taskId: string, result: unknown): void {
+    if (!this.realtime) return;
+    this.realtime.emitTo(`task-${taskId}`, {
+      type: "task:completed",
+      taskId,
+      result,
+    });
+  }
+
+  /** Emit task:failed to the task's room. */
+  private emitTaskFailed(taskId: string, error: string): void {
+    if (!this.realtime) return;
+    this.realtime.emitTo(`task-${taskId}`, {
+      type: "task:failed",
+      taskId,
+      error,
+    });
   }
 }

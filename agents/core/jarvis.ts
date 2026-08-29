@@ -59,6 +59,7 @@ export const JARVIS_CARD: AgentCard = {
       outputModes: ["text", "data"],
     },
   ],
+  pricing: { costPerTask: 50 },
 };
 
 export type FindingSeverity = "info" | "warn" | "critical";

@@ -19,8 +19,9 @@ export class ScientistAgent {
         name: "Technical Scripting",
         description: "Create utility scripts for automation or technical validation.",
         tags: ["automation", "scripting", "python", "utility"],
-      }
+      },
     ],
+    pricing: { costPerTask: 30 },
   };
 
   constructor(private mcpTools: McpToolPort) {}

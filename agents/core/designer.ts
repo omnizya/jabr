@@ -13,6 +13,7 @@ export const DESIGNER_CARD: AgentCard = {
     { name: "Component design", description: "Designs UI components with accessibility and interaction patterns", tags: ["component", "accessibility", "interaction", "button", "ux"], inputModes: ["text"], outputModes: ["text"] },
     { name: "Style guide", description: "Creates color palettes, typography scales, and design tokens", tags: ["color", "palette", "theme", "typography", "design-tokens"], inputModes: ["text"], outputModes: ["text", "data"] },
   ],
+  pricing: { costPerTask: 12 },
 };
 
 export class DesignerAgent {

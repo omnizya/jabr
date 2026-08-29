@@ -13,6 +13,18 @@ export interface AgentInterface {
   url: string;
 }
 
+/**
+ * Pricing declaration for an agent. The orchestrator deducts costPerTask
+ * (plus an optional costPerToken surcharge) from the target agent's budget
+ * before delegating a task.
+ */
+export interface AgentPricing {
+  /** Flat cost deducted from the target agent's budget each time it is delegated a task. */
+  costPerTask: number;
+  /** Optional per-token surcharge on top of costPerTask; multiplied by input length. */
+  costPerToken?: number;
+}
+
 export interface AgentCardCapabilities {
   streaming?: boolean;
   pushNotifications?: boolean;
@@ -28,10 +40,10 @@ export interface AgentExtension {
 export interface AgentSkill {
   name: string
   description: string
-  tags: string[];
-  examples?: string[];
-  inputModes?: string[];
-  outputModes?: string[];
+  tags: string[]
+  examples?: string[]
+  inputModes?: string[]
+  outputModes?: string[]
 }
 
 export interface AgentCard {
@@ -42,7 +54,9 @@ export interface AgentCard {
   capabilities: AgentCardCapabilities;
   skills: AgentSkill[];
   supportedInterfaces?: AgentInterface[];
-  successRate?: number
+  successRate?: number;
+  /** Per-task pricing declaration — consumed from the target agent's budget by the orchestrator. */
+  pricing?: AgentPricing;
 }
 
 export type TaskState =
@@ -180,8 +194,9 @@ export interface WorldStateAgent {
   name: string
   port: number
   status: WorldStateAgentStatus
-  skills: string[]
+  skills: string[];
 }
+
 export interface WorldStateTasks {
   total: number;
   active: number;
@@ -193,10 +208,12 @@ export interface WorldStateMemory {
   totalEntries: number;
   lastUpdated?: string;
 }
+
 export interface WorldStateSkills {
   total: number;
   recentSlugs: string[];
 }
+
 export interface WorldState {
   timestamp: string;
   agents: Array<WorldStateAgent>;
@@ -214,6 +231,7 @@ export interface A2AServerConfig {
   /** Whether to enforce API key validation on POST / */
   requireAuth?: boolean;
 }
+
 export interface RegistryEntry {
   url: string;
   card: AgentCard;

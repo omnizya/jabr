@@ -12,6 +12,7 @@ export const EXPLORER_CARD: AgentCard = {
     { name: "Map structure", description: "Generate a project directory overview", tags: ["map", "structure", "overview"], inputModes: ["text"], outputModes: ["text"] },
     { name: "Search code", description: "Find code patterns via regex or AST matching", tags: ["grep", "search", "pattern", "code-search"], inputModes: ["text"], outputModes: ["text", "data"] },
   ],
+  pricing: { costPerTask: 5 },
 };
 
 export class ExplorerAgent {
