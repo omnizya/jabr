@@ -10,10 +10,12 @@ import {
   buildCorsPreflightHeaders,
 } from "@utils/rpc";
 import { RateLimiter, rateLimitResponse } from "@adapters/rate-limit";
+import { X402Server, x402Reject } from "@adapters/x402/x402-server";
 
 export class A2AServer {
   private readonly config: A2AServerConfig;
   private readonly rateLimiter: RateLimiter;
+  private readonly x402: X402Server | null;
   private server: ReturnType<typeof Bun.serve> | null = null;
 
   constructor(
@@ -21,9 +23,11 @@ export class A2AServer {
       onWorldState?: () => Promise<any>;
     },
     rateLimiter?: RateLimiter,
+    x402?: X402Server,
   ) {
     this.config = config as any;
     this.rateLimiter = rateLimiter ?? new RateLimiter();
+    this.x402 = x402 ?? null;
   }
 
   start(): void {
@@ -60,6 +64,7 @@ export class A2AServer {
           }
         }
 
+        // Health / discovery GETs — no body, no payment check.
         if (
           req.method === "GET" &&
           (url.pathname === "/.well-known/agent-card.json" ||
@@ -83,7 +88,38 @@ export class A2AServer {
           return Response.json(card, { headers });
         }
 
+        // POST / — read body once for both x402 check and JSON-RPC dispatch.
         if (req.method === "POST" && url.pathname === "/") {
+          // Read raw body once.
+          let rawBody: string;
+          try {
+            rawBody = await req.text();
+          } catch {
+            console.error("[A2AServer] POST / body read error");
+            const origin = req.headers.get("Origin");
+            const corsHeaders = buildCorsHeaders(origin);
+            return new Response(
+              JSON.stringify(err(null, -32700, "Parse error: cannot read body")),
+              {
+                status: 400,
+                headers: { ...(corsHeaders ?? {}), "Content-Type": "application/json" },
+              },
+            );
+          }
+
+          // --- x402 payment check (when middleware is configured) ---
+          if (this.x402) {
+            // Temporarily expose rawBody on the request so the x402 server
+            // can re-parse headers (the header itself is on the request, not
+            // the body). The check only needs the headers + the body for
+            // signature-less token parse.
+            const check = this.x402.check(req);
+            if (!check.paid) {
+              console.warn(`[A2AServer] x402 rejected: ${check.rejectReason ?? "unpaid"}`);
+              return x402Reject(null, check.rejectReason ?? "unpaid");
+            }
+          }
+
           // API key auth (when enabled)
           if (requireAuth && authToken) {
             const apiKey = req.headers.get("X-API-Key");
@@ -115,7 +151,7 @@ export class A2AServer {
 
           let body: unknown;
           try {
-            body = await req.json();
+            body = JSON.parse(rawBody);
           } catch {
             console.error("[A2AServer] POST / parse error (-32700)");
             const origin = req.headers.get("Origin");
