@@ -3,8 +3,8 @@ import type { McpToolPort } from "@ports/mcp-tool-port";
 
 export class ScientistAgent {
   public readonly card: AgentCard = {
-    name: "Scientist Agent",
-    description: "Specialist in data science, scripting, and technical analysis. Uses Python to execute code and analyze data.",
+    name: "KHWARIZMI",
+    description: "KHWARIZMI (Al-Khwarizmi) — Master of Calculation. Specialist in data science, scripting, and technical analysis. Uses Python to execute code and analyze data.",
     url: "http://localhost:4006",
     version: "1.0.0",
     capabilities: { streaming: false, pushNotifications: false },
@@ -25,7 +25,7 @@ export class ScientistAgent {
 
   constructor(private mcpTools: McpToolPort) {}
 
-  async handleTask(text: string): Promise<string> {
+  async execute(taskId: string, text: string): Promise<string> {
     if (text.toLowerCase().includes("python") || text.toLowerCase().includes("analyze")) {
       const script = `print("Scientist analyzing: ${text}")\n# Logic would go here\nprint("Analysis complete: Result is 42")`;
       

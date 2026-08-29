@@ -10,7 +10,8 @@ const server = new A2AServer({
   port,
   card: scientist.card,
   async onTask(message: string): Promise<string> {
-    const result = await scientist.handleTask(message);
+    const taskId = crypto.randomUUID();
+    const result = await scientist.execute(taskId, message);
     return result;
   },
 });

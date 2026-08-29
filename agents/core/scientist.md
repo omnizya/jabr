@@ -15,17 +15,17 @@ Unlike the other agents, Scientist defines its card inline as a `public readonly
 - **Technical Scripting** — tags: `automation`, `scripting`, `python`, `utility`
 
 ## Behavior
-Lightweight keyword matcher that delegates execution to an LLM-free subprocess. `handleTask(text)` (note: NOT named `executeTask`) checks `text.toLowerCase().includes("python" | "analyze")`:
+Lightweight keyword matcher that delegates execution to an LLM-free subprocess. `execute(taskId, text)` checks `text.toLowerCase().includes("python" | "analyze")`:
 - match → builds a Python snippet string, calls `mcpTools.callTool("run_python", { code })` (persistent `.python_env/` via `uv run`), and returns the tool's `content` wrapped in a result block
 - on error → returns a failure string
 - fallback → "I can help with Python scripts and data analysis…" prompt
 
-**Important deviation from the standard structure:** Scientist has NO `execute(taskId, userText)` method and NO `get card()` getter — the card is a `public readonly` field and dispatch is via `handleTask`. Any composition root wiring Scientist must adapt it to the standard `execute`/`updateState`/`appendMessage` contract (the other agents all implement it).
+**Note on structure:** Scientist now aligns with the standard specialist contract — it exposes `execute(taskId, text): Promise<string>` (the `taskId` is accepted for signature parity but unused, since the run layer returns the string directly rather than writing to a `TaskStore`). The card remains a `public readonly` field (not a module-level `X_CARD` const). The composition root generates a `taskId` via `crypto.randomUUID()` and passes it in.
 
 ## Conventions
 - Card: `public readonly card: AgentCard` (inline, with `url` populated)
 - Constructor DI: `constructor(private mcpTools: McpToolPort)` — only the MCP tool port
-- Dispatch method is `handleTask(text): Promise<string>` (returns raw string, not `{text, artifact?}`)
+- Dispatch method is `execute(taskId, text): Promise<string>` (returns raw string, not `{text, artifact?}`)
 
 **Ports depended on:** `McpToolPort` only (used to call `run_python`).
 
