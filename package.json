@@ -27,6 +27,7 @@
     "demo": "bun run --parallel scripts/demo.ts",
     "scientist": "bun agents/run/scientist.ts",
     "dev": "bun run --parallel orchestrator oracle librarian explorer designer fixer jarvis scientist mcp acp-bridge",
+    "cli": "bun scripts/jabr-cli.ts",
     "test": "bun test",
     "typecheck": "bun run tsc --noEmit"
   },
