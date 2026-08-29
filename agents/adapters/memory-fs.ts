@@ -75,7 +75,8 @@ export class MemoryFS implements MemoryStorePort {
     if (!existsSync(p)) return null;
     try {
       return JSON.parse(readFileSync(p, "utf-8")) as SessionData;
-    } catch {
+    } catch (e) {
+      console.error(`[MemoryFS] failed to read session ${id}: ${e}`);
       return null;
     }
   }

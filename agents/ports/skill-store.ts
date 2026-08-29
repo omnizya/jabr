@@ -5,3 +5,5 @@ export interface SkillStorePort {
   exists(slug: string): boolean;
   list(): string[];
 }
+
+console.log("[SkillStorePort] port interface loaded");

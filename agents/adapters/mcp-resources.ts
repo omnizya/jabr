@@ -113,7 +113,8 @@ export function registerResources(server: McpServer, ctx: ResourceContext): void
       const skills = files.map(f => {
         try {
           return JSON.parse(readFileSync(join(skillDir, f), "utf-8"));
-        } catch {
+        } catch (e) {
+          console.error(`[McpResources] failed to read skill file ${f}: ${e}`);
           return null;
         }
       }).filter(Boolean);

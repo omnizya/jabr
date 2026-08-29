@@ -22,3 +22,5 @@ export interface MemoryStorePort {
   getSession(id: string): SessionData | null;
   saveSession(id: string, data: SessionData): void;
 }
+
+console.log("[MemoryStorePort] port interface loaded");

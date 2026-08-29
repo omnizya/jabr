@@ -19,6 +19,7 @@ export class HermesKanbanAdapter implements KanbanPort {
   }
 
   async createTask(title: string, opts?: CreateTaskOpts): Promise<KanbanTask> {
+    console.log(`[HermesKanban] creating task: ${title}`);
     const args = ["create", "--json", title];
     if (opts?.body) args.push("--body", opts.body);
     if (opts?.assignee) args.push("--assignee", opts.assignee);

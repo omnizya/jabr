@@ -19,3 +19,5 @@ export interface DiscoveryPort {
   getAgentsHealth(): Promise<AgentHealth[]>;
   ensureReady?(): Promise<void>;
 }
+
+console.log("[DiscoveryPort] port interface loaded");

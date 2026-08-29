@@ -63,7 +63,7 @@ export class FixerAgent {
     }
 
     if (lower.includes("fibonacci") || lower.includes("fib")) {
-      this.skillStore.save("fibonacci-generation", {
+      const saved = this.skillStore.save("fibonacci-generation", {
         name: "Fibonacci Generation",
         description: "Generate a Fibonacci sequence implementation in TypeScript",
         tags: ["code", "typescript", "fibonacci", "algorithm"],
@@ -76,6 +76,7 @@ export class FixerAgent {
         usageCount: 0,
         successRate: 1,
       });
+      if (!saved) console.error(`[Fixer] failed to save fibonacci-generation skill (already exists)`);
       return {
         text: "Generated Fibonacci implementation.",
         artifact: {

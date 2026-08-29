@@ -12,7 +12,12 @@ export class SkillFS implements SkillStorePort {
     const path = join(this.dir, slug + ".json");
     if (existsSync(path)) return false;
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(path, JSON.stringify(doc, null, 2), "utf-8");
+    try {
+      writeFileSync(path, JSON.stringify(doc, null, 2), "utf-8");
+    } catch (e) {
+      console.error(`[SkillFS] failed to write skill ${slug}: ${e}`);
+      throw e;
+    }
     return true;
   }
 

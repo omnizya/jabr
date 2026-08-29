@@ -9,7 +9,10 @@ if (import.meta.main) {
   runAgent({
     port: 4003,
     card: EXPLORER_CARD,
-    execute: (taskId, text) => agent.execute(taskId, text),
+    execute: (taskId, text) => {
+      console.log(`[Run:Explorer] dispatching exploration task ${taskId}`);
+      return agent.execute(taskId, text);
+    },
     taskStore,
   });
 }

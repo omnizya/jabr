@@ -22,6 +22,7 @@ export class TaskMemory implements TaskStorePort {
   updateState(taskId: string, state: Task["state"]): void {
     const task = this.tasks.get(taskId);
     if (task) task.state = state;
+    else console.error(`[TaskMemory] updateState failed: unknown task ${taskId}`);
   }
 
   appendMessage(taskId: string, message: A2AMessage): void {

@@ -19,3 +19,5 @@ export interface LlmPort {
   generate(request: LlmRequest): Promise<LlmResponse>;
   streamGenerate(request: LlmRequest, onChunk: (chunk: string) => void): Promise<LlmResponse>;
 }
+
+console.log("[LlmPort] port interface loaded");

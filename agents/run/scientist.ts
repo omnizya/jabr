@@ -11,6 +11,7 @@ const server = new A2AServer({
   card: scientist.card,
   async onTask(message: string): Promise<string> {
     const taskId = crypto.randomUUID();
+    console.log(`[Run:Scientist] received task ${taskId}`);
     const result = await scientist.execute(taskId, message);
     return result;
   },

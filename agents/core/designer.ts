@@ -56,6 +56,7 @@ export class DesignerAgent {
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
+    console.log(`[Designer] executing design task ${taskId}`);
     const text = this.executeTask(userText);
     this.taskStore.updateState(taskId, "completed");
     this.taskStore.appendMessage(taskId, {

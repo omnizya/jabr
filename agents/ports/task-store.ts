@@ -18,3 +18,5 @@ export interface TaskStorePort {
   ): void;
   listByState(state: Task["state"]): Task[];
 }
+
+console.log("[TaskStorePort] port interface loaded");

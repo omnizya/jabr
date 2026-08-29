@@ -40,6 +40,7 @@ export class ExplorerAgent {
   }
 
   async execute(taskId: string, userText: string): Promise<void> {
+    console.log(`[Explorer] exploring task ${taskId}: ${userText}`);
     const text = this.executeTask(userText);
     this.taskStore.updateState(taskId, "completed");
     this.taskStore.appendMessage(taskId, {

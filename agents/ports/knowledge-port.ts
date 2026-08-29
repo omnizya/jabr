@@ -14,3 +14,5 @@ export interface KnowledgePort {
   get(slug: string): Promise<KnowledgeEntry | null>;
   list(): Promise<KnowledgeEntry[]>;
 }
+
+console.log("[KnowledgePort] port interface loaded");

@@ -5,3 +5,5 @@ export interface AgentRegistryPort {
 
   delegateTask(agentUrl: string, text: string, agentName?: string): Promise<string>;
 }
+
+console.log("[AgentRegistryPort] port interface loaded");

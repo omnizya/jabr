@@ -55,11 +55,16 @@ export function initSchema(db: Database): void {
 }
 
 export function openJabrDb(path: string = DEFAULT_DB_PATH): Database {
-  const db = new Database(path);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = NORMAL");
-  db.exec("PRAGMA busy_timeout = 5000");
-  db.exec("PRAGMA foreign_keys = ON");
-  initSchema(db);
-  return db;
+  try {
+    const db = new Database(path);
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA synchronous = NORMAL");
+    db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("PRAGMA foreign_keys = ON");
+    initSchema(db);
+    return db;
+  } catch (e) {
+    console.error(`[SqliteDb] failed to open database at ${path}: ${e}`);
+    throw e;
+  }
 }

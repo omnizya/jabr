@@ -26,6 +26,7 @@ export class ScientistAgent {
   constructor(private mcpTools: McpToolPort) {}
 
   async execute(taskId: string, text: string): Promise<string> {
+    console.log(`[Scientist] working on task ${taskId}`);
     if (text.toLowerCase().includes("python") || text.toLowerCase().includes("analyze")) {
       const script = `print("Scientist analyzing: ${text}")\n# Logic would go here\nprint("Analysis complete: Result is 42")`;
       

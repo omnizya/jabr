@@ -43,6 +43,7 @@ if (import.meta.main) {
     card: { ...ORCHESTRATOR_CARD, url: `http://localhost:${PORT}` },
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
+      console.log(`[Run:Orchestrator] received task ${taskId}`);
       taskStore.create(taskId);
       await agent.execute(taskId, text);
       const task = taskStore.get(taskId);

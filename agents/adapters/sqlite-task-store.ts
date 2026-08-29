@@ -96,7 +96,12 @@ export class SqliteTaskStore implements TaskStorePort {
 
   create(taskId: string): Task {
     const now = new Date().toISOString();
-    this.stmtCreate.run(taskId, now, now);
+    try {
+      this.stmtCreate.run(taskId, now, now);
+    } catch (e) {
+      console.error(`[SqliteTaskStore] failed to create task ${taskId}: ${e}`);
+      throw e;
+    }
     return { id: taskId, state: "working", messages: [], artifacts: [] };
   }
 

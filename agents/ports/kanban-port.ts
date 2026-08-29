@@ -44,3 +44,5 @@ export interface KanbanPort {
   block(taskId: string, reason: string): Promise<void>;
   unblock(taskId: string): Promise<void>;
 }
+
+console.log("[KanbanPort] port interface loaded");

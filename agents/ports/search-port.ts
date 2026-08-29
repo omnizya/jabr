@@ -8,3 +8,5 @@ export interface SearchResult {
 export interface SearchPort {
   search(query: string): Promise<SearchResult[]>;
 }
+
+console.log("[SearchPort] port interface loaded");

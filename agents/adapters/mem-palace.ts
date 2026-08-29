@@ -45,7 +45,8 @@ export class MemPalaceAdapter implements KnowledgePort {
     if (!(await file.exists())) return null;
     try {
       return (await file.json()) as KnowledgeEntry;
-    } catch {
+    } catch (e) {
+      console.error(`[MemPalace] failed to read knowledge entry ${slug}: ${e}`);
       return null;
     }
   }

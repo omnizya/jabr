@@ -28,7 +28,10 @@ export class SubscriptionManager {
 
   unsubscribe(subscriptionId: string): boolean {
     const sub = this.subscriptions.get(subscriptionId);
-    if (!sub) return false;
+    if (!sub) {
+      console.error(`[SubscriptionManager] unsubscribe failed: unknown id ${subscriptionId}`);
+      return false;
+    }
 
     this.subscriptions.delete(subscriptionId);
     const listeners = this.uriListeners.get(sub.uri);

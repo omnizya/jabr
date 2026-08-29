@@ -41,6 +41,7 @@ export function err(
   code: number,
   message: string,
 ): JSONRPCResponse {
+  console.error(`[Rpc] error response id=${id} code=${code} message=${message}`);
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 

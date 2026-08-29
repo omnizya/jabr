@@ -29,6 +29,7 @@ export class McpClientAdapter implements McpToolPort {
           const content = response.result?.content?.[0]?.text || "No output";
           resolve({ content });
         } catch (e) {
+          console.error(`[McpClient] failed to parse MCP response: ${e}`);
           resolve({ content: `Error parsing MCP response: ${e}`, isError: true });
         }
       });

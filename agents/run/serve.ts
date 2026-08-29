@@ -19,11 +19,14 @@ export function runAgent(config: {
   const taskStore = config.taskStore ?? new TaskMemory();
   const format = config.formatResult ?? extractLastResponse;
 
+  console.log(`[Serve] starting ${config.card.name} server on port ${config.port}`);
+
   const server = new A2AServer({
     port: config.port,
     card: { ...config.card, url: `http://localhost:${config.port}` },
     async onTask(text: string): Promise<string> {
       const taskId = crypto.randomUUID();
+      console.log(`[Serve] received task ${taskId} for ${config.card.name}`);
       taskStore.create(taskId);
       await config.execute(taskId, text);
       return format(taskStore, taskId);

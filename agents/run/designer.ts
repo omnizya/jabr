@@ -10,7 +10,10 @@ if (import.meta.main) {
   runAgent({
     port: 4004,
     card: DESIGNER_CARD,
-    execute: (taskId, text) => agent.execute(taskId, text),
+    execute: (taskId, text) => {
+      console.log(`[Run:Designer] dispatching design task ${taskId}`);
+      return agent.execute(taskId, text);
+    },
     taskStore,
   });
 }

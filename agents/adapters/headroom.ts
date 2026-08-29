@@ -34,7 +34,9 @@ export class HeadroomAdapter implements BudgetPort {
     const name = agentName.toLowerCase();
     const cap = this.caps[name] || 100000;
     const used = this.counters.get(name) || 0;
-    return used >= cap;
+    const exhausted = used >= cap;
+    if (exhausted) console.error(`[Headroom] budget exhausted for ${name} (used ${used}/${cap})`);
+    return exhausted;
   }
 
   reset(): void {
