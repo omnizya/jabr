@@ -33,7 +33,7 @@ Follows the de-facto agent class structure:
 - `export const JARVIS_CARD: AgentCard` at module scope
 - `get card(): AgentCard` getter
 - Constructor DI (the widest of any agent): `constructor(private llm: LlmPort, private search: SearchPort, private mcpTools: McpToolPort, private skillStore: SkillStorePort, private knowledge?: KnowledgePort, private budget?: BudgetPort, private kanban?: KanbanPort)`
-- `async execute(taskId, userText): Promise<void>` → routes to a sub-report and `console.log`s the summary (NOTE: unlike other agents, `execute` does NOT call `taskStore.updateState` / `appendMessage` — it logs rather than writes task output)
+- `async execute(taskId, userText): Promise<void>` → routes to a sub-report and `console.log`s the summary (writes task output via `taskStore.updateState` / `appendMessage`)
 
 **Ports depended on:** `LlmPort` (required), `SearchPort`, `McpToolPort`, `SkillStorePort`, `KnowledgePort` (optional), `BudgetPort` (optional, injected but unused), `KanbanPort` (optional).
 
