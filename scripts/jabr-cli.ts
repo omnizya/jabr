@@ -4,11 +4,11 @@
  * jabr-cli — agent management CLI for the Jabr multi-agent system.
  *
  * Subcommands:
- *   start   [agent]   Start one agent or all (default: all).
- *   stop    [agent]   Stop one agent or all.
- *   restart [agent]   Restart one agent or all.
+ *   start   [agent|all]   Start one agent or all (default: all).
+ *   stop    [agent|all]   Stop one agent or all.
+ *   restart [agent|all]   Restart one agent or all.
  *   status            Show live status of every agent (health + process).
- *   logs     [agent]  Tail log for one agent or all.
+ *   logs     [agent|all]  Tail log for one agent or all.
  *   send    <agent> <text>   Send a task to an agent via A2A POST.
  *   config            Show current agent config (ports, URLs, env).
  *
@@ -38,20 +38,31 @@ const AGENTS: Array<{
   name: string;
   script: string;   // run script filename (without .ts)
   port: number;
-  runCmd: string;   // full bun command to start
+  sourceCmd: string; // bun command to run from source (fallback when no binary)
   env?: Record<string, string>;
 }> = [
-  { name: "orchestrator", script: "orchestrator", port: 4000, runCmd: "bun agents/run/orchestrator.ts" },
-  { name: "oracle",       script: "oracle",       port: 4001, runCmd: "bun agents/run/oracle.ts" },
-  { name: "librarian",    script: "librarian",    port: 4002, runCmd: "bun agents/run/librarian.ts" },
-  { name: "explorer",     script: "explorer",     port: 4003, runCmd: "bun agents/run/explorer.ts" },
-  { name: "designer",     script: "designer",     port: 4004, runCmd: "bun agents/run/designer.ts" },
-  { name: "fixer",        script: "fixer",        port: 4005, runCmd: "bun agents/run/fixer.ts" },
-  { name: "scientist",    script: "scientist",    port: 4006, runCmd: "bun agents/run/scientist.ts" },
-  { name: "jarvis",       script: "jarvis",       port: 1337, runCmd: "bun agents/run/jarvis.ts" },
-  { name: "mcp",          script: "mcp",          port: 0,    runCmd: "bun mcp-servers/tools.ts" },
-  { name: "acp-bridge",   script: "acp-bridge",   port: 0,    runCmd: "bun agents/run/acp-bridge.ts" },
+  { name: "orchestrator", script: "orchestrator", port: 4000, sourceCmd: "bun agents/run/orchestrator.ts" },
+  { name: "oracle",       script: "oracle",       port: 4001, sourceCmd: "bun agents/run/oracle.ts" },
+  { name: "librarian",    script: "librarian",    port: 4002, sourceCmd: "bun agents/run/librarian.ts" },
+  { name: "explorer",     script: "explorer",     port: 4003, sourceCmd: "bun agents/run/explorer.ts" },
+  { name: "designer",     script: "designer",     port: 4004, sourceCmd: "bun agents/run/designer.ts" },
+  { name: "fixer",        script: "fixer",        port: 4005, sourceCmd: "bun agents/run/fixer.ts" },
+  { name: "scientist",    script: "scientist",    port: 4006, sourceCmd: "bun agents/run/scientist.ts" },
+  { name: "verification", script: "verification", port: 4009, sourceCmd: "bun agents/run/verification.ts" },
+  { name: "jarvis",       script: "jarvis",       port: 1337, sourceCmd: "bun agents/run/jarvis.ts" },
+  { name: "mcp",          script: "mcp",          port: 0,    sourceCmd: "bun mcp-servers/tools.ts" },
+  { name: "acp-bridge",   script: "acp-bridge",   port: 0,    sourceCmd: "bun agents/run/acp-bridge.ts" },
 ];
+
+/**
+ * Resolve the command used to launch an agent: prefer the standalone binary
+ * built into `dist/bin/<name>` (via `bun run build`) when present, otherwise
+ * fall back to running from source.
+ */
+function runCommand(agent: typeof AGENTS[number]): string {
+  const bin = join(ROOT, "dist", "bin", agent.name);
+  return existsSync(bin) ? bin : agent.sourceCmd;
+}
 
 const ROOT = process.cwd();
 const LOG_DIR = "/tmp/jabr-logs";
@@ -107,8 +118,10 @@ function deletePidFile(agent: string) {
 }
 
 /** Find PID(s) for an agent by scanning /proc (fallback when pid file is stale). */
-function findPidsByProc(script: string): number[] {
+function findPidsByProc(agent: typeof AGENTS[number]): number[] {
   const pids: number[] = [];
+  const sourceNeedle = `agents/run/${agent.script}.ts`;
+  const binNeedle = `dist/bin/${agent.name}`;
   try {
     const proc = "/proc";
     const entries = readdirSync(proc);
@@ -117,7 +130,7 @@ function findPidsByProc(script: string): number[] {
       const cmdlinePath = join(proc, entry, "cmdline");
       try {
         const cmdline = readFileSync(cmdlinePath, "utf-8").replace(/\0/g, " ").trim();
-        if (cmdline.includes(`agents/run/${script}.ts`)) {
+        if (cmdline.includes(sourceNeedle) || cmdline.includes(binNeedle)) {
           pids.push(parseInt(entry, 10));
         }
       } catch {
@@ -168,10 +181,10 @@ async function waitForHealth(name: string, port: number): Promise<boolean> {
 // ── Subcommands ───────────────────────────────────────────────────────────
 
 async function cmdStart(args: string[]) {
-  const target = args[0]?.trim();
+  const target = args[0]?.trim().toLowerCase();
   ensureLogDir();
 
-  if (target) {
+  if (target && target !== "all") {
     const agent = agentByName(target);
     if (!agent) {
       error(`Unknown agent: ${target}`);
@@ -188,7 +201,7 @@ async function cmdStart(args: string[]) {
 
 async function startSingle(agent: typeof AGENTS[number]) {
   const existingPids = readPids(agent.name);
-  const procPids = findPidsByProc(agent.script);
+  const procPids = findPidsByProc(agent);
   const allPids = [...existingPids, ...procPids];
 
   if (allPids.length > 0) {
@@ -203,7 +216,7 @@ async function startSingle(agent: typeof AGENTS[number]) {
 
   log(`  Starting ${agent.name} on port ${agent.port || "stdio"}...`);
 
-  const bashCmd = `${envPrefix}${agent.runCmd} 2>&1 | tee ${logPath}`;
+  const bashCmd = `${envPrefix}${runCommand(agent)} 2>&1 | tee ${logPath}`;
   const proc = spawn("bash", ["-c", bashCmd], {
     cwd: ROOT,
     detached: true,
@@ -224,7 +237,7 @@ async function startSingle(agent: typeof AGENTS[number]) {
   } else {
     // For stdio agents, confirm process spawned.
     setTimeout(() => {
-      const procPids = findPidsByProc(agent.script);
+      const procPids = findPidsByProc(agent);
       if (procPids.length > 0) {
         writePids(agent.name, procPids);
         log(`  ✓ ${agent.name} — launched (stdio, PID ${procPids[0]})`);
@@ -236,9 +249,9 @@ async function startSingle(agent: typeof AGENTS[number]) {
 }
 
 async function cmdStop(args: string[]) {
-  const target = args[0]?.trim();
+  const target = args[0]?.trim().toLowerCase();
 
-  if (target) {
+  if (target && target !== "all") {
     const agent = agentByName(target);
     if (!agent) {
       error(`Unknown agent: ${target}`);
@@ -256,7 +269,7 @@ async function cmdStop(args: string[]) {
 
 async function stopSingle(agent: typeof AGENTS[number]) {
   const pids = readPids(agent.name);
-  const procPids = findPidsByProc(agent.script);
+  const procPids = findPidsByProc(agent);
   const allPids = [...pids, ...procPids];
 
   if (allPids.length === 0 && agent.port === 0) {
@@ -279,7 +292,7 @@ async function stopSingle(agent: typeof AGENTS[number]) {
 
   // Wait, then SIGKILL stragglers.
   await new Promise((r) => setTimeout(r, 1000));
-  const remaining = findPidsByProc(agent.script);
+  const remaining = findPidsByProc(agent);
   for (const pid of remaining) {
     try {
       process.kill(pid, "SIGKILL");
@@ -298,18 +311,18 @@ async function stopSingle(agent: typeof AGENTS[number]) {
       log(`  ✓ ${agent.name}: stopped`);
     }
   } else {
-    const stillRunning = findPidsByProc(agent.script).length > 0;
+    const stillRunning = findPidsByProc(agent).length > 0;
     if (!stillRunning) {
       log(`  ✓ ${agent.name}: stopped`);
     } else {
-      warn(`  ✗ ${agent.name}: still running (PID ${findPidsByProc(agent.script).join(", ")})`);
+      warn(`  ✗ ${agent.name}: still running (PID ${findPidsByProc(agent).join(", ")})`);
     }
   }
 }
 
 async function cmdRestart(args: string[]) {
-  const target = args[0]?.trim();
-  if (target) {
+  const target = args[0]?.trim().toLowerCase();
+  if (target && target !== "all") {
     const agent = agentByName(target);
     if (!agent) {
       error(`Unknown agent: ${target}`);
@@ -337,7 +350,7 @@ async function cmdStatus() {
 
   for (const agent of AGENTS) {
     const pids = readPids(agent.name);
-    const procPids = findPidsByProc(agent.script);
+    const procPids = findPidsByProc(agent);
     const allPids = [...pids, ...procPids];
     const running = allPids.length > 0;
     const health = agent.port > 0 ? await healthCheck(agent.name, agent.port) : null;
@@ -372,10 +385,10 @@ async function cmdStatus() {
 }
 
 async function cmdLogs(args: string[]) {
-  const target = args[0]?.trim();
+  const target = args[0]?.trim().toLowerCase();
   ensureLogDir();
 
-  if (target) {
+  if (target && target !== "all") {
     const agent = agentByName(target);
     if (!agent) {
       error(`Unknown agent: ${target}`);
@@ -487,7 +500,7 @@ async function cmdConfig() {
   log("");
   log("Agents:");
   for (const agent of AGENTS) {
-    log(`  ${agent.name.padEnd(14)} port=${agent.port || "stdio"}  cmd=${agent.runCmd}`);
+    log(`  ${agent.name.padEnd(14)} port=${agent.port || "stdio"}  cmd=${runCommand(agent)}`);
   }
 
   log("");
@@ -496,7 +509,11 @@ async function cmdConfig() {
     ["NINEROUTER_URL", "http://127.0.0.1:20128", "LLM gateway URL"],
     ["NINEROUTER_KEY", "(unset)", "LLM API key"],
     ["NINEROUTER_MODEL", "openrouter/minimax/minimax-m3:free", "Default model"],
-    ["ORCHESTRATOR_URL", "http://localhost:4000", "ACP bridge default"],
+    ["JABR_LLM_PROVIDER", "(unset)", "LLM provider selector: vercel or unset for 9Router"],
+    ["VERCEL_AI_GATEWAY_KEY", "(unset)", "Vercel AI Gateway API key (also AI_GATEWAY_API_KEY)"],
+    ["VERCEL_AI_GATEWAY_MODEL", "minimax/minimax-m3", "Vercel model ID (resilient form survives Sept 6 free-period end)"],
+    ["VERCEL_AI_GATEWAY_BASE_URL", "https://ai-gateway.vercel.sh/v4/ai", "Vercel AI Gateway Base URL (optional override)"],
+    ["JABR_URL", "http://localhost:4000", "Orchestrator endpoint (required). Legacy: ORCHESTRATOR_URL"],
     ["A2A_AUTH_TOKEN", "(unset)", "A2A auth token (optional)"],
     ["A2A_REQUIRE_AUTH", "false", "Enforce A2A auth"],
     ["JABR_TOKEN_CAP_<AGENT>", "100000", "Per-agent token budget"],
@@ -537,16 +554,17 @@ Usage:
   bun scripts/jabr-cli.ts <command> [args...]
 
 Commands:
-  start   [agent]   Start one agent or all (default: all)
-  stop    [agent]   Stop one agent or all
-  restart [agent]   Restart one agent or all
+  start   [agent|all]   Start one agent or all (default: all)
+  stop    [agent|all]   Stop one agent or all
+  restart [agent|all]   Restart one agent or all
   status            Show live status of every agent
-  logs    [agent]   Tail logs for one agent, or last 20 lines for all
+  logs    [agent|all]   Tail logs for one agent, or last 20 lines for all
   send    <agent> <text...>   Send a task to an agent via A2A
   config            Show agent topology, env vars, and run scripts
 
 Examples:
   bun scripts/jabr-cli.ts start                     # start all agents
+  bun scripts/jabr-cli.ts start all                 # start all agents (explicit)
   bun scripts/jabr-cli.ts start oracle              # start just the oracle
   bun scripts/jabr-cli.ts stop                      # stop all
   bun scripts/jabr-cli.ts restart fixer             # restart fixer
@@ -563,6 +581,7 @@ Agent topology:
   designer      :4004  (A2A — design tasks)
   fixer         :4005  (A2A — code fixes, artifacts)
   scientist     :4006  (A2A — data science via MCP)
+  verification  :4009  (A2A — verification agent)
   jarvis        :1337  (A2A — proactive codebase steward)
   mcp           stdio  (MCP tool server — run_python, read/write, etc.)
   acp-bridge    stdio  (ACP bridge to orchestrator)

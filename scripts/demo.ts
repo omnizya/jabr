@@ -21,8 +21,8 @@
  * `{ jsonrpc: "2.0", id, result: { text: string } }` inline — no polling.
  */
 
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Database } from "bun:sqlite";
 
 const FIXER = "http://localhost:4005";
