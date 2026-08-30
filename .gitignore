@@ -64,3 +64,18 @@ tests/.tmp/
 
 # Workspace
 .worktrees/
+
+# Scratch / debug / probe files (repo root, throwaway)
+/consensus-verify.ts
+/debug-*.ts
+/probe-*.ts
+/repro-*.ts
+
+# Runtime data
+/radata/
+
+# Jarvis scan artifacts (timestamped, regenerated each scan)
+skills/jarvis-scan-*.json
+
+# Brand asset generation log
+brand/generation.log
