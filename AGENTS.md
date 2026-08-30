@@ -77,6 +77,10 @@ State transition history is recorded per `updateState()` call.
 | `NINEROUTER_URL` | `http://127.0.0.1:20128` | LLM gateway |
 | `NINEROUTER_KEY` | — | LLM API key |
 | `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
+| `JABR_LLM_PROVIDER` | — | LLM provider selector: `vercel` (or set `VERCEL_AI_GATEWAY_KEY`) for Vercel AI Gateway, unset for 9Router |
+| `VERCEL_AI_GATEWAY_KEY` | — | Vercel AI Gateway API key (also `AI_GATEWAY_API_KEY`) |
+| `VERCEL_AI_GATEWAY_MODEL` | `minimax/minimax-m3` | Vercel model ID (resilient form survives Sept 6 free-period end) |
+| `VERCEL_AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/v4/ai` | Vercel AI Gateway base URL (optional override) |
 | `ORCHESTRATOR_URL` | `http://localhost:4000` | ACP bridge |
 | `JABR_TOKEN_CAP_<AGENT>` | `100000` | Per-agent token budget |
 | `JABR_X402_HMAC_SECRET` | **required** (no default) | x402 payment signing — generate with `openssl rand -hex 32`; orchestrator refuses to start without it |
