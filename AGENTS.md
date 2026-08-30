@@ -11,20 +11,21 @@ This file is for agent-specific notes only — see CANONICAL.md for everything e
 - POST to `/` (root path ONLY) with JSON-RPC method `tasks/send`
 - Any other method → `-32601 Method not found`; any other path → 404
 - Synchronous: server awaits handler and returns result in response — no polling
-- `scripts/demo.ts` is OUT OF SYNC — trust `a2a-server.ts`, not `demo.ts`
+- `scripts/demo.ts` matches this contract (root `/`, `tasks/send`, sync)
 
 ### Agent Cards
 - Served at `/.well-known/agent-card.json`
 - `supportedInterfaces`: streaming, pushNotifications, stateTransitionHistory (all false — not yet implemented)
 - `securityRequirements`: empty array (not yet implemented)
 
-### Task Lifecycle (current — only 4 states)
+### Task Lifecycle (8 states — `agents/types.ts`)
 ```
-SUBMITTED → WORKING → COMPLETED
-                ↘ FAILED
+SUBMITTED → WORKING → INPUT-REQUIRED → COMPLETED
+                ↘ FAILED / CANCELED / REJECTED / AUTH-REQUIRED
 ```
 
-**Missing states (Phase 1 TODO):** `INPUT_REQUIRED`, `REJECTED`, `AUTH_REQUIRED`, `UNKNOWN`
+**Missing:** only `UNKNOWN` (9th A2A v1.0 state) is not yet in the `TaskState` union.
+State transition history is recorded per `updateState()` call.
 
 ---
 
@@ -78,6 +79,7 @@ SUBMITTED → WORKING → COMPLETED
 | `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
 | `ORCHESTRATOR_URL` | `http://localhost:4000` | ACP bridge |
 | `JABR_TOKEN_CAP_<AGENT>` | `100000` | Per-agent token budget |
+| `JABR_X402_HMAC_SECRET` | **required** (no default) | x402 payment signing — generate with `openssl rand -hex 32`; orchestrator refuses to start without it |
 
 ---
 
@@ -115,4 +117,6 @@ SUBMITTED → WORKING → COMPLETED
 - [ ] Routing tie-break: tag tie → first in iteration order wins (design decision needed)
 - [ ] Handover path not exercised: oracle `%%HANDOVER%%` chain never triggers through current routing
 - [ ] Specialists are deterministic keyword matchers — cannot implement new MCP tools end-to-end
-- [ ] NINEROUTER env vars set nowhere (no `.env`) — search/image-gen silently disabled or crash
+- [ ] No `.env` file (only `.env.example`). `NINEROUTER_URL` has a code default
+  (`http://127.0.0.1:20128`), but `NINEROUTER_KEY` has none — `search-9router.ts:39-41`
+  throws if it's missing, so search/image-gen fail without it.

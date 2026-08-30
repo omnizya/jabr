@@ -42,11 +42,9 @@ server.registerTool("read_file", {
 
 ## Known inconsistencies to avoid
 
-- `tools.ts:8` `import pkg from "../package.json"` is missing its trailing semicolon
-  — the only statement in the codebase without one. Add it.
-- `tools.ts:4-5` uses bare `fs`/`path` — use `node:fs` / `node:path`.
-- `tools.ts:89` uses `eval(expression)` for `calculate` — it is regex-guarded, but
-  prefer a parser if you extend it.
+- `calculate` uses a tokenizer + recursive-descent parser (`safeCalculate` →
+  `new Parser(tokenize(expression)).parse()`, ~line 369) — no `eval`. Extend the
+  parser, not a regex guard, if you add operators.
 - Keep the server single-file; don't split tools across files unless the count grows
   significantly.
 

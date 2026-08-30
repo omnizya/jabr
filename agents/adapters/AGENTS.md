@@ -47,15 +47,16 @@ failures with `console.error("[Component] ...")` before throwing.
 
 ## Known inconsistencies to avoid
 
-- `mcp-client.ts`, `llm/openai.ts`, `a2a-client.ts` use `@agents/ports/...` /
-  `@agents/utils/...` — use `@ports/...` / `@utils/...`.
-- `mcp-resources.ts` and `mem-palace.ts` use bare `fs`/`path` — use `node:fs` /
-  `node:path`.
-- `http/a2a-server.ts:17,21` casts config `as any` — extend `A2AServerConfig`
+- `http/a2a-server.ts:28,35` casts config `as any` — extend `A2AServerConfig`
   instead of casting around it.
 - `llm/openai.ts:51` reads `data.choices[0]` off an `as any` — guard empty arrays.
 - `subscription-manager.ts:24` uses `get(uri)!` — prefer a local variable over a
   non-null assertion.
+
+> Note: earlier import-alias issues (`@agents/ports/...`, bare `fs`/`path`) have been
+> fixed in code — `mcp-client.ts`, `a2a-client.ts`, `llm/openai.ts` use `@ports/*` /
+> `@utils/*`, and `mcp-resources.ts` / `mem-palace.ts` use `node:fs` / `node:path`.
+> Keep it that way; don't reintroduce the old aliases.
 
 ## See also
 

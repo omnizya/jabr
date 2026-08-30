@@ -44,12 +44,14 @@ if (import.meta.main) {
 
 - Orchestrator runs on **4000**, oracle **4001**, librarian **4002**, explorer
   **4003**, designer **4004**, fixer **4005**, scientist **4006**, jarvis **1337**.
-- `seedUrls` in `run/orchestrator.ts` must match these ports.
+- **4007** = orchestrator's GitHub webhook listener (`GitHubWebhookAdapter`).
+- **4008** = shared realtime WebSocket transport (`startBunWebSocketAdapter`). The
+  orchestrator starts it; every runner also starts its own instance on 4008 (the
+  shared-instance pattern can't cross processes).
+- `seedUrls` in `run/orchestrator.ts` must match the A2A ports above.
 
 ## Known inconsistencies to avoid
 
-- `run/scientist.ts` uses `@agents/adapters/...` and `@agents/core/...` — use
-  `@adapters/...` / `@core/...`.
 - All 5 standard specialists (`designer`, `explorer`, `fixer`, `librarian`, `oracle`)
   import `./serve.ts` WITH the `.ts` extension — keep it that way.
 - Scientist bypasses `runAgent()`; acceptable, but keep direct-wiring style

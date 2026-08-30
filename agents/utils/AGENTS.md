@@ -37,7 +37,6 @@ export const corsHeaders = { "Access-Control-Allow-Origin": "*" } as const;
 
 ## Known inconsistencies to avoid
 
-- `a2a-client.ts` imports `@agents/utils/rpc` — use `@utils/rpc` for consistency.
 - Keep the file focused on JSON-RPC; add new pure helpers here only if they are
   genuinely shared across layers. Prefer co-locating single-use helpers in the file
   that uses them.

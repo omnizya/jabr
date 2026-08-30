@@ -55,8 +55,8 @@ with a bracketed prefix. Null-check optional ports before use.
 
 ## Known inconsistencies to avoid
 
-- `cognitive-loop.ts` and `scientist.ts` use `@agents/ports/...` — use `@ports/...`.
-- `scientist.ts:11` uses `["a2a" as any]` — avoid `as any` casts; type the field.
+- `cognitive-loop.ts:2` uses `@agents/ports/llm-port` — use `@ports/llm-port`.
+- `scientist.ts:12` uses `["a2a" as any]` — avoid `as any` casts; type the field.
 - `cognitive-loop.ts:95` uses `scored[0]!` — prefer a guard over a non-null assertion.
 - `jarvis.ts` `ScanReport.tasksCreated` is always `[]` — a forward-looking field for
   the planned task-creation feature (Jabr is not fully implemented). Keep it; wire it
