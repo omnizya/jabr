@@ -494,6 +494,8 @@ Together, these enable the "agentic economy" — agents that don't just think, b
 
 ## Roadmap
 
+> **R&D opportunities:** See [docs/rd-roadmap.md](./docs/rd-roadmap.md) for research & development ideas unlocked by the dependency stack and opensrc source exploration.
+
 ### Phase 1 — A2A v1.0 Compliance (2-3 weeks)
 
 **Goal:** Pass A2A v1.0 conformance tests.
@@ -632,6 +634,7 @@ MIT — see [LICENSE](./LICENSE).
 
 ## References
 
+- [R&D Roadmap (dependency stack + opensrc)](./docs/rd-roadmap.md)
 - [A2A Protocol v1.0](https://a2a-protocol.org/latest/specification/)
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [ACP Specification](https://agentcommunicationprotocol.dev/)

@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { DEFAULT_MEMORY_DIR } from "@adapters/memory-fs";
 
 export const DEFAULT_DB_PATH = join(DEFAULT_MEMORY_DIR, "jabr.db");
-export const DEFAULT_BRIDGE_DB_PATH = join(DEFAULT_MEMORY_DIR, "jabr-bridge.db");
+export const DEFAULT_BRIDGE_DB_PATH = join(
+	DEFAULT_MEMORY_DIR,
+	"jabr-bridge.db",
+);
 
 const TASKS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS tasks (
   id         TEXT PRIMARY KEY,
@@ -69,48 +72,57 @@ CREATE TABLE IF NOT EXISTS sessions (
  * reference `tasks(id)` by name and remain valid after the rename.
  */
 export function migrateTasksTable(db: Database): void {
-  const row = db
-    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'")
-    .get() as { sql: string } | undefined;
-  if (!row) return; // no tasks table yet — SCHEMA_SQL will create it
-  if (row.sql.includes("'submitted'")) return; // already current schema
+	const row = db
+		.query(
+			"SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'",
+		)
+		.get() as { sql: string } | undefined;
+	if (!row) return; // no tasks table yet — SCHEMA_SQL will create it
+	if (row.sql.includes("'submitted'")) return; // already current schema
 
-  console.warn("[SqliteDb] migrating tasks table schema (state CHECK constraint)");
-  db.exec("PRAGMA foreign_keys = OFF");
-  try {
-    db.exec("BEGIN");
-    db.exec("DROP TABLE IF EXISTS tasks_new");
-    db.exec(TASKS_TABLE_SQL.replace("CREATE TABLE IF NOT EXISTS tasks", "CREATE TABLE tasks_new"));
-    db.exec(
-      "INSERT INTO tasks_new (id, state, created_at, updated_at) SELECT id, state, created_at, updated_at FROM tasks",
-    );
-    db.exec("DROP TABLE tasks");
-    db.exec("ALTER TABLE tasks_new RENAME TO tasks");
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    throw e;
-  } finally {
-    db.exec("PRAGMA foreign_keys = ON");
-  }
+	console.warn(
+		"[SqliteDb] migrating tasks table schema (state CHECK constraint)",
+	);
+	db.exec("PRAGMA foreign_keys = OFF");
+	try {
+		db.exec("BEGIN");
+		db.exec("DROP TABLE IF EXISTS tasks_new");
+		db.exec(
+			TASKS_TABLE_SQL.replace(
+				"CREATE TABLE IF NOT EXISTS tasks",
+				"CREATE TABLE tasks_new",
+			),
+		);
+		db.exec(
+			"INSERT INTO tasks_new (id, state, created_at, updated_at) SELECT id, state, created_at, updated_at FROM tasks",
+		);
+		db.exec("DROP TABLE tasks");
+		db.exec("ALTER TABLE tasks_new RENAME TO tasks");
+		db.exec("COMMIT");
+	} catch (e) {
+		db.exec("ROLLBACK");
+		throw e;
+	} finally {
+		db.exec("PRAGMA foreign_keys = ON");
+	}
 }
 
 export function initSchema(db: Database): void {
-  db.exec(SCHEMA_SQL);
-  migrateTasksTable(db);
+	db.exec(SCHEMA_SQL);
+	migrateTasksTable(db);
 }
 
 export function openJabrDb(path: string = DEFAULT_DB_PATH): Database {
-  try {
-    const db = new Database(path);
-    db.exec("PRAGMA journal_mode = WAL");
-    db.exec("PRAGMA synchronous = NORMAL");
-    db.exec("PRAGMA busy_timeout = 5000");
-    db.exec("PRAGMA foreign_keys = ON");
-    initSchema(db);
-    return db;
-  } catch (e) {
-    console.error(`[SqliteDb] failed to open database at ${path}: ${e}`);
-    throw e;
-  }
+	try {
+		const db = new Database(path);
+		db.exec("PRAGMA journal_mode = WAL");
+		db.exec("PRAGMA synchronous = NORMAL");
+		db.exec("PRAGMA busy_timeout = 5000");
+		db.exec("PRAGMA foreign_keys = ON");
+		initSchema(db);
+		return db;
+	} catch (e) {
+		console.error(`[SqliteDb] failed to open database at ${path}: ${e}`);
+		throw e;
+	}
 }

@@ -280,3 +280,7 @@ Completed task. Result length: 749 chars
 [depth=0] Routed "fix this bug in the code" to TARIQ
 
 Completed task. Result length: 2379 chars
+
+[consensus] Delegating to 2 agents
+
+[consensus] Delegating to 3 agents

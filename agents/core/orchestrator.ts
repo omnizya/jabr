@@ -1,448 +1,317 @@
-import type { AgentCard, A2AMessage, HandoverRequest } from "@agents/types";
+import type {
+	A2AMessage,
+	AgentCard,
+	HandoverRequest,
+	ResolvedCaller,
+} from "@agents/types";
 import { decodeHandover } from "@agents/types";
-import type { AgentRegistryPort } from "@ports/agent-registry";
-import type { TaskStorePort } from "@ports/task-store";
-import type { MemoryStorePort } from "@ports/memory-store";
-import type { DiscoveryPort } from "@ports/discovery-port";
-import type { KanbanPort } from "@ports/kanban-port";
-import type { RealtimePort } from "@ports/realtime-port";
-import { X402Client } from "@adapters/x402/x402-client";
-import { CognitiveLoop, type ConsensusInput } from "./cognitive-loop.ts";
-import type { LlmPort } from "@ports/llm-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
-import type { BudgetPort } from "@ports/budget-port";
-
+import type { MemoryStorePort } from "@ports/memory-store";
+import type { TaskStorePort } from "@ports/task-store";
+import { MAX_HANDOVER_DEPTH, ToolRouter } from "./tool-router.ts";
 
 export const ORCHESTRATOR_CARD: AgentCard = {
-  name: "JABIR",
-  description:
-    "JABIR (جابر) — Alchemical Operator. Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
-  url: "",
-  version: "1.0.0",
-  capabilities: { streaming: false, pushNotifications: false },
-  skills: [
-    {
-      name: "Route task",
-      description: "Classifies and delegates any task to the best specialist agent",
-      tags: ["routing", "delegation", "orchestration"],
-      inputModes: ["text"],
-      outputModes: ["text"],
-    },
-    {
-      name: "Discover agents",
-      description: "Fetches Agent Cards from known sub-agents",
-      tags: ["discovery", "agent-card", "registry"],
-      inputModes: ["text"],
-      outputModes: ["data"],
-    },
-  ],
-  pricing: { costPerTask: 10 },
+	name: "JABIR",
+	description:
+		"JABIR (جابر) — Alchemical Operator. Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
+	url: "",
+	version: "1.0.0",
+	capabilities: { streaming: false, pushNotifications: false },
+	skills: [
+		{
+			name: "Route task",
+			description:
+				"Classifies and delegates any task to the best specialist agent",
+			tags: ["routing", "delegation", "orchestration"],
+			inputModes: ["text"],
+			outputModes: ["text"],
+		},
+		{
+			name: "Discover agents",
+			description: "Fetches Agent Cards from known sub-agents",
+			tags: ["discovery", "agent-card", "registry"],
+			inputModes: ["text"],
+			outputModes: ["data"],
+		},
+	],
+	pricing: { costPerTask: 10 },
 };
 
-export const MAX_HANDOVER_DEPTH = 3;
-
+/**
+ * OrchestratorAgent — the task lifecycle manager.
+ *
+ * Accepts a pre-built ToolRouter for all routing/delegation/consensus/noise,
+ * plus the taskStore and memory for state management. Keeps only the
+ * handover-chain execution loop.
+ */
 export class OrchestratorAgent {
-  private cognitiveLoop: CognitiveLoop;
-  private x402Client?: X402Client;
+	constructor(
+		private toolRouter: ToolRouter,
+		private taskStore: TaskStorePort,
+		private memory: MemoryStorePort,
+	) {}
 
-  constructor(
-    private registry: AgentRegistryPort,
-    private taskStore: TaskStorePort,
-    private memory: MemoryStorePort,
-    private dynamicRegistry?: DiscoveryPort,
-    private llmPort?: LlmPort,
-    cognitiveConfig?: { judgeAgentName?: string; minAgents?: number; confidenceThreshold?: number },
-    private knowledge?: KnowledgePort,
-    private kanban?: KanbanPort,
-    private budget?: BudgetPort,
-    private realtime?: RealtimePort,
-    x402Client?: X402Client,
-  ) {
-    this.cognitiveLoop = new CognitiveLoop(cognitiveConfig, llmPort);
-    this.x402Client = x402Client;
-  }
+	get card(): AgentCard {
+		return ORCHESTRATOR_CARD;
+	}
 
-  get card(): AgentCard {
-    return ORCHESTRATOR_CARD;
-  }
+	async getWorldState(): Promise<any> {
+		return this.toolRouter.getWorldState();
+	}
 
-  async routeTask(text: string): Promise<{ agentName: string; label: string } | null> {
-    await this.dynamicRegistry?.ensureReady?.();
-    const match = await this.dynamicRegistry?.matchAgent(text);
-    if (match) {
-      return { agentName: match.name, label: match.label };
-    }
-    return null;
-  }
+	// ---- Task entry point ----
 
-  /**
-   * Delegate a task to an agent, using the x402 client when configured.
-   * Falls back to the raw registry (no payment) when x402Client is absent.
-   */
-  async delegateTask(agentUrl: string, text: string, agentName?: string): Promise<string> {
-    if (this.x402Client) {
-      return this.x402Client.delegateTask(agentUrl, text, agentName);
-    }
-    return this.registry.delegateTask(agentUrl, text, agentName);
-  }
+	async execute(
+		taskId: string,
+		userText: string,
+		caller?: ResolvedCaller,
+	): Promise<void> {
+		return this.executeWithDepth(taskId, userText, 0, caller);
+	}
 
-  async getWorldState(): Promise<any> {
-    const agents = await this.dynamicRegistry?.getAgentsHealth() ?? [];
-    
-    // Aggregate filesystem metrics (mirroring old tools.ts logic)
-    const root = process.cwd();
-    const memoryDir = `${root}/memory`;
-    const skillsDir = `${root}/skills`;
-    
-    let lastUpdated: string | undefined;
-    try {
-      const fs = await import("fs");
-      const memPath = `${memoryDir}/orchestrator.md`;
-      if (fs.existsSync(memPath)) {
-        lastUpdated = fs.statSync(memPath).mtime.toISOString();
-      }
-      
-      let skillTotal = 0;
-      let recentSlugs: string[] = [];
-      if (fs.existsSync(skillsDir)) {
-        const skillFiles = fs.readdirSync(skillsDir).filter((f) => f.endsWith(".json"));
-        skillTotal = skillFiles.length;
-        recentSlugs = skillFiles.map(f => f.replace(".json", "")).reverse().slice(0, 5);
-      }
+	// ---- Main execution loop (orchestrator-owned: handover chain + task lifecycle) ----
 
-      // Task counts: 'working' is the active DoF; 'submitted' buffers before work starts.
-      const submitted = this.taskStore.listByState("submitted").length;
-      const active = this.taskStore.listByState("working").length;
-      const completed = this.taskStore.listByState("completed").length;
-      const failed = this.taskStore.listByState("failed").length;
-      const canceled = this.taskStore.listByState("canceled").length;
+	private async executeWithDepth(
+		taskId: string,
+		userText: string,
+		depth: number,
+		caller?: ResolvedCaller,
+		referenceTaskIds: string[] = [],
+		forcedAgentName?: string,
+		taskMeta?: {
+			title?: string;
+			assignee?: string;
+			priority?: number;
+			startedAt?: string;
+			retryCount?: number;
+		},
+	): Promise<void> {
+		const assignee = taskMeta?.assignee ?? "JABIR";
+		this.toolRouter.emitTaskCreated(taskId, assignee, {
+			title: taskMeta?.title ?? userText.slice(0, 80),
+			priority: taskMeta?.priority ?? 0,
+			parentTaskIds: referenceTaskIds.length > 0 ? referenceTaskIds : undefined,
+		});
 
-      return {
-        timestamp: new Date().toISOString(),
-        agents,
-        tasks: { total: submitted + active + completed + failed + canceled, submitted, active, completed, failed, canceled },
-        memory: { totalEntries: lastUpdated ? 1 : 0, lastUpdated },
-        skills: { total: skillTotal, recentSlugs },
-      };
-    } catch (e) {
-      console.error("Error gathering world state:", e);
-      return { timestamp: new Date().toISOString(), agents: [], error: "Filesystem access failed" };
-    }
-  }
+		try {
+			this.taskStore.updateState(taskId, "working");
+			this.toolRouter.emitTaskProgress(taskId, 5, "queued");
 
-  private async getAgentUrl(agentName: string): Promise<string | undefined> {
-    if (this.dynamicRegistry) {
-      return this.dynamicRegistry.getUrl(agentName);
-    }
-    return undefined;
-  }
+			// Knowledge augmentation: only at depth 0 (if knowledge port configured).
+			let augmentedText = userText;
+			const knowledge = this.toolRouter.cfg.knowledge;
+			if (knowledge && depth === 0) {
+				try {
+					const palaceContext = await knowledge.query(userText, 3);
+					if (palaceContext.length > 0) {
+						const contextSummary = palaceContext
+							.map((c) => `[Palace Knowledge: ${c.slug}]\n${c.content}`)
+							.join("\n\n");
+						augmentedText = `${contextSummary}\n\nUser Task: ${userText}`;
+						this.memory.append(
+							`[palace] Augmented query with ${palaceContext.length} knowledge entries`,
+						);
+					}
+				} catch (e) {
+					console.error("Palace query error:", e);
+				}
+			}
 
-  private async getAvailableAgentNames(): Promise<string[]> {
-    if (!this.dynamicRegistry) return [];
-    const cards = await this.dynamicRegistry.getAllCards();
-    return Object.keys(cards);
-  }
+			// Route to an agent (or use forcedAgentName from handover).
+			const routed = forcedAgentName
+				? { agentName: forcedAgentName, label: forcedAgentName }
+				: await this.toolRouter.routeTask(userText);
+			if (!routed) {
+				throw new Error("No agents discovered — cannot route task");
+			}
+			const { agentName, label } = routed;
 
-  private async delegateToMultiple(
-    agentNames: string[],
-    userText: string,
-  ): Promise<ConsensusInput[]> {
-    const tasks = agentNames
-      .filter((name) => name !== "orchestrator")
-      .map(async (name) => {
-        const url = await this.getAgentUrl(name);
-        if (!url) return null;
-        try {
-          // Deduct per-agent pricing from the target's budget before delegation.
-          if (this.budget) {
-            const card = await this.dynamicRegistry?.getCard(name);
-            if (card?.pricing) {
-              const costTokens = card.pricing.costPerTask + (card.pricing.costPerToken ?? 0) * userText.length;
-              await this.budget.consume(name, costTokens);
-            }
-          }
-          const response = await this.delegateTask(url, userText, name);
-          const card = await this.dynamicRegistry?.getCard(name);
-          if (!card) return null;
-          return { agentName: name, card, response } satisfies ConsensusInput;
-        } catch {
-          return null;
-        }
-      });
+			// --- ACL enforcement: caller must be allowed to invoke the routed agent ---
+			if (caller && caller.allowedAgents.length > 0) {
+				if (!caller.allowedAgents.includes(agentName)) {
+					const msg = `Caller "${caller.description}" is not authorized to invoke agent "${agentName}" (allowed: [${caller.allowedAgents.join(", ")}])`;
+					this.memory.append(`[acl] DENIED: ${msg}`);
+					throw new Error(msg);
+				}
+			}
 
-    const results = await Promise.all(tasks);
-    return results.filter((r): r is ConsensusInput => r !== null);
-  }
+			this.memory.append(
+				`[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}${caller ? ` (caller: ${caller.description})` : ""}`,
+			);
 
-  async executeConsensus(
-    taskId: string,
-    userText: string,
-    agentNames?: string[],
-  ): Promise<string> {
-    const available = await this.getAvailableAgentNames();
-    const participants = agentNames && agentNames.length > 0
-      ? available.filter((name) => agentNames.includes(name))
-      : available;
+			const agentUrl = await this.toolRouter.getAgentUrl(agentName);
+			if (!agentUrl)
+				throw new Error(`No URL configured for agent: ${agentName}`);
 
-    if (participants.length < 2) {
-      const agentName = participants[0] ?? "librarian";
-      const url = await this.getAgentUrl(agentName);
-      if (!url) return "No agents available for consensus";
-      if (this.budget) {
-        const card = await this.dynamicRegistry?.getCard(agentName);
-        if (card?.pricing) {
-          const costTokens = card.pricing.costPerTask + (card.pricing.costPerToken ?? 0) * userText.length;
-          await this.budget.consume(agentName, costTokens);
-        }
-      }
-      return this.delegateTask(url, userText, agentName);
-    }
+			// Deduct per-agent pricing from the target's budget before delegation.
+			const budget = this.toolRouter.cfg.budget;
+			if (budget) {
+				const card = await this.toolRouter.getCard(agentName);
+				if (card?.pricing) {
+					const costPerTask = card.pricing.costPerTask;
+					const costPerToken = card.pricing.costPerToken ?? 0;
+					const costTokens =
+						costPerTask +
+						costPerToken * Math.max(1, Math.ceil(augmentedText.length / 4));
+					await budget.consume(agentName, costTokens);
+					this.memory.append(
+						`[depth=${depth}] Budget: deducted ${costTokens} tokens from ${agentName} (pricing=${JSON.stringify(card.pricing)})`,
+					);
+				}
+			}
 
-    this.memory.append(`[consensus] Delegating to ${participants.length} agents`);
-    const inputs = await this.delegateToMultiple(participants, userText);
+			let result = await this.toolRouter.delegateTask(
+				agentUrl,
+				augmentedText,
+				agentName,
+			);
 
-    if (inputs.length === 0) return "No agents responded";
+			const handover = decodeHandover(result);
 
-    const result = await this.cognitiveLoop.evaluate(inputs, userText);
-    const topScore = result.scores[0]?.score.toFixed(3) ?? "N/A";
-    this.memory.append(
-      `[consensus] Winner: ${result.winner.agentName} (score: ${topScore})`,
-    );
+			if (handover && depth < MAX_HANDOVER_DEPTH) {
+				this.memory.append(
+					`[depth=${depth}] Handover detected: ${agentName} → ${handover.transferTo} (${handover.reason})`,
+				);
 
-    return result.synthesized;
-  }
+				this.taskStore.appendMessage(taskId, {
+					messageId: crypto.randomUUID(),
+					role: "agent",
+					kind: "message",
+					parts: [
+						{
+							kind: "text",
+							text: result.replace(/%%HANDOVER%%.*$/, "").trim(),
+						},
+					],
+					contextId: taskId,
+				} as A2AMessage);
 
-  async execute(taskId: string, userText: string): Promise<void> {
-    return this.executeWithDepth(taskId, userText, 0);
-  }
+				const childTaskId = crypto.randomUUID();
+				this.taskStore.create(childTaskId);
+				this.taskStore.updateState(taskId, "working");
 
-  private async executeWithDepth(
-    taskId: string,
-    userText: string,
-    depth: number,
-    referenceTaskIds: string[] = [],
-    forcedAgentName?: string,
-  ): Promise<void> {
-    // Emit task:created at entry — the lifecycle signal that a task has been received
-    // and is about to be worked on. Clients subscribed to the task room use this to
-    // show task appearance before any progress is reported.
-    this.emitTaskCreated(taskId, "JABIR");
+				const childUserText = handover.context || userText;
 
-    try {
-      this.taskStore.updateState(taskId, "working");
-      this.emitTaskProgress(taskId, 5, "queued");
+				// Honor the explicit transferTo target when resolvable; otherwise fall back
+				// to registry re-routing (the context text may route better on its own).
+				let childForcedAgentName: string | undefined;
+				if (handover.transferTo) {
+					const targetUrl = await this.toolRouter.getAgentUrl(
+						handover.transferTo,
+					);
+					if (targetUrl) {
+						childForcedAgentName = handover.transferTo;
+					} else {
+						this.memory.append(
+							`[depth=${depth}] Handover target "${handover.transferTo}" not resolvable — re-routing via registry`,
+						);
+					}
+				}
+				this.taskStore.appendMessage(childTaskId, {
+					messageId: crypto.randomUUID(),
+					role: "user",
+					kind: "message",
+					parts: [{ kind: "text", text: childUserText }],
+					contextId: childTaskId,
+					referenceTaskIds: [taskId, ...referenceTaskIds],
+				} as A2AMessage);
 
-      let augmentedText = userText;
-      if (this.knowledge && depth === 0) {
-        try {
-          const palaceContext = await this.knowledge.query(userText, 3);
-          if (palaceContext.length > 0) {
-            const contextSummary = palaceContext
-              .map((c) => `[Palace Knowledge: ${c.slug}]\n${c.content}`)
-              .join("\n\n");
-            augmentedText = `${contextSummary}\n\nUser Task: ${userText}`;
-            this.memory.append(`[palace] Augmented query with ${palaceContext.length} knowledge entries`);
-          }
-        } catch (e) {
-          console.error("Palace query error:", e);
-        }
-      }
+				await this.executeWithDepth(
+					childTaskId,
+					childUserText,
+					depth + 1,
+					caller,
+					[taskId, ...referenceTaskIds],
+					childForcedAgentName,
+					{
+						title: taskMeta?.title ?? userText.slice(0, 80),
+						assignee: childForcedAgentName ?? assignee,
+						priority: taskMeta?.priority ?? 0,
+						startedAt: taskMeta?.startedAt,
+						retryCount: taskMeta?.retryCount ?? 0,
+					},
+				);
 
-      const routed = forcedAgentName
-        ? { agentName: forcedAgentName, label: forcedAgentName }
-        : await this.routeTask(userText);
-      if (!routed) {
-        throw new Error("No agents discovered — cannot route task");
-      }
-      const { agentName, label } = routed;
-      this.memory.append(
-        `[depth=${depth}] Routed "${userText.slice(0, 60)}" to ${label}`,
-      );
+				const childTask = this.taskStore.get(childTaskId);
+				const childResult =
+					childTask?.messages
+						.filter((m) => m.role === "agent")
+						.map((m) =>
+							m.parts
+								.filter((p) => p.kind === "text")
+								.map((p) => p.text)
+								.join(""),
+						)
+						.join("\n") ?? "";
 
-      const agentUrl = await this.getAgentUrl(agentName);
-      if (!agentUrl) throw new Error(`No URL configured for agent: ${agentName}`);
+				this.taskStore.updateState(taskId, "completed");
+				this.taskStore.appendMessage(taskId, {
+					messageId: crypto.randomUUID(),
+					role: "agent",
+					kind: "message",
+					parts: [{ kind: "text", text: childResult }],
+					contextId: taskId,
+					referenceTaskIds: [childTaskId],
+				} as A2AMessage);
+				this.memory.append(
+					`[depth=${depth}] Handover chain completed. Result length: ${childResult.length} chars`,
+				);
+				this.toolRouter.emitTaskCompleted(taskId, childResult, {
+					startedAt: taskMeta?.startedAt,
+					title: taskMeta?.title ?? userText.slice(0, 80),
+					assignee,
+					priority: taskMeta?.priority ?? 0,
+				});
+				return;
+			}
 
-      // Deduct per-agent pricing from the target's budget before delegation.
-      if (this.budget) {
-        const card = await this.dynamicRegistry?.getCard(agentName);
-        if (card?.pricing) {
-          const costPerTask = card.pricing.costPerTask;
-          const costPerToken = card.pricing.costPerToken ?? 0;
-          const costTokens = costPerTask + costPerToken * augmentedText.length;
-          await this.budget.consume(agentName, costTokens);
-          this.memory.append(
-            `[depth=${depth}] Budget: deducted ${costTokens} tokens from ${agentName} (pricing=${JSON.stringify(card.pricing)})`,
-          );
-        }
-      }
+			if (handover && depth >= MAX_HANDOVER_DEPTH) {
+				this.memory.append(
+					`[depth=${depth}] Max handover depth (${MAX_HANDOVER_DEPTH}) reached. Completing with available result.`,
+				);
+				result = result.replace(/%%HANDOVER%%.*$/, "").trim() || result;
+			}
 
-      let result = await this.delegateTask(agentUrl, augmentedText, agentName);
+			this.taskStore.updateState(taskId, "completed");
+			this.taskStore.appendMessage(taskId, {
+				messageId: crypto.randomUUID(),
+				role: "agent",
+				kind: "message",
+				parts: [{ kind: "text", text: result }],
+				contextId: taskId,
+			} as A2AMessage);
+			this.memory.append(
+				`Completed task. Result length: ${result.length} chars`,
+			);
 
-      const handover = decodeHandover(result);
+			this.toolRouter.emitTaskCompleted(taskId, result, {
+				startedAt: taskMeta?.startedAt,
+				title: taskMeta?.title ?? userText.slice(0, 80),
+				assignee,
+				priority: taskMeta?.priority ?? 0,
+			});
 
-      if (handover && depth < MAX_HANDOVER_DEPTH) {
-        this.memory.append(
-          `[depth=${depth}] Handover detected: ${agentName} → ${handover.transferTo} (${handover.reason})`,
-        );
+			await this.toolRouter.syncToKanban(this.taskStore, taskId, result);
+		} catch (e) {
+			this.taskStore.updateState(taskId, "failed");
+			this.taskStore.appendMessage(taskId, {
+				messageId: crypto.randomUUID(),
+				role: "agent",
+				kind: "message",
+				parts: [{ kind: "text", text: `Error: ${String(e)}` }],
+				contextId: taskId,
+			} as A2AMessage);
 
-        this.taskStore.appendMessage(taskId, {
-          messageId: crypto.randomUUID(),
-          role: "agent",
-          kind: "message",
-          parts: [{ kind: "text", text: result.replace(/%%HANDOVER%%.*$/, "").trim() }],
-          contextId: taskId,
-        } as A2AMessage);
-
-        const childTaskId = crypto.randomUUID();
-        this.taskStore.create(childTaskId);
-        this.taskStore.updateState(taskId, "working");
-
-        const childUserText = handover.context || userText;
-
-        // Honor the explicit transferTo target when resolvable; otherwise fall back
-        // to registry re-routing (the context text may route better on its own).
-        let forcedAgentName: string | undefined;
-        if (handover.transferTo) {
-          const targetUrl = await this.getAgentUrl(handover.transferTo);
-          if (targetUrl) {
-            forcedAgentName = handover.transferTo;
-          } else {
-            this.memory.append(
-              `[depth=${depth}] Handover target "${handover.transferTo}" not resolvable — re-routing via registry`,
-            );
-          }
-        }
-        this.taskStore.appendMessage(childTaskId, {
-          messageId: crypto.randomUUID(),
-          role: "user",
-          kind: "message",
-          parts: [{ kind: "text", text: childUserText }],
-          contextId: childTaskId,
-          referenceTaskIds: [taskId, ...referenceTaskIds],
-        } as A2AMessage);
-
-        await this.executeWithDepth(
-          childTaskId,
-          childUserText,
-          depth + 1,
-          [taskId, ...referenceTaskIds],
-          forcedAgentName,
-        );
-
-        const childTask = this.taskStore.get(childTaskId);
-        const childResult =
-          childTask?.messages
-            .filter((m) => m.role === "agent")
-            .map((m) => m.parts.filter((p) => p.kind === "text").map((p) => p.text).join(""))
-            .join("\n") ?? "";
-
-        this.taskStore.updateState(taskId, "completed");
-        this.taskStore.appendMessage(taskId, {
-          messageId: crypto.randomUUID(),
-          role: "agent",
-          kind: "message",
-          parts: [{ kind: "text", text: childResult }],
-          contextId: taskId,
-          referenceTaskIds: [childTaskId],
-        } as A2AMessage);
-        this.memory.append(
-          `[depth=${depth}] Handover chain completed. Result length: ${childResult.length} chars`,
-        );
-        this.emitTaskCompleted(taskId, childResult);
-        return;
-      }
-
-      if (handover && depth >= MAX_HANDOVER_DEPTH) {
-        this.memory.append(
-          `[depth=${depth}] Max handover depth (${MAX_HANDOVER_DEPTH}) reached. Completing with available result.`,
-        );
-        result = result.replace(/%%HANDOVER%%.*$/, "").trim() || result;
-      }
-
-      this.taskStore.updateState(taskId, "completed");
-      this.taskStore.appendMessage(taskId, {
-        messageId: crypto.randomUUID(),
-        role: "agent",
-        kind: "message",
-        parts: [{ kind: "text", text: result }],
-        contextId: taskId,
-      } as A2AMessage);
-      this.memory.append(`Completed task. Result length: ${result.length} chars`);
-
-      // Emit lifecycle event for subscribed clients.
-      this.emitTaskCompleted(taskId, result);
-
-      // Sync completed task to Hermes kanban
-      await this.syncToKanban(taskId, result);
-    } catch (e) {
-      this.taskStore.updateState(taskId, "failed");
-      this.taskStore.appendMessage(taskId, {
-        messageId: crypto.randomUUID(),
-        role: "agent",
-        kind: "message",
-        parts: [{ kind: "text", text: `Error: ${String(e)}` }],
-        contextId: taskId,
-      } as A2AMessage);
-
-      // Emit lifecycle event for subscribed clients.
-      this.emitTaskFailed(taskId, String(e));
-    }
-  }
-
-  private async syncToKanban(taskId: string, result: string): Promise<void> {
-    if (!this.kanban) return;
-    try {
-      const task = this.taskStore.get(taskId);
-      if (!task) return;
-      const title = task.messages.find((m) => m.role === "user")?.parts.find((p) => p.kind === "text")?.text ?? "Jabr task";
-      await this.kanban.createTask(`[Jabr] ${title.slice(0, 80)}`, {
-        body: `Task ID: ${taskId}\nResult: ${result.slice(0, 500)}`,
-      });
-    } catch (err) {
-      console.error("[Orchestrator] Kanban sync failed:", err);
-    }
-  }
-
-  // ---- realtime lifecycle emissions ----
-
-  /** Emit task:created to the task's room. */
-  private emitTaskCreated(taskId: string, agent: string): void {
-    if (!this.realtime) return;
-    this.realtime.emitTo(`task-${taskId}`, {
-      type: "task:created",
-      taskId,
-      agent,
-    });
-  }
-
-  /** Emit task:progress to the task's room. */
-  private emitTaskProgress(taskId: string, percent: number, message: string): void {
-    if (!this.realtime) return;
-    this.realtime.emitTo(`task-${taskId}`, {
-      type: "task:progress",
-      taskId,
-      percent,
-      message,
-    });
-  }
-
-  /** Emit task:completed to the task's room. */
-  private emitTaskCompleted(taskId: string, result: unknown): void {
-    if (!this.realtime) return;
-    this.realtime.emitTo(`task-${taskId}`, {
-      type: "task:completed",
-      taskId,
-      result,
-    });
-  }
-
-  /** Emit task:failed to the task's room. */
-  private emitTaskFailed(taskId: string, error: string): void {
-    if (!this.realtime) return;
-    this.realtime.emitTo(`task-${taskId}`, {
-      type: "task:failed",
-      taskId,
-      error,
-    });
-  }
+			const isTimeout = /timeout/i.test(String(e));
+			const isCancellation = /cancel/i.test(String(e));
+			this.toolRouter.emitTaskFailed(taskId, String(e), {
+				startedAt: taskMeta?.startedAt,
+				title: taskMeta?.title ?? userText.slice(0, 80),
+				assignee,
+				priority: taskMeta?.priority ?? 0,
+				retryable: isTimeout && !isCancellation,
+				retryCount: taskMeta?.retryCount ?? 0,
+			});
+		}
+	}
 }

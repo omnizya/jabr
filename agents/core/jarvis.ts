@@ -1,157 +1,176 @@
 import type { AgentCard, SkillDocument } from "@agents/types";
-import type { TaskStorePort } from "@ports/task-store";
-import type { LlmPort } from "@ports/llm-port";
-import type { SearchPort } from "@ports/search-port";
-import type { McpToolPort } from "@ports/mcp-tool-port";
-import type { SkillStorePort } from "@ports/skill-store";
-import type { KnowledgePort } from "@ports/knowledge-port";
+import { jabrUrl } from "@config/jabr-config";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
+import type { KnowledgePort } from "@ports/knowledge-port";
+import type { LlmPort } from "@ports/llm-port";
+import type { McpToolPort } from "@ports/mcp-tool-port";
+import type { SearchPort } from "@ports/search-port";
+import type { SkillStorePort } from "@ports/skill-store";
+import type { TaskStorePort } from "@ports/task-store";
 
 export const JARVIS_CARD: AgentCard = {
-  name: "WAZIR",
-  description:
-    "WAZIR — The Steward. Proactive codebase steward — scans for improvements, generates profiles, watches dependencies, identifies AI/automation opportunities.",
-  url: "",
-  version: "1.0.0",
-  capabilities: { streaming: true, pushNotifications: false },
-  skills: [
-    {
-      name: "Codebase scan",
-      description: "Detects anti-patterns, dead code, complexity hotspots, and security risks",
-      tags: ["scan", "audit", "anti-pattern", "dead-code", "complexity", "security"],
-      inputModes: ["text"],
-      outputModes: ["text", "data"],
-    },
-    {
-      name: "Profile generation",
-      description: "Creates agent profiles and skills for recurring codebase patterns",
-      tags: ["profile", "agent-profile", "skill-creation", "pattern"],
-      inputModes: ["text"],
-      outputModes: ["text", "data"],
-    },
-    {
-      name: "Dependency watch",
-      description: "Monitors outdated packages, security advisories, and version drift",
-      tags: ["dependency", "outdated", "security", "audit", "package"],
-      inputModes: ["text"],
-      outputModes: ["text", "data"],
-    },
-    {
-      name: "Test gap analysis",
-      description: "Identifies untested paths, missing edge cases, and flaky tests",
-      tags: ["test", "coverage", "edge-case", "flaky", "gap"],
-      inputModes: ["text"],
-      outputModes: ["text", "data"],
-    },
-    {
-      name: "Doc sync",
-      description: "Detects docs diverged from code, missing READMEs, stale ADRs",
-      tags: ["doc", "readme", "adr", "changelog", "drift"],
-      inputModes: ["text"],
-      outputModes: ["text", "data"],
-    },
-    {
-      name: "AI enhancement",
-      description: "Identifies where LLMs/agents could automate workflows",
-      tags: ["ai", "llm", "automation", "agentic", "enhancement"],
-      inputModes: ["text"],
-      outputModes: ["text", "data"],
-    },
-  ],
-  pricing: { costPerTask: 50 },
+	name: "WAZIR",
+	description:
+		"WAZIR — The Steward. Proactive codebase steward — scans for improvements, generates profiles, watches dependencies, identifies AI/automation opportunities.",
+	url: "",
+	version: "1.0.0",
+	capabilities: {
+		streaming: true,
+		pushNotifications: false,
+		stateTransitionHistory: true,
+	},
+	securitySchemes: {},
+	securityRequirements: [],
+	skills: [
+		{
+			name: "Codebase scan",
+			description:
+				"Detects anti-patterns, dead code, complexity hotspots, and security risks",
+			tags: [
+				"scan",
+				"audit",
+				"anti-pattern",
+				"dead-code",
+				"complexity",
+				"security",
+			],
+			inputModes: ["text"],
+			outputModes: ["text", "data"],
+		},
+		{
+			name: "Profile generation",
+			description:
+				"Creates agent profiles and skills for recurring codebase patterns",
+			tags: ["profile", "agent-profile", "skill-creation", "pattern"],
+			inputModes: ["text"],
+			outputModes: ["text", "data"],
+		},
+		{
+			name: "Dependency watch",
+			description:
+				"Monitors outdated packages, security advisories, and version drift",
+			tags: ["dependency", "outdated", "security", "audit", "package"],
+			inputModes: ["text"],
+			outputModes: ["text", "data"],
+		},
+		{
+			name: "Test gap analysis",
+			description:
+				"Identifies untested paths, missing edge cases, and flaky tests",
+			tags: ["test", "coverage", "edge-case", "flaky", "gap"],
+			inputModes: ["text"],
+			outputModes: ["text", "data"],
+		},
+		{
+			name: "Doc sync",
+			description:
+				"Detects docs diverged from code, missing READMEs, stale ADRs",
+			tags: ["doc", "readme", "adr", "changelog", "drift"],
+			inputModes: ["text"],
+			outputModes: ["text", "data"],
+		},
+		{
+			name: "AI enhancement",
+			description: "Identifies where LLMs/agents could automate workflows",
+			tags: ["ai", "llm", "automation", "agentic", "enhancement"],
+			inputModes: ["text"],
+			outputModes: ["text", "data"],
+		},
+	],
+	pricing: { costPerTask: 50 },
 };
 
 export type FindingSeverity = "info" | "warn" | "critical";
 export type FindingCategory =
-  | "anti-pattern"
-  | "dead-code"
-  | "complexity"
-  | "security"
-  | "test-gap"
-  | "doc-drift"
-  | "ai-opportunity";
+	| "anti-pattern"
+	| "dead-code"
+	| "complexity"
+	| "security"
+	| "test-gap"
+	| "doc-drift"
+	| "ai-opportunity";
 
 export interface Finding {
-  severity: FindingSeverity;
-  category: FindingCategory;
-  file: string;
-  line?: number;
-  message: string;
-  suggestion: string;
-  autoFixable: boolean;
+	severity: FindingSeverity;
+	category: FindingCategory;
+	file: string;
+	line?: number;
+	message: string;
+	suggestion: string;
+	autoFixable: boolean;
 }
 
 export interface ScanReport {
-  timestamp: string;
-  workspacePath: string;
-  findings: Finding[];
-  profilesGenerated: SkillDocument[];
-  tasksCreated: string[];
+	timestamp: string;
+	workspacePath: string;
+	findings: Finding[];
+	profilesGenerated: SkillDocument[];
+	tasksCreated: string[];
 }
 
 export interface DependencyReport {
-  outdated: Array<{ name: string; current: string; latest: string }>;
-  securityAdvisories: Array<{ name: string; severity: string; title: string }>;
-  timestamp: string;
+	outdated: Array<{ name: string; current: string; latest: string }>;
+	securityAdvisories: Array<{ name: string; severity: string; title: string }>;
+	timestamp: string;
 }
 
 export interface TestGapReport {
-  untestedFiles: string[];
-  lowCoverageFiles: Array<{ file: string; coverage: number }>;
-  missingEdgeCases: Array<{ file: string; edgeCase: string }>;
-  timestamp: string;
+	untestedFiles: string[];
+	lowCoverageFiles: Array<{ file: string; coverage: number }>;
+	missingEdgeCases: Array<{ file: string; edgeCase: string }>;
+	timestamp: string;
 }
 
 export interface DocSyncReport {
-  missingReadmes: string[];
-  staleAdrs: Array<{ file: string; lastUpdated: string }>;
-  undocumentedFiles: string[];
-  timestamp: string;
+	missingReadmes: string[];
+	staleAdrs: Array<{ file: string; lastUpdated: string }>;
+	undocumentedFiles: string[];
+	timestamp: string;
 }
 
 export interface AIEnhancementReport {
-  opportunities: Array<{
-    file: string;
-    description: string;
-    effort: "low" | "medium" | "high";
-    impact: "low" | "medium" | "high";
-  }>;
-  timestamp: string;
+	opportunities: Array<{
+		file: string;
+		description: string;
+		effort: "low" | "medium" | "high";
+		impact: "low" | "medium" | "high";
+	}>;
+	timestamp: string;
 }
 
 export interface StewardReport {
-  scan: ScanReport;
-  dependencies: DependencyReport;
-  testGaps: TestGapReport;
-  docSync: DocSyncReport;
-  aiEnhancements: AIEnhancementReport;
-  summary: string;
+	scan: ScanReport;
+	dependencies: DependencyReport;
+	testGaps: TestGapReport;
+	docSync: DocSyncReport;
+	aiEnhancements: AIEnhancementReport;
+	summary: string;
 }
 
 export class JarvisAgent {
-  constructor(
-    private taskStore: TaskStorePort,
-    private llm: LlmPort,
-    private search: SearchPort,
-    private mcpTools: McpToolPort,
-    private skillStore: SkillStorePort,
-    private knowledge?: KnowledgePort,
-    private budget?: BudgetPort,
-    private kanban?: KanbanPort,
-    private agentEndpoint: string = "http://localhost:4000",
-  ) {}
+	constructor(
+		private taskStore: TaskStorePort,
+		private llm: LlmPort,
+		private search: SearchPort,
+		private mcpTools: McpToolPort,
+		private skillStore: SkillStorePort,
+		private knowledge?: KnowledgePort,
+		private budget?: BudgetPort,
+		private kanban?: KanbanPort,
+		private agentEndpoint: string = jabrUrl(),
+	) {}
 
-  get card(): AgentCard {
-    return JARVIS_CARD;
-  }
+	get card(): AgentCard {
+		return JARVIS_CARD;
+	}
 
-  async scanCodebase(workspacePath: string): Promise<ScanReport> {
-    const findings: Finding[] = [];
-    const profilesGenerated: SkillDocument[] = [];
-    const tasksCreated: string[] = [];
+	async scanCodebase(workspacePath: string): Promise<ScanReport> {
+		const findings: Finding[] = [];
+		const profilesGenerated: SkillDocument[] = [];
+		const tasksCreated: string[] = [];
 
-    const scanPrompt = `Analyze the codebase at ${workspacePath} for:
+		const scanPrompt = `Analyze the codebase at ${workspacePath} for:
 1. Anti-patterns (tight coupling, god objects, magic numbers)
 2. Dead code (unused exports, unreachable branches)
 3. Complexity hotspots (high cyclomatic complexity, deep nesting)
@@ -161,99 +180,97 @@ The Jabr agent/orchestrator endpoint (where MCP tools and other agents are reach
 
 Return a JSON array of findings: [{severity, category, file, line, message, suggestion, autoFixable}]`;
 
-    try {
-      const response = await this.llm.generate({
-        prompt: scanPrompt,
-        systemPrompt:
-          "You are a senior code auditor. Analyze code quality and return structured findings.",
-        maxTokens: 4000,
-      });
+		try {
+			const response = await this.llm.generate({
+				prompt: scanPrompt,
+				systemPrompt:
+					"You are a senior code auditor. Analyze code quality and return structured findings.",
+				maxTokens: 4000,
+			});
 
-      const parsed = this.extractJson(response.text);
-      if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          findings.push({
-            severity: item.severity ?? "info",
-            category: item.category ?? "anti-pattern",
-            file: item.file ?? "unknown",
-            line: item.line,
-            message: item.message ?? "",
-            suggestion: item.suggestion ?? "",
-            autoFixable: item.autoFixable ?? false,
-          });
-        }
-      }
-    } catch (err) {
-      console.error("[Jarvis] Codebase scan LLM call failed:", err);
-    }
+			const parsed = this.extractJson(response.text);
+			if (Array.isArray(parsed)) {
+				for (const item of parsed) {
+					findings.push({
+						severity: item.severity ?? "info",
+						category: item.category ?? "anti-pattern",
+						file: item.file ?? "unknown",
+						line: item.line,
+						message: item.message ?? "",
+						suggestion: item.suggestion ?? "",
+						autoFixable: item.autoFixable ?? false,
+					});
+				}
+			}
+		} catch (err) {
+			console.error("[Jarvis] Codebase scan LLM call failed:", err);
+		}
 
-    const profile = this.extractProfileFromFindings(findings);
-    if (profile) {
-      const slug = `jarvis-scan-${Date.now()}`;
-      if (!this.skillStore.exists(slug)) {
-        this.skillStore.save(slug, profile);
-        profilesGenerated.push(profile);
-      }
-    }
+		const profile = this.extractProfileFromFindings(findings);
+		if (profile) {
+			const slug = `jarvis-scan-${Date.now()}`;
+			if (!this.skillStore.exists(slug)) {
+				this.skillStore.save(slug, profile);
+				profilesGenerated.push(profile);
+			}
+		}
 
-    return {
-      timestamp: new Date().toISOString(),
-      workspacePath,
-      findings,
-      profilesGenerated,
-      tasksCreated,
-    };
-  }
+		return {
+			timestamp: new Date().toISOString(),
+			workspacePath,
+			findings,
+			profilesGenerated,
+			tasksCreated,
+		};
+	}
 
-  async watchDependencies(
-    workspacePath: string,
-  ): Promise<DependencyReport> {
-    const outdated: DependencyReport["outdated"] = [];
-    const securityAdvisories: DependencyReport["securityAdvisories"] = [];
+	async watchDependencies(workspacePath: string): Promise<DependencyReport> {
+		const outdated: DependencyReport["outdated"] = [];
+		const securityAdvisories: DependencyReport["securityAdvisories"] = [];
 
-    try {
-      const result = await this.mcpTools.callTool("read_file", {
-        path: `${workspacePath}/package.json`,
-      });
+		try {
+			const result = await this.mcpTools.callTool("read_file", {
+				path: `${workspacePath}/package.json`,
+			});
 
-      if (!result.isError && result.content) {
-        // MCP read_file returns "File: ${path}\n\n${content}" — extract JSON
-        const raw = result.content;
-        const jsonStart = raw.indexOf("{");
-        const jsonEnd = raw.lastIndexOf("}");
-        if (jsonStart !== -1 && jsonEnd > jsonStart) {
-          const pkg = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-          const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+			if (!result.isError && result.content) {
+				// MCP read_file returns "File: ${path}\n\n${content}" — extract JSON
+				const raw = result.content;
+				const jsonStart = raw.indexOf("{");
+				const jsonEnd = raw.lastIndexOf("}");
+				if (jsonStart !== -1 && jsonEnd > jsonStart) {
+					const pkg = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+					const deps = { ...pkg.dependencies, ...pkg.devDependencies };
 
-          for (const [name, version] of Object.entries(deps)) {
-            const latest = await this.fetchLatestVersion(name);
-            if (latest && latest !== version) {
-              outdated.push({
-                name,
-                current: version as string,
-                latest,
-              });
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error("[Jarvis] Dependency watch failed:", err);
-    }
+					for (const [name, version] of Object.entries(deps)) {
+						const latest = await this.fetchLatestVersion(name);
+						if (latest && latest !== version) {
+							outdated.push({
+								name,
+								current: version as string,
+								latest,
+							});
+						}
+					}
+				}
+			}
+		} catch (err) {
+			console.error("[Jarvis] Dependency watch failed:", err);
+		}
 
-    return {
-      outdated,
-      securityAdvisories,
-      timestamp: new Date().toISOString(),
-    };
-  }
+		return {
+			outdated,
+			securityAdvisories,
+			timestamp: new Date().toISOString(),
+		};
+	}
 
-  async analyzeTestGaps(workspacePath: string): Promise<TestGapReport> {
-    const untestedFiles: string[] = [];
-    const lowCoverageFiles: TestGapReport["lowCoverageFiles"] = [];
-    const missingEdgeCases: TestGapReport["missingEdgeCases"] = [];
+	async analyzeTestGaps(workspacePath: string): Promise<TestGapReport> {
+		const untestedFiles: string[] = [];
+		const lowCoverageFiles: TestGapReport["lowCoverageFiles"] = [];
+		const missingEdgeCases: TestGapReport["missingEdgeCases"] = [];
 
-    const gapPrompt = `Analyze test coverage for the codebase at ${workspacePath}.
+		const gapPrompt = `Analyze test coverage for the codebase at ${workspacePath}.
 Identify:
 1. Source files with no corresponding test files
 2. Files with low test coverage (< 50%)
@@ -261,44 +278,44 @@ Identify:
 
 Return JSON: {untestedFiles[], lowCoverageFiles[{file, coverage}], missingEdgeCases[{file, edgeCase}]}`;
 
-    try {
-      const response = await this.llm.generate({
-        prompt: gapPrompt,
-        systemPrompt:
-          "You are a test coverage analyst. Identify gaps in test coverage.",
-        maxTokens: 3000,
-      });
+		try {
+			const response = await this.llm.generate({
+				prompt: gapPrompt,
+				systemPrompt:
+					"You are a test coverage analyst. Identify gaps in test coverage.",
+				maxTokens: 3000,
+			});
 
-      const parsed = this.extractJson(response.text);
-      if (parsed) {
-        if (Array.isArray(parsed.untestedFiles)) {
-          untestedFiles.push(...parsed.untestedFiles);
-        }
-        if (Array.isArray(parsed.lowCoverageFiles)) {
-          lowCoverageFiles.push(...parsed.lowCoverageFiles);
-        }
-        if (Array.isArray(parsed.missingEdgeCases)) {
-          missingEdgeCases.push(...parsed.missingEdgeCases);
-        }
-      }
-    } catch (err) {
-      console.error("[Jarvis] Test gap analysis failed:", err);
-    }
+			const parsed = this.extractJson(response.text);
+			if (parsed) {
+				if (Array.isArray(parsed.untestedFiles)) {
+					untestedFiles.push(...parsed.untestedFiles);
+				}
+				if (Array.isArray(parsed.lowCoverageFiles)) {
+					lowCoverageFiles.push(...parsed.lowCoverageFiles);
+				}
+				if (Array.isArray(parsed.missingEdgeCases)) {
+					missingEdgeCases.push(...parsed.missingEdgeCases);
+				}
+			}
+		} catch (err) {
+			console.error("[Jarvis] Test gap analysis failed:", err);
+		}
 
-    return {
-      untestedFiles,
-      lowCoverageFiles,
-      missingEdgeCases,
-      timestamp: new Date().toISOString(),
-    };
-  }
+		return {
+			untestedFiles,
+			lowCoverageFiles,
+			missingEdgeCases,
+			timestamp: new Date().toISOString(),
+		};
+	}
 
-  async syncDocs(workspacePath: string): Promise<DocSyncReport> {
-    const missingReadmes: string[] = [];
-    const staleAdrs: DocSyncReport["staleAdrs"] = [];
-    const undocumentedFiles: string[] = [];
+	async syncDocs(workspacePath: string): Promise<DocSyncReport> {
+		const missingReadmes: string[] = [];
+		const staleAdrs: DocSyncReport["staleAdrs"] = [];
+		const undocumentedFiles: string[] = [];
 
-    const docPrompt = `Check documentation health for the codebase at ${workspacePath}.
+		const docPrompt = `Check documentation health for the codebase at ${workspacePath}.
 Identify:
 1. Directories missing README.md
 2. ADRs (Architecture Decision Records) that are stale (> 6 months old)
@@ -306,44 +323,44 @@ Identify:
 
 Return JSON: {missingReadmes[], staleAdrs[{file, lastUpdated}], undocumentedFiles[]}`;
 
-    try {
-      const response = await this.llm.generate({
-        prompt: docPrompt,
-        systemPrompt:
-          "You are a documentation specialist. Identify documentation gaps.",
-        maxTokens: 3000,
-      });
+		try {
+			const response = await this.llm.generate({
+				prompt: docPrompt,
+				systemPrompt:
+					"You are a documentation specialist. Identify documentation gaps.",
+				maxTokens: 3000,
+			});
 
-      const parsed = this.extractJson(response.text);
-      if (parsed) {
-        if (Array.isArray(parsed.missingReadmes)) {
-          missingReadmes.push(...parsed.missingReadmes);
-        }
-        if (Array.isArray(parsed.staleAdrs)) {
-          staleAdrs.push(...parsed.staleAdrs);
-        }
-        if (Array.isArray(parsed.undocumentedFiles)) {
-          undocumentedFiles.push(...parsed.undocumentedFiles);
-        }
-      }
-    } catch (err) {
-      console.error("[Jarvis] Doc sync failed:", err);
-    }
+			const parsed = this.extractJson(response.text);
+			if (parsed) {
+				if (Array.isArray(parsed.missingReadmes)) {
+					missingReadmes.push(...parsed.missingReadmes);
+				}
+				if (Array.isArray(parsed.staleAdrs)) {
+					staleAdrs.push(...parsed.staleAdrs);
+				}
+				if (Array.isArray(parsed.undocumentedFiles)) {
+					undocumentedFiles.push(...parsed.undocumentedFiles);
+				}
+			}
+		} catch (err) {
+			console.error("[Jarvis] Doc sync failed:", err);
+		}
 
-    return {
-      missingReadmes,
-      staleAdrs,
-      undocumentedFiles,
-      timestamp: new Date().toISOString(),
-    };
-  }
+		return {
+			missingReadmes,
+			staleAdrs,
+			undocumentedFiles,
+			timestamp: new Date().toISOString(),
+		};
+	}
 
-  async identifyAIEnhancements(
-    workspacePath: string,
-  ): Promise<AIEnhancementReport> {
-    const opportunities: AIEnhancementReport["opportunities"] = [];
+	async identifyAIEnhancements(
+		workspacePath: string,
+	): Promise<AIEnhancementReport> {
+		const opportunities: AIEnhancementReport["opportunities"] = [];
 
-    const aiPrompt = `Identify AI/LLM automation opportunities in the codebase at ${workspacePath}.
+		const aiPrompt = `Identify AI/LLM automation opportunities in the codebase at ${workspacePath}.
 Look for:
 1. Repetitive code patterns that could be generated
 2. Manual review processes that could be automated
@@ -355,226 +372,232 @@ The Jabr agent/orchestrator endpoint (where automation agents are reachable to d
 
 Return JSON: {opportunities[{file, description, effort, impact}]}`;
 
-    try {
-      const response = await this.llm.generate({
-        prompt: aiPrompt,
-        systemPrompt:
-          "You are an AI automation consultant. Identify where LLMs can improve developer workflows.",
-        maxTokens: 3000,
-      });
+		try {
+			const response = await this.llm.generate({
+				prompt: aiPrompt,
+				systemPrompt:
+					"You are an AI automation consultant. Identify where LLMs can improve developer workflows.",
+				maxTokens: 3000,
+			});
 
-      const parsed = this.extractJson(response.text);
-      if (parsed && Array.isArray(parsed.opportunities)) {
-        opportunities.push(...parsed.opportunities);
-      }
-    } catch (err) {
-      console.error("[Jarvis] AI enhancement identification failed:", err);
-    }
+			const parsed = this.extractJson(response.text);
+			if (parsed && Array.isArray(parsed.opportunities)) {
+				opportunities.push(...parsed.opportunities);
+			}
+		} catch (err) {
+			console.error("[Jarvis] AI enhancement identification failed:", err);
+		}
 
-    return {
-      opportunities,
-      timestamp: new Date().toISOString(),
-    };
-  }
+		return {
+			opportunities,
+			timestamp: new Date().toISOString(),
+		};
+	}
 
-  async steward(workspacePath: string): Promise<StewardReport> {
-    console.log(`[Jarvis] Starting steward scan of ${workspacePath}...`);
+	async steward(workspacePath: string): Promise<StewardReport> {
+		console.log(`[Jarvis] Starting steward scan of ${workspacePath}...`);
 
-    const [scan, dependencies, testGaps, docSync, aiEnhancements] =
-      await Promise.all([
-        this.scanCodebase(workspacePath),
-        this.watchDependencies(workspacePath),
-        this.analyzeTestGaps(workspacePath),
-        this.syncDocs(workspacePath),
-        this.identifyAIEnhancements(workspacePath),
-      ]);
+		const [scan, dependencies, testGaps, docSync, aiEnhancements] =
+			await Promise.all([
+				this.scanCodebase(workspacePath),
+				this.watchDependencies(workspacePath),
+				this.analyzeTestGaps(workspacePath),
+				this.syncDocs(workspacePath),
+				this.identifyAIEnhancements(workspacePath),
+			]);
 
-    const totalFindings =
-      scan.findings.length +
-      dependencies.outdated.length +
-      testGaps.untestedFiles.length +
-      docSync.missingReadmes.length +
-      aiEnhancements.opportunities.length;
+		const totalFindings =
+			scan.findings.length +
+			dependencies.outdated.length +
+			testGaps.untestedFiles.length +
+			docSync.missingReadmes.length +
+			aiEnhancements.opportunities.length;
 
-    const summary = `Steward scan complete: ${totalFindings} findings (${scan.findings.length} code quality, ${dependencies.outdated.length} outdated deps, ${testGaps.untestedFiles.length} untested files, ${docSync.missingReadmes.length} missing docs, ${aiEnhancements.opportunities.length} AI opportunities)`;
+		const summary = `Steward scan complete: ${totalFindings} findings (${scan.findings.length} code quality, ${dependencies.outdated.length} outdated deps, ${testGaps.untestedFiles.length} untested files, ${docSync.missingReadmes.length} missing docs, ${aiEnhancements.opportunities.length} AI opportunities)`;
 
-    console.log(`[Jarvis] ${summary}`);
+		console.log(`[Jarvis] ${summary}`);
 
-    if (this.knowledge) {
-      try {
-        await this.knowledge.store(
-          `jarvis-steward-${Date.now()}`,
-          summary,
-          ["jarvis", "steward", "scan"],
-        );
-      } catch (err) {
-        console.error("[Jarvis] Knowledge store failed:", err);
-      }
-    }
+		if (this.knowledge) {
+			try {
+				await this.knowledge.store(`jarvis-steward-${Date.now()}`, summary, [
+					"jarvis",
+					"steward",
+					"scan",
+				]);
+			} catch (err) {
+				console.error("[Jarvis] Knowledge store failed:", err);
+			}
+		}
 
-    // Sync findings to Hermes kanban as tasks
-    await this.syncFindingsToKanban(scan.findings);
+		// Sync findings to Hermes kanban as tasks
+		await this.syncFindingsToKanban(scan.findings);
 
-    return {
-      scan,
-      dependencies,
-      testGaps,
-      docSync,
-      aiEnhancements,
-      summary,
-    };
-  }
+		return {
+			scan,
+			dependencies,
+			testGaps,
+			docSync,
+			aiEnhancements,
+			summary,
+		};
+	}
 
-  async execute(taskId: string, userText: string): Promise<void> {
-    this.taskStore.updateState(taskId, "working");
-    const lower = userText.toLowerCase();
-    const workspace = process.cwd();
-    let text: string;
+	async execute(taskId: string, userText: string): Promise<void> {
+		this.taskStore.updateState(taskId, "working");
+		const lower = userText.toLowerCase();
+		const workspace = process.cwd();
+		let text: string;
 
-    if (lower.includes("scan") || lower.includes("steward")) {
-      const report = await this.steward(workspace);
-      text = `[Jarvis] ${report.summary}`;
-      console.log(text);
-    } else if (lower.includes("dependency") || lower.includes("package")) {
-      const report = await this.watchDependencies(workspace);
-      text = `[Jarvis] Dependency watch: ${report.outdated.length} outdated packages found.`;
-      console.log(text);
-    } else if (lower.includes("test") || lower.includes("coverage")) {
-      const report = await this.analyzeTestGaps(workspace);
-      text = `[Jarvis] Test gap analysis: ${report.untestedFiles.length} untested files, ${report.missingEdgeCases.length} missing edge cases.`;
-      console.log(text);
-    } else if (lower.includes("doc") || lower.includes("readme")) {
-      const report = await this.syncDocs(workspace);
-      text = `[Jarvis] Doc sync: ${report.missingReadmes.length} missing READMEs, ${report.staleAdrs.length} stale ADRs.`;
-      console.log(text);
-    } else if (lower.includes("ai") || lower.includes("automat")) {
-      const report = await this.identifyAIEnhancements(workspace);
-      text = `[Jarvis] AI enhancements: ${report.opportunities.length} opportunities identified.`;
-      console.log(text);
-    } else {
-      text = "[Jarvis] Jarvis ready. Commands: scan, dependencies, test gaps, docs, AI enhancements.";
-      console.log(text);
-    }
+		if (lower.includes("scan") || lower.includes("steward")) {
+			const report = await this.steward(workspace);
+			text = `[Jarvis] ${report.summary}`;
+			console.log(text);
+		} else if (lower.includes("dependency") || lower.includes("package")) {
+			const report = await this.watchDependencies(workspace);
+			text = `[Jarvis] Dependency watch: ${report.outdated.length} outdated packages found.`;
+			console.log(text);
+		} else if (lower.includes("test") || lower.includes("coverage")) {
+			const report = await this.analyzeTestGaps(workspace);
+			text = `[Jarvis] Test gap analysis: ${report.untestedFiles.length} untested files, ${report.missingEdgeCases.length} missing edge cases.`;
+			console.log(text);
+		} else if (lower.includes("doc") || lower.includes("readme")) {
+			const report = await this.syncDocs(workspace);
+			text = `[Jarvis] Doc sync: ${report.missingReadmes.length} missing READMEs, ${report.staleAdrs.length} stale ADRs.`;
+			console.log(text);
+		} else if (lower.includes("ai") || lower.includes("automat")) {
+			const report = await this.identifyAIEnhancements(workspace);
+			text = `[Jarvis] AI enhancements: ${report.opportunities.length} opportunities identified.`;
+			console.log(text);
+		} else {
+			text =
+				"[Jarvis] Jarvis ready. Commands: scan, dependencies, test gaps, docs, AI enhancements.";
+			console.log(text);
+		}
 
-    this.taskStore.updateState(taskId, "completed");
-    this.taskStore.appendMessage(taskId, {
-      messageId: crypto.randomUUID(),
-      role: "agent",
-      kind: "message",
-      parts: [{ kind: "text", text }],
-      contextId: taskId,
-      taskId,
-    });
-  }
+		this.taskStore.updateState(taskId, "completed");
+		this.taskStore.appendMessage(taskId, {
+			messageId: crypto.randomUUID(),
+			role: "agent",
+			kind: "message",
+			parts: [{ kind: "text", text }],
+			contextId: taskId,
+			taskId,
+		});
+	}
 
-  private extractJson(text: string): any {
-    const firstObj = text.indexOf("{");
-    const firstArr = text.indexOf("[");
+	private extractJson(text: string): any {
+		const firstObj = text.indexOf("{");
+		const firstArr = text.indexOf("[");
 
-    // Determine which top-level value ({ or [) appears first.
-    let start = -1;
-    let open = "";
-    let close = "";
-    if (firstObj === -1 && firstArr === -1) return null;
-    if (firstArr === -1 || (firstObj !== -1 && firstObj < firstArr)) {
-      start = firstObj;
-      open = "{";
-      close = "}";
-    } else {
-      start = firstArr;
-      open = "[";
-      close = "]";
-    }
+		// Determine which top-level value ({ or [) appears first.
+		let start = -1;
+		let open = "";
+		let close = "";
+		if (firstObj === -1 && firstArr === -1) return null;
+		if (firstArr === -1 || (firstObj !== -1 && firstObj < firstArr)) {
+			start = firstObj;
+			open = "{";
+			close = "}";
+		} else {
+			start = firstArr;
+			open = "[";
+			close = "]";
+		}
 
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i]!;
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (ch === "\\") {
-          escaped = true;
-        } else if (ch === '"') {
-          inString = false;
-        }
-        continue;
-      }
-      if (ch === '"') {
-        inString = true;
-        continue;
-      }
-      if (ch === open) {
-        depth++;
-      } else if (ch === close) {
-        depth--;
-        if (depth === 0) {
-          const slice = text.slice(start, i + 1);
-          try {
-            return JSON.parse(slice);
-          } catch {
-            return null;
-          }
-        }
-      }
-    }
-    return null;
-  }
+		let depth = 0;
+		let inString = false;
+		let escaped = false;
+		for (let i = start; i < text.length; i++) {
+			const ch = text[i]!;
+			if (inString) {
+				if (escaped) {
+					escaped = false;
+				} else if (ch === "\\") {
+					escaped = true;
+				} else if (ch === '"') {
+					inString = false;
+				}
+				continue;
+			}
+			if (ch === '"') {
+				inString = true;
+				continue;
+			}
+			if (ch === open) {
+				depth++;
+			} else if (ch === close) {
+				depth--;
+				if (depth === 0) {
+					const slice = text.slice(start, i + 1);
+					try {
+						return JSON.parse(slice);
+					} catch {
+						return null;
+					}
+				}
+			}
+		}
+		return null;
+	}
 
-  private async fetchLatestVersion(
-    packageName: string,
-  ): Promise<string | null> {
-    try {
-      const results = await this.search.search(`npm ${packageName} latest version`);
-      const snippet = results[0]?.snippet;
-      if (snippet) {
-        const match = snippet.match(
-          /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
-        );
-        return match?.[1] ?? null;
-      }
-    } catch {
-      // Fall through
-    }
-    return null;
-  }
+	private async fetchLatestVersion(
+		packageName: string,
+	): Promise<string | null> {
+		try {
+			const results = await this.search.search(
+				`npm ${packageName} latest version`,
+			);
+			const snippet = results[0]?.snippet;
+			if (snippet) {
+				const match = snippet.match(
+					/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
+				);
+				return match?.[1] ?? null;
+			}
+		} catch {
+			// Fall through
+		}
+		return null;
+	}
 
-  private extractProfileFromFindings(
-    findings: Finding[],
-  ): SkillDocument | null {
-    if (findings.length === 0) return null;
+	private extractProfileFromFindings(
+		findings: Finding[],
+	): SkillDocument | null {
+		if (findings.length === 0) return null;
 
-    const categories = [...new Set(findings.map((f) => f.category))];
-    const slug = `jarvis-pattern-${categories.join("-")}`;
+		const categories = [...new Set(findings.map((f) => f.category))];
+		const slug = `jarvis-pattern-${categories.join("-")}`;
 
-    return {
-      name: `Jarvis Pattern: ${categories.join(", ")}`,
-      description: `Auto-generated profile for recurring ${categories.join("/")} patterns detected by Jarvis scan.`,
-      tags: ["jarvis", "auto-generated", ...categories],
-      steps: [
-        "Run Jarvis codebase scan",
-        `Identify ${categories.join(", ")} patterns`,
-        "Review findings and prioritize fixes",
-        "Apply automated fixes where possible",
-        "Track improvements in kanban",
-      ],
-      createdAt: new Date().toISOString(),
-      usageCount: 1,
-      successRate: 1.0,
-    };
-  }
+		return {
+			name: `Jarvis Pattern: ${categories.join(", ")}`,
+			description: `Auto-generated profile for recurring ${categories.join("/")} patterns detected by Jarvis scan.`,
+			tags: ["jarvis", "auto-generated", ...categories],
+			steps: [
+				"Run Jarvis codebase scan",
+				`Identify ${categories.join(", ")} patterns`,
+				"Review findings and prioritize fixes",
+				"Apply automated fixes where possible",
+				"Track improvements in kanban",
+			],
+			createdAt: new Date().toISOString(),
+			usageCount: 1,
+			successRate: 1.0,
+		};
+	}
 
-  private async syncFindingsToKanban(findings: Finding[]): Promise<void> {
-    if (!this.kanban || findings.length === 0) return;
-    try {
-      for (const finding of findings.slice(0, 5)) {
-        await this.kanban.createTask(`[Jarvis] ${finding.category}: ${finding.message.slice(0, 60)}`, {
-          body: `${finding.suggestion}\n\nFile: ${finding.file}${finding.line ? `:${finding.line}` : ""}`,
-        });
-      }
-    } catch (err) {
-      console.error("[Jarvis] Kanban sync failed:", err);
-    }
-  }
+	private async syncFindingsToKanban(findings: Finding[]): Promise<void> {
+		if (!this.kanban || findings.length === 0) return;
+		try {
+			for (const finding of findings.slice(0, 5)) {
+				await this.kanban.createTask(
+					`[Jarvis] ${finding.category}: ${finding.message.slice(0, 60)}`,
+					{
+						body: `${finding.suggestion}\n\nFile: ${finding.file}${finding.line ? `:${finding.line}` : ""}`,
+					},
+				);
+			}
+		} catch (err) {
+			console.error("[Jarvis] Kanban sync failed:", err);
+		}
+	}
 }

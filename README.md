@@ -18,6 +18,7 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts`
 |----------|---------|
 | **[CANONICAL.md](./CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
 | **[TODO.md](./TODO.md)** | Task tracker — completed work + future phases |
+| **[R&D Roadmap](./docs/rd-roadmap.md)** | R&D opportunities from the dependency stack + opensrc source exploration |
 | **[AGENTS.md](./AGENTS.md)** | Agent-specific notes (internal) |
 
 ---
@@ -101,10 +102,40 @@ See [CANONICAL.md](./CANONICAL.md) for full protocol details.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NINEROUTER_URL` | `http://127.0.0.1:20128` | LLM gateway URL |
-| `NINEROUTER_KEY` | — | LLM API key |
-| `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
-| `ORCHESTRATOR_URL` | `http://localhost:4000` | ACP bridge target |
-| `JABR_TOKEN_CAP_<AGENT>` | `100000` | Per-agent token budget |
+|| `NINEROUTER_KEY` | — | LLM API key |
+|| `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
+|| `JABR_LLM_PROVIDER` | — | LLM provider selector: `vercel` (or set `VERCEL_AI_GATEWAY_KEY`) for Vercel AI Gateway, unset for 9Router |
+|| `VERCEL_AI_GATEWAY_KEY` | — | Vercel AI Gateway API key (also `AI_GATEWAY_API_KEY`) |
+|| `VERCEL_AI_GATEWAY_MODEL` | `minimax/minimax-m3` | Vercel model ID (resilient form survives Sept 6 free-period end) |
+|| `VERCEL_AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/v4/ai` | Vercel AI Gateway base URL (optional override) |
+|| `JABR_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL (any provider exposing `/chat/completions`) |
+|| `JABR_OPENAI_API_KEY` | — | OpenAI-compatible API key |
+|| `JABR_OPENAI_MODEL` | `gpt-4o` | OpenAI-compatible model |
+|| `JABR_URL` | `http://localhost:4000` | **Orchestrator endpoint (required)**. All agents read this. Legacy `ORCHESTRATOR_URL` still accepted. |
+|| `JABR_TOKEN_CAP_<AGENT>` | `100000` | Per-agent token budget |
+
+---
+
+## Supported LLM Providers
+
+The agent system is **provider-agnostic**. LLM adapters are selected through
+`createLlmAdapter()` in `agents/adapters/llm/factory.ts`; the default requires
+no billing. Each provider is opt-in via environment variables.
+
+| Provider | Adapter | Select with | Default model | Notes |
+|----------|---------|-------------|---------------|-------|
+| **9Router (OpenRouter)** | `NineRouterLlmAdapter` | *(default — no selection needed)* | `openrouter/minimax/minimax-m3:free` | Ongoing free tier via `NINEROUTER_URL`/`NINEROUTER_KEY`/`NINEROUTER_MODEL`. |
+| **OpenAI-compatible** | `OpenAiLlmAdapter` | `JABR_LLM_PROVIDER=openai` | `gpt-4o` | Generic adapter for any provider exposing `/chat/completions` (OpenAI, Together, Groq, local Ollama, etc.). Configure via `JABR_OPENAI_BASE_URL`/`JABR_OPENAI_API_KEY`/`JABR_OPENAI_MODEL`. |
+| **Vercel AI Gateway** | `VercelLlmAdapter` | `JABR_LLM_PROVIDER=vercel` **or** set `VERCEL_AI_GATEWAY_KEY` | `minimax/minimax-m3` | Uses the `ai` SDK (`generateText`/`streamText` + `createGateway`). Requires a Vercel AI Gateway key (billing applies). Resilient model form (`gateway.order=['gmicloud']`) survives free-period ends. |
+
+Selection logic (in `createLlmAdapter`):
+1. If `JABR_LLM_PROVIDER=openai` → **OpenAI-compatible** (`OpenAiLlmAdapter`).
+2. If `JABR_LLM_PROVIDER=vercel` **or** `VERCEL_AI_GATEWAY_KEY` (or `AI_GATEWAY_API_KEY`) is set → **Vercel AI Gateway**.
+3. Otherwise → **9Router (OpenRouter)**.
+
+To add a new provider, implement the `LlmPort` interface
+(`agents/ports/llm-port.ts`) as an adapter under `agents/adapters/llm/`, then
+extend the selection logic in `factory.ts`.
 
 ---
 
@@ -125,9 +156,15 @@ See [CANONICAL.md](./CANONICAL.md) for full protocol details.
 
 ---
 
-## Contributing
+## Scheduled Tasks
 
-This is an experimental research project. Contributions welcome but expect rapid iteration.
+| Task | Schedule | Purpose |
+|------|----------|---------|
+| `kb-maintenance` | Weekly, Sundays 03:00 | Deduplicates MemPalace entries (SHA-256, oldest wins), removes stale entries >90 days, validates JSON integrity, trims SQLite memory_log with VACUUM. Logs to `memory/cron-kb-maintenance.log`. Wrapper: `scripts/cron-kb-maintenance.sh`. |
+
+---
+
+## Contributing
 
 **Before contributing:**
 1. Read [CANONICAL.md](./CANONICAL.md)

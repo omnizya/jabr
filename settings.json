@@ -1,10 +1,10 @@
 {
-  "agent_servers": {
-    "jabr": {
-      "type": "custom",
-      "command": "bun",
-      "args": ["agents/acp-bridge.ts"],
-      "default_mode": "base"
-    }
-  }
+	"agent_servers": {
+		"jabr": {
+			"type": "custom",
+			"command": "bun",
+			"args": ["agents/acp-bridge.ts"],
+			"default_mode": "base"
+		}
+	}
 }

@@ -1,18 +1,15 @@
 {
-  "name": "protocol-research",
-  "description": "Auto-generated from task: \"Research the MCP and A2A protocols\"",
-  "tags": [
-    "auto",
-    "researcher"
-  ],
-  "steps": [
-    "Identify the protocol (MCP / A2A / ACP)",
-    "Fetch official spec from docs",
-    "Summarize transport layer",
-    "List key use cases",
-    "Return structured findings"
-  ],
-  "createdAt": "2026-08-26T20:41:47.456Z",
-  "usageCount": 1,
-  "successRate": 1
+	"name": "protocol-research",
+	"description": "Auto-generated from task: \"Research the MCP and A2A protocols\"",
+	"tags": ["auto", "researcher"],
+	"steps": [
+		"Identify the protocol (MCP / A2A / ACP)",
+		"Fetch official spec from docs",
+		"Summarize transport layer",
+		"List key use cases",
+		"Return structured findings"
+	],
+	"createdAt": "2026-08-26T20:41:47.456Z",
+	"usageCount": 1,
+	"successRate": 1
 }

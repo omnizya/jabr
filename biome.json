@@ -1,0 +1,62 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": ["**", "!!**/dist", "!!tests/adapters/elicitation-e2e.test.ts"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"style": {
+				"noNonNullAssertion": "off",
+				"useTemplate": "off",
+				"useImportType": "off",
+				"useNodejsImportProtocol": "off",
+				"useShorthandFunctionType": "off",
+				"useConst": "off",
+				"useExponentiationOperator": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "off",
+				"noGlobalIsNan": "off",
+				"noImplicitAnyLet": "off",
+				"noDuplicateObjectKeys": "off"
+			},
+			"correctness": {
+				"noUnusedImports": "off",
+				"noUnusedVariables": "off",
+				"noUnusedPrivateClassMembers": "off",
+				"useParseIntRadix": "off",
+				"noUnusedFunctionParameters": "off",
+				"noUnsafeOptionalChaining": "off"
+			},
+			"complexity": {
+				"useOptionalChain": "off",
+				"useLiteralKeys": "off",
+				"useArrowFunction": "off"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	}
+}

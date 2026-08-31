@@ -1,45 +1,71 @@
 {
-  "name": "@omnizya/jabr",
-  "description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
-  "version": "0.3.0",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "license": "MIT",
-  "author": {
-    "name": "Mohamed Moughamir",
-    "url": "https://moughamir.github.io",
-    "email": "moughamir@gmail.com"
-  },
-  "repository": {
-    "url": "github.com/omnizya/jabr"
-  },
-  "scripts": {
-    "orchestrator": "bun agents/run/orchestrator.ts",
-    "oracle": "bun agents/run/oracle.ts",
-    "librarian": "bun agents/run/librarian.ts",
-    "explorer": "bun agents/run/explorer.ts",
-    "designer": "bun agents/run/designer.ts",
-    "fixer": "bun agents/run/fixer.ts",
-    "jarvis": "bun agents/run/jarvis.ts",
-    "mcp": "bun mcp-servers/tools.ts",
-    "acp-bridge": "bun agents/run/acp-bridge.ts",
-    "demo": "bun run --parallel scripts/demo.ts",
-    "scientist": "bun agents/run/scientist.ts",
-    "dev": "bash scripts/dev.sh",
-    "cli": "bun scripts/jabr-cli.ts",
-    "test": "bun test",
-    "typecheck": "bun run tsc --noEmit"
-  },
-  "devDependencies": {
-    "@types/bun": "1.4.0"
-  },
-  "peerDependencies": {
-    "typescript": "^7"
-  },
-  "dependencies": {
-    "@a2a-js/sdk": "^1.1.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^4.4.3"
-  }
+	"name": "@omnizya/jabr",
+	"description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
+	"version": "0.4.0-pre-alpha",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"license": "MIT",
+	"author": {
+		"name": "Mohamed Moughamir",
+		"url": "https://moughamir.github.io",
+		"email": "moughamir@gmail.com"
+	},
+	"repository": {
+		"url": "github.com/omnizya/jabr"
+	},
+	"scripts": {
+		"orchestrator": "bun agents/run/orchestrator.ts",
+		"oracle": "bun agents/run/oracle.ts",
+		"librarian": "bun agents/run/librarian.ts",
+		"explorer": "bun agents/run/explorer.ts",
+		"designer": "bun agents/run/designer.ts",
+		"fixer": "bun agents/run/fixer.ts",
+		"jarvis": "bun agents/run/jarvis.ts",
+		"mcp": "bun mcp-servers/tools.ts",
+		"acp-bridge": "bun agents/run/acp-bridge.ts",
+		"demo": "bun run --parallel scripts/demo.ts",
+		"scientist": "bun agents/run/scientist.ts",
+		"verification": "bun agents/run/verification.ts",
+		"dev": "bash scripts/dev.sh",
+		"cli": "bun scripts/jabr-cli.ts",
+		"build": "bun scripts/build.ts",
+		"test": "bun test --path-ignore-patterns=\"tests/e2e-live.test.ts\"",
+		"test:e2e": "bun test tests/e2e-live.test.ts",
+		"typecheck": "bun run tsc --noEmit",
+		"types": "tsc --noEmit",
+		"lint": "biome lint .",
+		"format": "biome format --write .",
+		"validate": "tsc --noEmit && biome lint .",
+		"kb-maintenance": "bun scripts/kb-maintenance.ts",
+		"prepare": "husky"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.11",
+		"@types/bun": "^1.4.0",
+		"husky": "^9.1.7",
+		"lint-staged": "^17.4.1"
+	},
+	"peerDependencies": {
+		"typescript": "^7.0.2"
+	},
+	"dependencies": {
+		"@a2a-js/sdk": "^1.1.0",
+		"@faker-js/faker": "^10.6.0",
+		"@huggingface/transformers": "^4.2.0",
+		"@modelcontextprotocol/sdk": "^1.30.0",
+		"@tensorflow/tfjs-node": "^4.22.0",
+		"ai": "^7.0.85",
+		"brain.js": "^2.0.0-beta.24",
+		"headroom-ai": "^0.37.0",
+		"zod": "^4.4.3"
+	},
+	"trustedDependencies": [
+		"@tensorflow/tfjs-node",
+		"core-js",
+		"gl",
+		"onnxruntime-node",
+		"protobufjs",
+		"sharp"
+	]
 }

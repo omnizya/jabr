@@ -1,0 +1,173 @@
+{
+	"systemInstruction": "Moroccan-futurism concept art, kasbah-punk aesthetic, cinematic digital painting, intricate Islamic geometric patterns, glowing holographic HUD elements, alchemical gold and deep indigo night palette, zellige circuit traces, Tifinagh glyph accents, volumetric light through mashrabiya lattice, ArtStation quality, octane render, 4k detail. No text, no letters, no watermark, no signature.",
+	"assets": [
+		{
+			"id": "1",
+			"name": "JABIR — Master Orchestrator",
+			"filename": "jabir-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic character portrait of a real human male Moroccan operator with realistic skin texture and dark beard, standing in front of a glowing brass astrolabe console. Detailed human face and hands. A radiant golden core glows inside his chest. Wearing dark indigo silk robes embroidered with gold thread. Full human figure, low-angle hero shot, cinematic volumetric lighting, photorealistic digital painting."
+		},
+		{
+			"id": "2",
+			"name": "RUSHD — Rational Sage",
+			"filename": "rushd-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic character portrait of a real human elderly Moroccan man with a silver beard and detailed face, sitting cross-legged in a grand library. A floating illuminated book hovers before his hands. Wearing ivory woven robes with green trim. Realistic human features, warm golden sunlight filtering through carved screens, realistic digital art, centered composition."
+		},
+		{
+			"id": "3",
+			"name": "AL-KHWARIZMI — Algorithm Architect",
+			"filename": "al-khwarizmi-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic full-body shot of a young human male Moroccan software architect floating mid-air inside a stone chamber. Detailed facial expressions and realistic human hands manipulating glowing light formulas. Wearing deep indigo robes with metallic copper weaves, atmospheric lighting."
+		},
+		{
+			"id": "4",
+			"name": "AL-JAZARI — Cyber-Artisan",
+			"filename": "al-jazari-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic portrait of a male human engineer working with his hands on brass clockwork machinery in a workshop. Detailed human face, realistic skin details, wearing a leather apron over traditional robes, ambient workshop lighting, focused expressions."
+		},
+		{
+			"id": "5",
+			"name": "AL-ZAHRAWI — Surgical Repair Engineer",
+			"filename": "al-zahrawi-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic portrait of a male human physician surgeon with detailed facial features and realistic hands holding glowing surgical light tools. Clean medical studio backdrop, clear human posture and focus."
+		},
+		{
+			"id": "6",
+			"name": "IBN BATTUTA — Network Scout",
+			"filename": "ibn-battuta-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic full shot of a human male desert explorer standing on a sand dune under a starry sky, holding an astrolabe. Detailed human face partially covered by a desert scarf, realistic clothing fabric folds, desert night light."
+		},
+		{
+			"id": "7",
+			"name": "FATIMA — Knowledge System Architect",
+			"filename": "fatima-hero.png",
+			"category": "Operators",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic portrait of a human woman with regal facial features standing in an open courtyard. Detailed human face and expressive eyes, wearing emerald and gold formal robes, golden morning sunlight."
+		},
+		{
+			"id": "8",
+			"name": "JABIR — Avatar UI",
+			"filename": "jabir-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic close-up portrait of a real human male Moroccan system orchestrator with realistic skin texture, dark eyes, and a neat dark beard. Glowing golden core radiating softly from his chest beneath dark indigo robes with gold zellige embroidery. Soft cyan HUD light reflecting off his cheekbones. Majestic, focused gaze, photorealistic digital painting."
+		},
+		{
+			"id": "9",
+			"name": "RUSHD — Avatar UI",
+			"filename": "rushd-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic headshot portrait of an elderly human male scholar with a natural silver beard and detailed facial wrinkles. Wearing ivory woven robes with green trim. Serene and wise expression, warm golden light softly illuminating his face, shallow depth of field with blurred library arches in the background."
+		},
+		{
+			"id": "10",
+			"name": "AL-KHWARIZMI — Avatar UI",
+			"filename": "al-khwarizmi-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic square portrait of a young human male software architect with sharp facial features and intense focused eyes. Subtle cyan light formulas reflecting across his face and dark hood. Deep indigo backdrop, realistic skin tones, dramatic side-lighting."
+		},
+		{
+			"id": "11",
+			"name": "AL-JAZARI — Avatar UI",
+			"filename": "al-jazari-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic close-up portrait of a male human cyber-craftsman with realistic facial features and a light brass optical lens fitted over one eye. Amber workshop glow casting highlights on his face, dark atmospheric background, photorealistic detailing."
+		},
+		{
+			"id": "12",
+			"name": "AL-ZAHRAWI — Avatar UI",
+			"filename": "al-zahrawi-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic headshot portrait of a male human physician with a calm, precise expression and clear human features. A faint cyan diagnostic light halo hovers behind his head. Clean lighting, deep indigo backdrop, sharp focus on realistic eyes and skin."
+		},
+		{
+			"id": "13",
+			"name": "IBN BATTUTA — Avatar UI",
+			"filename": "ibn-battuta-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic square portrait of a human male desert traveler with weather-worn skin and intense eyes staring forward. Lower face wrapped in an indigo scarf, fine gold threads woven into the fabric. Starlight atmospheric glow, dramatic night lighting."
+		},
+		{
+			"id": "14",
+			"name": "FATIMA — Avatar UI",
+			"filename": "fatima-avatar.png",
+			"category": "Avatars",
+			"aspectRatio": "1:1",
+			"prompt": "Cinematic close-up portrait of a human woman with regal facial features and sharp, intelligent eyes. Wearing an ornate emerald and gold headpiece with zellige filigree. Golden morning light softly illuminating her face, photorealistic character digital painting."
+		},
+		{
+			"id": "15",
+			"name": "AL-QANTARA — Agent Transport Layer",
+			"filename": "al-qantara.png",
+			"category": "Environments",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic wide-angle interior shot of a grand futuristic bridge made of carved stone arches, polished brass astrolabe gears, and glowing blue zellige light-tracers spanning a vast indigo void. Tiny distant human figures in traditional robes walk along the bridge pathway, providing scale. Glowing energy packets pulse like lightning along the deck structures. Deep indigo shadows, volumetric atmospheric lighting, highly detailed octane architectural render."
+		},
+		{
+			"id": "16",
+			"name": "AL-ANBIQ — Context Refinery",
+			"filename": "al-anbiq.png",
+			"category": "Environments",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic interior shot of a massive alchemical computation refinery filled with towering illuminated glass alembics containing swirling golden light-fluid. A lone human engineer in dark robes stands on a raised metal catwalk inspecting glowing copper conduits that route distilled energy into central zellige storage cells. Dark kasbah laboratory, dramatic amber and emerald illumination, highly detailed physical materials."
+		},
+		{
+			"id": "17",
+			"name": "AL-MIZAN — Validation & Consensus Node",
+			"filename": "al-mizan.png",
+			"category": "Environments",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic architectural shot of a massive set of floating brass balance scales suspended in a grand arched hall, weighing two glowing holographic crystal nodes. A small group of human scholars stand on the mosaic floor far below, looking up in awe. Intricate zellige floor patterns radiate outward from the base. Perfectly symmetrical composition, regal and balanced lighting, photorealistic digital painting."
+		},
+		{
+			"id": "18",
+			"name": "SYSTEM HERO — Full Agent Council",
+			"filename": "system-hero.png",
+			"category": "Brand",
+			"aspectRatio": "16:9",
+			"prompt": "Cinematic wide group portrait of seven real human characters standing together in a grand Moroccan kasbah dome like an epic congress of heroes. Detailed human faces, realistic skin textures, and flowing indigo, ivory, and emerald robes woven with glowing gold threads. In the center, a human male leader stands at a glowing brass astrolabe console with a radiant light core in his chest, flanked by a diverse human council of male and female scholars, cyber-engineers, and desert explorers. Subtle holographic HUD elements and zellige circuits float around them as secondary background details. Epic volumetric god-rays piercing through mashrabiya screens, photorealistic digital painting, masterpiece."
+		},
+		{
+			"id": "19",
+			"name": "THE EMBLEM — Heraldic Seal",
+			"filename": "emblem.png",
+			"category": "Brand",
+			"aspectRatio": "1:1",
+			"prompt": "An 8-pointed khatam star rendered in glowing gold, its center an alchemical athanor core radiating light, a Tifinagh glyph woven into the center of the core. The star's points extend into zellige circuit traces. Two concentric astrolabe rings of engraved brass encircle the star, marked with fine geometric ticks. The emblem floats centered on a deep indigo background with a subtle hexagonal sector grid. Gold rim-light, symmetrical, flat-vector-meets-octane hybrid, clean silhouette readable at small size, heraldic emblem for a Moroccan-futurist AI system."
+		},
+		{
+			"id": "20",
+			"name": "THE COVER — OpenGraph Skyline",
+			"filename": "the-cover.png",
+			"category": "Brand",
+			"aspectRatio": "16:9",
+			"prompt": "A panoramic Moroccan-futurist skyline at dusk featuring fortified kasbah towers integrated with glowing gold antenna spires and holographic sky-projections. Deep indigo night sky filled with two crescent moons and subtle star charts. Cinematic 16:9 hero background."
+		},
+		{
+			"id": "21",
+			"name": "EMBLEM 512 — Hi-Res App Icon",
+			"filename": "emblem-512.png",
+			"category": "Brand",
+			"aspectRatio": "1:1",
+			"prompt": "High-resolution app icon seal, 8-pointed khatam star in polished brass and glowing gold, centered athanor core with clean Tifinagh ⵣ glyph, subtle cyan zellige glow lines, isolated on a clean deep indigo background, sharp contrast, iconic branding badge."
+		}
+	]
+}

@@ -61,6 +61,21 @@
 - [x] `getWorldState` uses `taskStore.listByState()` for real counts
 - [x] Verbose logging (A2A server+client, ACP bridge, DynamicRegistry, MCP tools)
 
+### Standalone Binary Build (2026-08-30) ✅
+- [x] `scripts/build.ts` compiles all 12 entry points into standalone executables (`bun run build`)
+- [x] Output to `dist/bin/` (gitignored); `--compile` + `--bytecode` for faster cold starts
+- [x] `bun run build -- <name>` builds a single target; `--list` shows targets
+- [x] `format: "esm"` required so bytecode (CommonJS default) doesn't reject top-level `await` in orchestrator/mcp
+- [x] Verified binaries boot: explorer/orchestrator A2A servers, mcp stdio server, cli help
+
+### Vercel AI Gateway LLM Adapter (2026-08-30) ✅
+- [x] `agents/adapters/llm/vercel.ts` — `VercelLlmAdapter implements LlmPort` via `ai` SDK `generateText`/`streamText` + `createGateway`
+- [x] Resilient model form: default `minimax/minimax-m3` + `providerOptions.gateway.order=['gmicloud']` (survives Sept 6 free-period end)
+- [x] `agents/adapters/llm/factory.ts` — `createLlmAdapter(budget?)` selects Vercel when `JABR_LLM_PROVIDER=vercel` or `VERCEL_AI_GATEWAY_KEY` set, else 9Router
+- [x] 5 run modules (orchestrator, oracle, fixer, jarvis, librarian) wired through the factory
+- [x] Budget consumed under `'vercel'` key; `LanguageModelUsage` mapped to LlmResponse usage
+- [x] `.env.example` + env tables updated (JABR_LLM_PROVIDER, VERCEL_AI_GATEWAY_KEY/MODEL/BASE_URL)
+
 ---
 
 ## Phase 1 — A2A v1.0 Compliance (2-3 weeks)
@@ -83,10 +98,11 @@
 - [ ] Implement `TaskArtifactUpdateEvent` stream
 
 ### Agent Card
-- [ ] Add `capabilities.streaming: true/false` flag
-- [ ] Add `capabilities.pushNotifications: true/false` flag
-- [ ] Add `capabilities.stateTransitionHistory: true/false` flag
-- [ ] Add `securityRequirements` array (`[oauth2, apiKey, mTLS, openid]`)
+- [x] Add `capabilities.streaming: true/false` flag
+- [x] Add `capabilities.pushNotifications: true/false` flag
+- [x] Add `capabilities.stateTransitionHistory: true/false` flag
+- [x] Add `securityRequirements` array (`[oauth2, apiKey, mTLS, openid]`)
+- [x] Add `securitySchemes` map (`SecurityScheme` union type)
 
 ### Typed Artifacts
 - [ ] Define typed `Artifact` types (not just text)

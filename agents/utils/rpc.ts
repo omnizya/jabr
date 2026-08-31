@@ -3,46 +3,58 @@
  */
 
 interface JSONRPCDefaults {
-  jsonrpc: "2.0"
-  id: SomeId
+	jsonrpc: "2.0";
+	id: SomeId;
 }
-export type SomeId = number | string | null
+export type SomeId = number | string | null;
 
 export interface JSONRPCRequest extends JSONRPCDefaults {
-  method: string;
-  params?: unknown;
+	method: string;
+	params?: unknown;
 }
 
 export interface JSONRPCResponse extends JSONRPCDefaults {
-  result?: unknown;
-  error?: { code: number; message: string };
+	result?: unknown;
+	error?: { code: number; message: string };
 }
 
 export interface JSONRPCNotification {
-  jsonrpc: "2.0";
-  method: string;
-  params?: unknown;
+	jsonrpc: "2.0";
+	method: string;
+	params?: unknown;
 }
 
 export function notification(
-  method: string,
-  params?: unknown,
+	method: string,
+	params?: unknown,
 ): JSONRPCNotification {
-  return { jsonrpc: "2.0", method, params };
+	return { jsonrpc: "2.0", method, params };
 }
 
-export function ok(id: SomeId,
-  result: unknown): JSONRPCResponse {
-  return { jsonrpc: "2.0", id, result };
+export function ok(id: SomeId, result: unknown): JSONRPCResponse {
+	return { jsonrpc: "2.0", id, result };
+}
+
+/**
+ * Format a Server-Sent Event payload per the WHATWG SSE spec.
+ *
+ * Produces a multi-line string with `data:` and `event:` fields.
+ * Empty lines separate events in the stream. The caller is responsible
+ * for appending a trailing blank line when the stream ends.
+ */
+export function formatSSEEvent(eventName: string, payload: unknown): string {
+	return `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
 }
 
 export function err(
-  id: SomeId,
-  code: number,
-  message: string,
+	id: SomeId,
+	code: number,
+	message: string,
 ): JSONRPCResponse {
-  console.error(`[Rpc] error response id=${id} code=${code} message=${message}`);
-  return { jsonrpc: "2.0", id, error: { code, message } };
+	console.error(
+		`[Rpc] error response id=${id} code=${code} message=${message}`,
+	);
+	return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
 /**
@@ -60,45 +72,50 @@ export function err(
  * See: AGENTS.md#CORS, CANONICAL.md (CORS allowlist).
  */
 const ALLOWED_ORIGINS_LIST = (process.env.ALLOWED_ORIGINS ?? "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+	.split(",")
+	.map((s) => s.trim())
+	.filter(Boolean);
 
 /** Default fallback when ALLOWED_ORIGINS is empty (dev convenience). */
 const DEFAULT_ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "http://localhost:8080",
-  "http://localhost:4000",
-  "http://localhost:4001",
-  "http://localhost:4002",
-  "http://localhost:4003",
-  "http://localhost:4004",
-  "http://localhost:4005",
-  "http://localhost:4006",
-  "http://localhost:1337",
+	"http://localhost:5173",
+	"http://localhost:8080",
+	"http://localhost:4000",
+	"http://localhost:4001",
+	"http://localhost:4002",
+	"http://localhost:4003",
+	"http://localhost:4004",
+	"http://localhost:4005",
+	"http://localhost:4006",
+	"http://localhost:1337",
 ];
 
 function isOriginAllowed(origin: string | null): boolean {
-  if (!origin) return false;
-  const allowed = ALLOWED_ORIGINS_LIST.length > 0
-    ? ALLOWED_ORIGINS_LIST
-    : DEFAULT_ALLOWED_ORIGINS;
-  return allowed.includes(origin);
+	if (!origin) return false;
+	const allowed =
+		ALLOWED_ORIGINS_LIST.length > 0
+			? ALLOWED_ORIGINS_LIST
+			: DEFAULT_ALLOWED_ORIGINS;
+	return allowed.includes(origin);
 }
 
-export function buildCorsHeaders(origin: string | null): Record<string, string> | null {
-  if (!isOriginAllowed(origin)) return null;
-  return { "Access-Control-Allow-Origin": origin! };
+export function buildCorsHeaders(
+	origin: string | null,
+): Record<string, string> | null {
+	if (!isOriginAllowed(origin)) return null;
+	return { "Access-Control-Allow-Origin": origin! };
 }
 
-export function buildCorsPreflightHeaders(origin: string | null): Record<string, string> | null {
-  if (!isOriginAllowed(origin)) return null;
-  return {
-    "Access-Control-Allow-Origin": origin!,
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
-    "Access-Control-Max-Age": "86400",
-  };
+export function buildCorsPreflightHeaders(
+	origin: string | null,
+): Record<string, string> | null {
+	if (!isOriginAllowed(origin)) return null;
+	return {
+		"Access-Control-Allow-Origin": origin!,
+		"Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type, X-API-Key",
+		"Access-Control-Max-Age": "86400",
+	};
 }
 
 /**
@@ -110,7 +127,7 @@ export function buildCorsPreflightHeaders(origin: string | null): Record<string,
  */
 export const corsHeaders = { "Access-Control-Allow-Origin": "*" } as const;
 export const corsPreflightHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type, X-API-Key",
 } as const;
