@@ -8,14 +8,12 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { MemoryStorePort, SessionData } from "@ports/memory-store";
 
-// Resolve the repo-root `memory/` directory relative to this module's location
-// (agents/adapters/memory-fs.ts -> ../../memory) instead of process.cwd(),
-// which is fragile when the process is started from another directory.
-const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_MEMORY_DIR = join(MODULE_DIR, "..", "..", "memory");
+// Resolve the repo-root `memory/` directory relative to process.cwd().
+// Both `bun run` and jabr-cli set cwd to the project root, making this
+// robust across source and compiled-binary execution.
+export const DEFAULT_MEMORY_DIR = join(process.cwd(), "memory");
 
 export interface MemoryFSOptions {
 	/** Base directory for memory files. Defaults to the repo-root `memory/`. */

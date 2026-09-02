@@ -3,6 +3,7 @@ import { TaskMemory } from "@adapters/task-memory";
 import type { AgentCard, TaskStreamingEvent } from "@agents/types";
 import { jabrUrlForPort } from "@config/jabr-config";
 import type { TaskStorePort } from "@ports/task-store";
+import { ApiKeyRegistry } from "@security/api-key-registry";
 
 export function extractLastResponse(
 	taskStore: TaskStorePort,
@@ -37,14 +38,47 @@ export function runAgent(config: {
 		`[Serve] starting ${config.card.name} server on port ${config.port}`,
 	);
 
-	const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
-	const requireAuth =
-		Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
+	// --- API key registry (per-key authentication + ACL) ---
+	// Loads keys from JSON env var A2A_API_KEYS. Each entry is:
+	//   { key: string, description: string, allowedAgents: string[], enabled?: boolean }
+	// Empty allowedAgents = wildcard (all agents).
+	let apiKeyRegistry: ApiKeyRegistry | undefined;
+	const keysJson = process.env.A2A_API_KEYS;
+	if (keysJson) {
+		try {
+			const entries = JSON.parse(keysJson);
+			apiKeyRegistry = new ApiKeyRegistry(entries);
+			console.log(
+				`[Serve] ${config.card.name}: loaded ${entries.length} API key(s) from A2A_API_KEYS`,
+			);
+		} catch (e) {
+			console.error(
+				`[Serve] ${config.card.name}: failed to parse A2A_API_KEYS: ${e}`,
+			);
+			process.exit(1);
+		}
+	}
 
-	if (requireAuth && !authToken) {
-		console.warn(
-			`[Serve] ${config.card.name}: A2A_REQUIRE_AUTH=true but no A2A_AUTH_TOKEN set — auth will reject all requests`,
+	// Auth is mandatory at the agent boundary. Refuse to start
+	// without a configured registry or legacy token so the endpoint is never
+	// accidentally exposed without authentication.
+	const requireAuth = true;
+	const legacyToken = process.env.A2A_AUTH_TOKEN;
+	if (!apiKeyRegistry && !legacyToken) {
+		console.error(
+			`Fatal: A2A_API_KEYS or A2A_AUTH_TOKEN environment variable is required to start ${config.card.name}`,
 		);
+		process.exit(1);
+	}
+
+	// Legacy single-token mode: build a registry with one wildcard key.
+	if (!apiKeyRegistry && legacyToken) {
+		console.warn(
+			`[Serve] ${config.card.name}: using legacy A2A_AUTH_TOKEN (single shared token, consider migrating to A2A_API_KEYS)`,
+		);
+		apiKeyRegistry = new ApiKeyRegistry([
+			{ key: legacyToken, description: "legacy", allowedAgents: [], enabled: true },
+		]);
 	}
 
 	const server = new A2AServer({
@@ -66,6 +100,7 @@ export function runAgent(config: {
 		},
 		onTaskStreaming: config.onTaskStreaming,
 		requireAuth,
+		apiKeyRegistry,
 	});
 
 	server.start();

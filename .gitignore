@@ -79,3 +79,7 @@ skills/jarvis-scan-*.json
 
 # Brand asset generation log
 brand/generation.log
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

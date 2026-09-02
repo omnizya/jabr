@@ -1,6 +1,7 @@
 import { DynamicRegistry } from "@adapters/dynamic-registry";
 import type { AgentCard, AgentSkill } from "@agents/types";
 import type { AgentRegistryPort } from "@ports/agent-registry";
+import { jabrUrlForPort } from "./src/config/jabr-config.ts";
 
 // Offline registry: returns cards keyed by seed URL. Same shape DynamicRegistry
 // would see from A2AClient.fetchCard against a running agent — keeps routing
@@ -68,11 +69,11 @@ const SKILLS: Record<string, AgentSkill[]> = {
 };
 
 const seed = {
-	oracle: "http://localhost:4001",
-	librarian: "http://localhost:4002",
-	explorer: "http://localhost:4003",
-	designer: "http://localhost:4004",
-	fixer: "http://localhost:4005",
+	oracle: jabrUrlForPort(4001),
+	librarian: jabrUrlForPort(4002),
+	explorer: jabrUrlForPort(4003),
+	designer: jabrUrlForPort(4004),
+	fixer: jabrUrlForPort(4005),
 };
 const urlToName: Record<string, string> = {};
 for (const [k, v] of Object.entries(seed)) urlToName[v] = k;

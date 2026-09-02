@@ -31,6 +31,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { jabrUrlForPort } from "../src/config/jabr-config.ts";
 
 // ── Agent topology (mirrors agents/run/orchestrator.ts seedUrls) ──────────
 
@@ -46,66 +47,77 @@ const AGENTS: Array<{
 		script: "orchestrator",
 		port: 4000,
 		sourceCmd: "bun agents/run/orchestrator.ts",
+		// Orchestrator owns the realtime WebSocket server on 4008
 	},
 	{
 		name: "oracle",
 		script: "oracle",
 		port: 4001,
 		sourceCmd: "bun agents/run/oracle.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "librarian",
 		script: "librarian",
 		port: 4002,
 		sourceCmd: "bun agents/run/librarian.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "explorer",
 		script: "explorer",
 		port: 4003,
 		sourceCmd: "bun agents/run/explorer.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "designer",
 		script: "designer",
 		port: 4004,
 		sourceCmd: "bun agents/run/designer.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "fixer",
 		script: "fixer",
 		port: 4005,
 		sourceCmd: "bun agents/run/fixer.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "scientist",
 		script: "scientist",
 		port: 4006,
 		sourceCmd: "bun agents/run/scientist.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "verification",
 		script: "verification",
 		port: 4009,
 		sourceCmd: "bun agents/run/verification.ts",
+		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "jarvis",
 		script: "jarvis",
 		port: 1337,
 		sourceCmd: "bun agents/run/jarvis.ts",
+		env: { JABR_REALTIME_PORT: "4008", JABR_URL: "http://localhost:4000", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "mcp",
 		script: "mcp",
 		port: 0,
 		sourceCmd: "bun mcp-servers/tools.ts",
+		env: { JABR_REALTIME_PORT: "4008" },
 	},
 	{
 		name: "acp-bridge",
 		script: "acp-bridge",
 		port: 0,
 		sourceCmd: "bun agents/run/acp-bridge.ts",
+		env: { JABR_REALTIME_PORT: "4008", JABR_URL: "http://localhost:4000", JABR_MEMORY_DIR: "/home/m7r/Work/agent-lab/memory" },
 	},
 ];
 
@@ -230,7 +242,7 @@ async function healthCheck(
 ): Promise<{ up: boolean; card?: object }> {
 	if (port === 0) return { up: false };
 	try {
-		const cardUrl = `http://localhost:${port}/.well-known/agent-card.json`;
+		const cardUrl = `${jabrUrlForPort(port)}/.well-known/agent-card.json`;
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), 2000);
 		const res = await fetch(cardUrl, { signal: controller.signal });
@@ -309,7 +321,7 @@ async function startSingle(agent: (typeof AGENTS)[number]) {
 		if (ready) {
 			const health = await healthCheck(agent.name, agent.port);
 			const cardName = (health.card as any)?.name ?? "?";
-			log(`  ✓ ${agent.name} — http://localhost:${agent.port} (${cardName})`);
+			log(`  ✓ ${agent.name} — ${jabrUrlForPort(agent.port)} (${cardName})`);
 		} else {
 			warn(
 				`  ? ${agent.name} — launched but not yet serving on port ${agent.port} (check ${logPath})`,
@@ -558,7 +570,7 @@ async function cmdSend(args: string[]) {
 	log(`  Task: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`);
 
 	try {
-		const res = await fetch(`http://localhost:${agent.port}/`, {
+		const res = await fetch(`${jabrUrlForPort(agent.port)}/`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -639,7 +651,7 @@ async function cmdConfig() {
 		],
 		[
 			"JABR_URL",
-			"http://localhost:4000",
+			jabrUrlForPort(4000),
 			"Orchestrator endpoint (required). Legacy: ORCHESTRATOR_URL",
 		],
 		["A2A_AUTH_TOKEN", "(unset)", "A2A auth token (optional)"],

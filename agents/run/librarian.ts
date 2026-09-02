@@ -1,3 +1,4 @@
+import { jabrUrlForPort } from "@config/jabr-config";
 import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
@@ -35,7 +36,7 @@ if (import.meta.main) {
 	if (!isNaN(realtimePort) && realtimePort > 0) {
 		realtime = {
 			broadcast: (event) =>
-				fetch(`http://localhost:${realtimePort}/emit`, {
+				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(event),

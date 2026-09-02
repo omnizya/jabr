@@ -25,16 +25,16 @@ import { Database } from "bun:sqlite";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { jabrUrlOrUndefined } from "@config/jabr-config";
+import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
 
-const FIXER = "http://localhost:4005";
-const LIBRARIAN = "http://localhost:4002";
-const ORACLE = "http://localhost:4001";
-const EXPLORER = "http://localhost:4003";
-const DESIGNER = "http://localhost:4004";
-const SCIENTIST = "http://localhost:4006";
-const JARVIS = "http://localhost:1337";
-const ORCHESTRATOR = jabrUrlOrUndefined() ?? "http://localhost:4000";
+const FIXER = jabrUrlForPort(4005);
+const LIBRARIAN = jabrUrlForPort(4002);
+const ORACLE = jabrUrlForPort(4001);
+const EXPLORER = jabrUrlForPort(4003);
+const DESIGNER = jabrUrlForPort(4004);
+const SCIENTIST = jabrUrlForPort(4006);
+const JARVIS = jabrUrlForPort(1337);
+const ORCHESTRATOR = jabrUrlOrUndefined() ?? jabrUrlForPort(4000);
 
 let passed = 0;
 let failed = 0;
@@ -64,7 +64,10 @@ async function check(label: string, fn: () => Promise<void>) {
 async function postA2A(agentUrl: string, text: string): Promise<string> {
 	const res = await fetch(`${agentUrl}/`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers: { 
+			"Content-Type": "application/json",
+			"X-API-Key": "dev-secret-token-for-testing"
+		},
 		body: JSON.stringify({
 			jsonrpc: "2.0",
 			id: crypto.randomUUID(),

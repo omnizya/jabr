@@ -1,3 +1,4 @@
+import { jabrUrlForPort } from "@config/jabr-config";
 import {
 	BunWebSocketAdapter,
 	startBunWebSocketAdapter,
@@ -41,7 +42,7 @@ if (import.meta.main) {
 		// We're a child runner — emit via HTTP to the orchestrator's adapter.
 		realtime = {
 			broadcast: (event) => {
-				fetch(`http://localhost:${realtimePort}/emit`, {
+				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(event),
