@@ -6,7 +6,7 @@ import {
 import { rateLimitResponse } from "@adapters/rate-limit";
 import { buildCorsHeaders, err, ok } from "@utils/rpc";
 import type { A2AClientPort } from "@ports/a2a-client-port";
-import { WebhookToA2ABridge } from "@core/webhook-to-a2a-bridge";
+import { WebhookToA2ABridge, type WebhookEvent } from "@core/webhook-to-a2a-bridge";
 
 export interface WebhookServerConfig {
 	/** Port to listen on. */
@@ -23,7 +23,7 @@ export interface WebhookServerConfig {
 	 */
 	idempotencyLock?: IdempotencyLock;
 	/** Called for every verified, first-occurrence webhook event. */
-	onEvent: (payload: WebhookPayload) => Promise<unknown>;
+	onEvent: (payload: WebhookEvent) => Promise<unknown>;
 	/**
 	 * Optional A2A client + Hermes URL. When both are set, every verified
 	 * webhook event is also dispatched to Hermes via A2A (fire-and-forget).
