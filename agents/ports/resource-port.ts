@@ -14,4 +14,4 @@ export interface ResourcePort {
 	>;
 }
 
-console.log("[ResourcePort] port interface loaded");
+

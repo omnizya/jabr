@@ -10,7 +10,7 @@ Data-science specialist that writes and executes Python scripts to analyze data 
 - Note: NOT started by `bun run dev`; launch with `bun agents/run/scientist.ts`.
 
 ## Card & skills
-Unlike the other agents, Scientist defines its card inline as a `public readonly card: AgentCard` (not a module-level `X_CARD` const) and sets `url: jabrUrlForPort(4006)`. Skills:
+Unlike the other agents, Scientist defines its card inline as a `public readonly card: AgentCard` (not a module-level `X_CARD` const) and sets `url: jabrUrlForPort(JABR_PORTS.scientist)` (from `src/constants/ecosystem.ts`). Skills:
 - **Data Analysis** — tags: `python`, `data`, `analysis`, `script`, `scientist`, `stats`, `csv`, `json`
 - **Technical Scripting** — tags: `automation`, `scripting`, `python`, `utility`
 

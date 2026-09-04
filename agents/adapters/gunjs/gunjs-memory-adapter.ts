@@ -40,25 +40,24 @@ import type {
 const GunModule = require("gun");
 
 // Minimal Gun instance shape we use.
-interface GunNode {
+export interface GunNode {
 	get(path: string): GunNode;
 	put(data: unknown, cb?: (ack: GunAck) => void): void;
 	on(cb: (data: unknown, key?: string) => void): void;
 	once(cb: (data: unknown, key?: string) => void): void;
 	off(cb?: (data: unknown, key?: string) => void): void;
 	map(): GunNode;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	[key: string]: any;
+	[key: string]: unknown;
 }
 
-interface GunAck {
+export interface GunAck {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	err?: any;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	ok?: any;
 }
 
-interface GunInstance extends GunNode {
+export interface GunInstance extends GunNode {
 	SEA?: {
 		secret(): string;
 		pair(): { publicKey: string; secretKey: string };
@@ -73,7 +72,7 @@ interface GunInstance extends GunNode {
 	};
 }
 
-interface GunConstructor {
+export interface GunConstructor {
 	(opts?: {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		file?: any;
@@ -89,12 +88,12 @@ interface GunConstructor {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const Gun: GunConstructor = GunModule;
+export const Gun: GunConstructor = GunModule;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /** Shape of a Gun peer URL for HTTP relay peers. */
-type GunPeerUrl = string;
+export type GunPeerUrl = string;
 
 // ── GunJS Memory Adapter ─────────────────────────────────────────────────────
 

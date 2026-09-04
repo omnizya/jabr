@@ -39,4 +39,4 @@ export interface LlmPort {
 	): Promise<LlmResponse>;
 }
 
-console.log("[LlmPort] port interface loaded");
+

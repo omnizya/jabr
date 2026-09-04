@@ -1,4 +1,5 @@
 import type { RealtimeEvent, RealtimePort } from "@ports/realtime-port";
+import { DEV_ALLOWED_ORIGINS } from "@constants/ecosystem";
 import { buildCorsHeaders, buildCorsPreflightHeaders } from "@utils/rpc";
 
 export interface BunWebSocketAdapterConfig {
@@ -21,18 +22,7 @@ export interface BunWebSocketAdapterConfig {
 	pingIntervalMs?: number;
 }
 
-const DEFAULT_ALLOWED_ORIGINS = [
-	"http://localhost:5173",
-	"http://localhost:8080",
-	"http://localhost:4000",
-	"http://localhost:4001",
-	"http://localhost:4002",
-	"http://localhost:4003",
-	"http://localhost:4004",
-	"http://localhost:4005",
-	"http://localhost:4006",
-	"http://localhost:1337",
-];
+const DEFAULT_ALLOWED_ORIGINS: string[] = [...DEV_ALLOWED_ORIGINS];
 
 function isValidRealtimeEvent(event: unknown): event is RealtimeEvent {
 	if (!event || typeof event !== "object") return false;

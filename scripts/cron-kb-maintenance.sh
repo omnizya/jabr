@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/home/m7r/Projects/Labs/agent-lab"
+PROJECT_ROOT="/home/m7r/Work/agent-lab"
 LOG_FILE="${PROJECT_ROOT}/memory/cron-kb-maintenance.log"
 
 cd "$PROJECT_ROOT"

@@ -207,16 +207,16 @@ export interface DomainEvent {
 
 ```typescript
 // Agent lifecycle
-"type AgentCreatedEvent = { type: "agent:created"; payload: { name: string; port: number } }"
-"type AgentShutdownEvent = { type: "agent:shutdown"; payload: { name: string } }"
+type AgentCreatedEvent = { type: "agent:created"; payload: { name: string; port: number } }
+type AgentShutdownEvent = { type: "agent:shutdown"; payload: { name: string } }
 
 // Task lifecycle
-"type TaskCreatedEvent = { type: "task:created"; payload: { taskId: string; agent: string } }"
-"type TaskCompletedEvent = { type: "task:completed"; payload: { taskId: string; result: unknown } }"
-"type TaskFailedEvent = { type: "task:failed"; payload: { taskId: string; error: string } }"
+type TaskCreatedEvent = { type: "task:created"; payload: { taskId: string; agent: string } }
+type TaskCompletedEvent = { type: "task:completed"; payload: { taskId: string; result: unknown } }
+type TaskFailedEvent = { type: "task:failed"; payload: { taskId: string; error: string } }
 
 // System
-"type SystemAlertEvent = { type: "system:alert"; payload: { level: string; message: string } }"
+type SystemAlertEvent = { type: "system:alert"; payload: { level: string; message: string } }
 ```
 
 ### Plugin Lifecycle

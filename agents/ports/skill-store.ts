@@ -6,4 +6,4 @@ export interface SkillStorePort {
 	list(): string[];
 }
 
-console.log("[SkillStorePort] port interface loaded");
+

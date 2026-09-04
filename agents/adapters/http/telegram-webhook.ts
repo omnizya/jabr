@@ -10,6 +10,7 @@ import type {
 	TelegramParseMode,
 } from "@ports/telegram-bot-port";
 import { buildCorsHeaders, err, ok } from "@utils/rpc";
+import { JABR_PORTS } from "@constants/ecosystem";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 
@@ -44,7 +45,7 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
 
 	constructor(config: TelegramWebhookAdapterConfig) {
 		this.botToken = config.botToken;
-		this.port = config.port ?? 4008;
+		this.port = config.port ?? JABR_PORTS.realtime;
 		this.delegateUrl = config.delegateUrl ?? "";
 		this.webhookSecret = config.webhookSecret ?? "";
 		this.idempotencyLock = new IdempotencyLock();

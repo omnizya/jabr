@@ -1,4 +1,5 @@
 import type { GitHubBotPort, GitHubWebhookEvent } from "@ports/github-bot-port";
+import { JABR_PORTS } from "@constants/ecosystem";
 import {
 	parseGitHubEvent,
 	verifySignature,
@@ -34,7 +35,7 @@ export class GitHubWebhookAdapter implements GitHubBotPort {
 			"",
 		);
 		this.token = config.token ?? "";
-		this.port = config.port ?? 4007;
+		this.port = config.port ?? JABR_PORTS.githubWebhook;
 		this.delegateUrl = config.delegateUrl ?? "";
 		this.defaultRepo = config.defaultRepo ?? "omnizya/jabr";
 	}

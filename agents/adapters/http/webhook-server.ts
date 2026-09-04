@@ -5,6 +5,8 @@ import {
 } from "@adapters/idempotency-lock";
 import { rateLimitResponse } from "@adapters/rate-limit";
 import { buildCorsHeaders, err, ok } from "@utils/rpc";
+import type { A2AClientPort } from "@ports/a2a-client-port";
+import { WebhookToA2ABridge } from "@core/webhook-to-a2a-bridge";
 
 export interface WebhookServerConfig {
 	/** Port to listen on. */
@@ -22,13 +24,19 @@ export interface WebhookServerConfig {
 	idempotencyLock?: IdempotencyLock;
 	/** Called for every verified, first-occurrence webhook event. */
 	onEvent: (payload: WebhookPayload) => Promise<unknown>;
+	/**
+	 * Optional A2A client + Hermes URL. When both are set, every verified
+	 * webhook event is also dispatched to Hermes via A2A (fire-and-forget).
+	 */
+	a2aClient?: A2AClientPort;
+	hermesUrl?: string;
 }
 
 /** Normalized webhook event — mirrors the research doc's WebhookEvent shape. */
 export interface WebhookPayload {
 	/** Unique event ID — the idempotency lock key. */
 	eventId: string;
-	source: "github" | "telegram" | "whatsapp" | "generic";
+	source: "github" | "telegram" | "whatsapp" | "generic";// TODO: move into proper file
 	type: string;
 	payload: unknown;
 	timestamp: number;
@@ -87,15 +95,28 @@ function verifySignature(
 export class WebhookServer {
 	private readonly config: WebhookServerConfig;
 	private readonly idempotencyLock: IdempotencyLock;
+	private readonly bridge?: WebhookToA2ABridge;
 	private server: ReturnType<typeof Bun.serve> | null = null;
 
 	constructor(config: WebhookServerConfig) {
 		this.config = config;
 		this.idempotencyLock = config.idempotencyLock ?? new IdempotencyLock();
+
+		// When both a2aClient and hermesUrl are provided, wrap the user's
+		// onEvent with the bridge so A2A dispatch happens fire-and-forget.
+		if (config.a2aClient && config.hermesUrl) {
+			this.bridge = new WebhookToA2ABridge({
+				a2aClient: config.a2aClient,
+				hermesUrl: config.hermesUrl,
+				onEvent: config.onEvent,
+			});
+		}
 	}
 
 	start(): void {
-		const { port, webhookSecret, rateLimiter, onEvent } = this.config;
+		const { port, webhookSecret, rateLimiter } = this.config;
+		// Use the bridge's onEvent when configured, otherwise the raw onEvent.
+		const onEvent = this.bridge?.onEvent.bind(this.bridge) ?? this.config.onEvent;
 		const self = this;
 
 		this.server = Bun.serve({

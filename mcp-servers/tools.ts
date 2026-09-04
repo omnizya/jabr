@@ -574,6 +574,210 @@ server.registerTool(
 	}),
 );
 
+// ── repomix tools ─────────────────────────────────────────────────────
+
+const REPOMIX_OUTPUT_DIR = join(process.cwd(), ".repomix");
+
+function ensureRepomixDir() {
+	if (!existsSync(REPOMIX_OUTPUT_DIR)) {
+		mkdirSync(REPOMIX_OUTPUT_DIR, { recursive: true });
+	}
+}
+
+function repomixOutputPath(style: string): string {
+	const ext = style === "markdown" ? "md" : style === "json" ? "json" : "xml";
+	return join(REPOMIX_OUTPUT_DIR, `output.${ext}`);
+}
+
+server.registerTool(
+	"pack_repository",
+	{
+		description:
+			"Pack the repository into a single AI-friendly file using Repomix. Returns summary with file count, token count, and output path.",
+		inputSchema: strictObject({
+			include: cappedString(
+				500,
+				"Glob patterns to include (e.g. '**/*.ts,src/**')",
+			).optional(),
+			exclude: cappedString(
+				500,
+				"Glob patterns to exclude (e.g. 'test/**,dist/**')",
+			).optional(),
+			compress: z
+				.boolean()
+				.describe("Use Tree-sitter compression (~70% token reduction)")
+				.optional()
+				.default(false),
+			style: z
+				.enum(["xml", "markdown", "json", "plain"])
+				.describe("Output format")
+				.optional()
+				.default("xml"),
+		}),
+	},
+	withLogging(
+		"pack_repository",
+		({ include, exclude, compress, style }) => {
+			ensureRepomixDir();
+			const outputPath = repomixOutputPath(style);
+
+			const args: string[] = [
+				"repomix",
+				"--output",
+				outputPath,
+				"--style",
+				style,
+			];
+			if (include) args.push("--include", include);
+			if (exclude) args.push("--ignore", exclude);
+			if (compress) args.push("--compress");
+
+			const proc = Bun.spawnSync(args, {
+				timeout: 60_000,
+				cwd: process.cwd(),
+			});
+
+			const stderr = new TextDecoder().decode(proc.stderr);
+			if (proc.exitCode !== 0) {
+				throw new Error(`repomix failed: ${stderr || "unknown error"}`);
+			}
+
+			// Parse summary from stderr (repomix outputs metrics to stderr)
+			const stdout = new TextDecoder().decode(proc.stdout);
+			const summary = stdout || stderr || "Pack complete";
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Repository packed → ${outputPath}\n\n${summary}`,
+					},
+				],
+			};
+		},
+	),
+);
+
+server.registerTool(
+	"grep_repomix_output",
+	{
+		description:
+			"Search the packed repository output using regex patterns. Requires pack_repository to have been run first.",
+		inputSchema: strictObject({
+			pattern: cappedString(500, "Regex pattern to search for"),
+			contextLines: boundedNumber(
+				0,
+				50,
+				"Number of context lines before and after each match",
+			).optional(),
+			ignoreCase: z
+				.boolean()
+				.describe("Perform case-insensitive matching")
+				.optional()
+				.default(false),
+		}),
+	},
+	withLogging("grep_repomix_output", ({ pattern, contextLines, ignoreCase }) => {
+		const outputPath = repomixOutputPath("xml");
+		if (!existsSync(outputPath)) {
+			return {
+				content: [
+					{
+						type: "text",
+						text: "No packed repository found. Run pack_repository first.",
+					},
+				],
+			};
+		}
+
+		const content = readFileSync(outputPath, "utf-8");
+		const lines = content.split("\n");
+		const regex = new RegExp(pattern, ignoreCase ? "gi" : "g");
+		const ctx = contextLines ?? 0;
+		const matches: string[] = [];
+
+		for (let i = 0; i < lines.length; i++) {
+			if (regex.test(lines[i]!)) {
+				regex.lastIndex = 0; // reset for next test
+				const start = Math.max(0, i - ctx);
+				const end = Math.min(lines.length - 1, i + ctx);
+				const snippet = lines
+					.slice(start, end + 1)
+					.map((line, idx) => {
+						const lineNum = start + idx + 1;
+						const marker = lineNum === i + 1 ? ">" : " ";
+						return `${marker} ${lineNum}: ${line}`;
+					})
+					.join("\n");
+				matches.push(snippet);
+			}
+		}
+
+		if (matches.length === 0) {
+			return {
+				content: [
+					{
+						type: "text",
+						text: `No matches found for pattern: ${pattern}`,
+					},
+				],
+			};
+		}
+
+		const result = `Found ${matches.length} match(es) for /\`${pattern}\`/\n\n${matches.join("\n\n---\n\n")}`;
+		return { content: [{ type: "text", text: result }] };
+	}),
+);
+
+server.registerTool(
+	"read_repomix_output",
+	{
+		description:
+			"Read the packed repository output file. Supports optional line range for large files.",
+		inputSchema: strictObject({
+			startLine: boundedNumber(
+				1,
+				1_000_000,
+				"Starting line number (1-based, inclusive)",
+			).optional(),
+			endLine: boundedNumber(
+				1,
+				1_000_000,
+				"Ending line number (1-based, inclusive)",
+			).optional(),
+		}),
+	},
+	withLogging("read_repomix_output", ({ startLine, endLine }) => {
+		const outputPath = repomixOutputPath("xml");
+		if (!existsSync(outputPath)) {
+			return {
+				content: [
+					{
+						type: "text",
+						text: "No packed repository found. Run pack_repository first.",
+					},
+				],
+			};
+		}
+
+		const content = readFileSync(outputPath, "utf-8");
+		const lines = content.split("\n");
+
+		const start = (startLine ?? 1) - 1; // convert to 0-based
+		const end = endLine ?? lines.length;
+		const selected = lines.slice(start, end);
+
+		return {
+			content: [
+				{
+					type: "text",
+					text: selected.join("\n"),
+				},
+			],
+		};
+	}),
+);
+
 registerResources(server, {
 	subscriptions,
 	projectRoot: process.cwd(),

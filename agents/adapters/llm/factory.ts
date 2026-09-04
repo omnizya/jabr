@@ -13,6 +13,7 @@ import type { LlmPort } from "@ports/llm-port";
  *   - `JABR_LLM_PROVIDER=vercel` OR a `VERCEL_AI_GATEWAY_KEY` is present
  *     → Vercel AI Gateway adapter
  *   - otherwise → 9Router (OpenRouter) adapter
+ *   TODO: Add support for Anthropic and others
  */
 export function createLlmAdapter(budget?: BudgetPort): LlmPort {
 	const provider = process.env.JABR_LLM_PROVIDER;

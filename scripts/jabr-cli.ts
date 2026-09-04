@@ -32,6 +32,14 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { jabrUrlForPort } from "../src/config/jabr-config.ts";
+import {
+	JABR_PORTS,
+	JABR_URL_DEFAULT,
+	NINEROUTER_MODEL_DEFAULT,
+	NINEROUTER_URL_DEFAULT,
+} from "../src/constants/ecosystem.ts";
+
+const ROOT = process.cwd();
 
 // ── Agent topology (mirrors agents/run/orchestrator.ts seedUrls) ──────────
 
@@ -45,79 +53,79 @@ const AGENTS: Array<{
 	{
 		name: "orchestrator",
 		script: "orchestrator",
-		port: 4000,
+		port: JABR_PORTS.orchestrator,
 		sourceCmd: "bun agents/run/orchestrator.ts",
 		// Orchestrator owns the realtime WebSocket server on 4008
 	},
 	{
 		name: "oracle",
 		script: "oracle",
-		port: 4001,
+		port: JABR_PORTS.oracle,
 		sourceCmd: "bun agents/run/oracle.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "librarian",
 		script: "librarian",
-		port: 4002,
+		port: JABR_PORTS.librarian,
 		sourceCmd: "bun agents/run/librarian.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "explorer",
 		script: "explorer",
-		port: 4003,
+		port: JABR_PORTS.explorer,
 		sourceCmd: "bun agents/run/explorer.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "designer",
 		script: "designer",
-		port: 4004,
+		port: JABR_PORTS.designer,
 		sourceCmd: "bun agents/run/designer.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "fixer",
 		script: "fixer",
-		port: 4005,
+		port: JABR_PORTS.fixer,
 		sourceCmd: "bun agents/run/fixer.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "scientist",
 		script: "scientist",
-		port: 4006,
+		port: JABR_PORTS.scientist,
 		sourceCmd: "bun agents/run/scientist.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "verification",
 		script: "verification",
-		port: 4009,
+		port: JABR_PORTS.verification,
 		sourceCmd: "bun agents/run/verification.ts",
-		env: { JABR_REALTIME_PORT: "4008", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "jarvis",
 		script: "jarvis",
-		port: 1337,
+		port: JABR_PORTS.jarvis,
 		sourceCmd: "bun agents/run/jarvis.ts",
-		env: { JABR_REALTIME_PORT: "4008", JABR_URL: "http://localhost:4000", A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, JABR_URL: JABR_URL_DEFAULT, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
 	},
 	{
 		name: "mcp",
 		script: "mcp",
 		port: 0,
 		sourceCmd: "bun mcp-servers/tools.ts",
-		env: { JABR_REALTIME_PORT: "4008" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}` },
 	},
 	{
 		name: "acp-bridge",
 		script: "acp-bridge",
 		port: 0,
 		sourceCmd: "bun agents/run/acp-bridge.ts",
-		env: { JABR_REALTIME_PORT: "4008", JABR_URL: "http://localhost:4000", JABR_MEMORY_DIR: "/home/m7r/Work/agent-lab/memory" },
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, JABR_URL: JABR_URL_DEFAULT, JABR_MEMORY_DIR: join(ROOT, "memory") },
 	},
 ];
 
@@ -131,7 +139,6 @@ function runCommand(agent: (typeof AGENTS)[number]): string {
 	return existsSync(bin) ? bin : agent.sourceCmd;
 }
 
-const ROOT = process.cwd();
 const LOG_DIR = "/tmp/jabr-logs";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -626,9 +633,9 @@ async function cmdConfig() {
 	log("");
 	log("Environment variables (current shell values shown):");
 	const knownEnv: Array<[string, string, string]> = [
-		["NINEROUTER_URL", "http://127.0.0.1:20128", "LLM gateway URL"],
+		["NINEROUTER_URL", NINEROUTER_URL_DEFAULT, "LLM gateway URL"],
 		["NINEROUTER_KEY", "(unset)", "LLM API key"],
-		["NINEROUTER_MODEL", "openrouter/minimax/minimax-m3:free", "Default model"],
+		["NINEROUTER_MODEL", NINEROUTER_MODEL_DEFAULT, "Default model"],
 		[
 			"JABR_LLM_PROVIDER",
 			"(unset)",
@@ -651,7 +658,7 @@ async function cmdConfig() {
 		],
 		[
 			"JABR_URL",
-			jabrUrlForPort(4000),
+			jabrUrlForPort(JABR_PORTS.orchestrator),
 			"Orchestrator endpoint (required). Legacy: ORCHESTRATOR_URL",
 		],
 		["A2A_AUTH_TOKEN", "(unset)", "A2A auth token (optional)"],

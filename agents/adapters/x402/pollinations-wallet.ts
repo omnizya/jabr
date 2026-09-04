@@ -18,7 +18,9 @@
 import type { PaymentToken, SettlementPricing } from "../x402/types";
 
 export interface PollinationsWalletConfig {
-	/** Pollinations API key (sk_... or pk_...). */
+	/** Pollinations API key (sk_... or pk_...).
+   * TODO: Use Environment variables
+   ***/
 	apiKey: string;
 	/** Base URL for Pollinations API. */
 	baseUrl?: string;

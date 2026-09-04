@@ -52,4 +52,4 @@ export interface TelegramBotPort {
 	deleteWebhook(): Promise<void>;
 }
 
-console.log("[TelegramBotPort] port interface loaded");
+

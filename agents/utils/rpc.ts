@@ -1,12 +1,12 @@
 /**
  * Shared JSON-RPC 2.0 types and helpers used by A2A server and ACP bridge.
  */
-
-interface JSONRPCDefaults {
+import { DEV_ALLOWED_ORIGINS } from "@constants/ecosystem";
+export type SomeId = number | string | null;
+export interface JSONRPCDefaults {
 	jsonrpc: "2.0";
 	id: SomeId;
 }
-export type SomeId = number | string | null;
 
 export interface JSONRPCRequest extends JSONRPCDefaults {
 	method: string;
@@ -77,18 +77,7 @@ const ALLOWED_ORIGINS_LIST = (process.env.ALLOWED_ORIGINS ?? "")
 	.filter(Boolean);
 
 /** Default fallback when ALLOWED_ORIGINS is empty (dev convenience). */
-const DEFAULT_ALLOWED_ORIGINS = [
-	"http://localhost:5173",
-	"http://localhost:8080",
-	"http://localhost:4000",
-	"http://localhost:4001",
-	"http://localhost:4002",
-	"http://localhost:4003",
-	"http://localhost:4004",
-	"http://localhost:4005",
-	"http://localhost:4006",
-	"http://localhost:1337",
-];
+const DEFAULT_ALLOWED_ORIGINS: string[] = [...DEV_ALLOWED_ORIGINS];
 
 function isOriginAllowed(origin: string | null): boolean {
 	if (!origin) return false;

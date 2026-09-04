@@ -1,16 +1,13 @@
-import { jabrUrlForPort } from "@config/jabr-config";
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { Search9Router } from "@adapters/search-9router";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
 import { LIBRARIAN_CARD, LibrarianAgent } from "@core/librarian";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
-import { PluginEventBusImpl } from "@ports/plugin-event-bus";
-import type { DomainEventBus } from "@ports/plugin-event-bus.types";
-import type { RealtimePort } from "@ports/realtime-port";
 import { initLifecycle } from "./lifecycle.ts";
+import { createRealtimePort } from "./realtime.ts";
 import { runAgent } from "./serve.ts";
 
 function shouldWireLlm(): boolean {
@@ -31,25 +28,9 @@ if (import.meta.main) {
 		palace,
 	);
 
-	const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-	let realtime: RealtimePort;
-	if (!isNaN(realtimePort) && realtimePort > 0) {
-		realtime = {
-			broadcast: (event) =>
-				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(event),
-				}).catch((e) => console.warn(`[Librarian] realtime emit failed: ${e}`)),
-			emitTo: () => {},
-			on: () => {},
-			getConnectionCount: () => 0,
-		};
-	} else {
-		realtime = startBunWebSocketAdapter({ port: 4008 });
-	}
+	const realtime = createRealtimePort("Librarian");
 
-	const lifecycle = initLifecycle(realtime, "librarian", 4002);
+	const lifecycle = initLifecycle(realtime, "librarian", JABR_PORTS.librarian);
 	lifecycle.announceOnline();
 
 	process.on("SIGTERM", () => {
@@ -62,7 +43,7 @@ if (import.meta.main) {
 	});
 
 	runAgent({
-		port: 4002,
+		port: JABR_PORTS.librarian,
 		card: LIBRARIAN_CARD,
 		execute: (taskId, text) => {
 			console.log(`[Run:Librarian] dispatching task ${taskId}`);

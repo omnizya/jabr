@@ -15,6 +15,7 @@ import {
 	type WhatsAppWebhookEvent,
 } from "@ports/whatsapp-bot-port";
 import type { BunRequest } from "bun";
+import { JABR_PORTS } from "@constants/ecosystem";
 
 /**
  * Configuration for WhatsAppWebhookAdapter.
@@ -329,7 +330,7 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
 		this.businessAccountId = config.businessAccountId;
 		this.apiVersion = config.apiVersion ?? DEFAULT_API_VERSION;
 		this.accessToken = config.accessToken ?? "";
-		this.port = config.port ?? 4009;
+		this.port = config.port ?? JABR_PORTS.verification;
 		this.delegateUrl = config.delegateUrl ?? "";
 	}
 
@@ -797,7 +798,7 @@ if (import.meta.main) {
 	const businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 	const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
 	const delegateUrl = process.env.WHATSAPP_DELEGATE_URL;
-	const port = Number(process.env.WHATSAPP_PORT ?? "4009");
+	const port = Number(process.env.WHATSAPP_PORT ?? String(JABR_PORTS.verification));
 
 	if (!secret || !phoneNumberId || !businessAccountId) {
 		console.error(

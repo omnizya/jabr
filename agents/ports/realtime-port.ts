@@ -35,4 +35,4 @@ export interface RealtimePort {
 	getConnectionCount(): number;
 }
 
-console.log("[RealtimePort] port interface loaded");
+

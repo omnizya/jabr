@@ -28,4 +28,4 @@ export interface ArtifactPort {
 	): Promise<{ size: number; name: string; createdAt: Date }>;
 }
 
-console.log("[ArtifactPort] port interface loaded");
+

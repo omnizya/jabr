@@ -1,6 +1,7 @@
+import { NINEROUTER_URL_DEFAULT } from "@constants/ecosystem";
 import type { ImageGenPort } from "@ports/image-gen-port";
 
-interface NineRouterImageResponse {
+export interface NineRouterImageResponse {
 	data?: Array<{ url?: string; b64_json?: string }>;
 	error?: { message?: string };
 }
@@ -19,16 +20,24 @@ export class ImageGen9Router implements ImageGenPort {
 		size?: string;
 	}) {
 		this.baseUrl =
-			opts?.baseUrl ?? process.env.NINEROUTER_URL ?? "http://127.0.0.1:20128";
+			opts?.baseUrl ??
+			process.env.NINEROUTER_URL ??
+			NINEROUTER_URL_DEFAULT;
 		this.apiKey =
 			opts?.apiKey ??
 			process.env.NINEROUTER_KEY ??
-			"sk-ac4453b102b24d2f-9eda9y-838fcb60";
+			"";
 		this.model = opts?.model ?? "gemini/gemini-3-pro-image-preview";
 		this.size = opts?.size;
 	}
 
 	async generate(prompt: string): Promise<string> {
+		if (!this.baseUrl || !this.apiKey) {
+			throw new Error(
+				"[ImageGen9Router] missing NINEROUTER_URL or NINEROUTER_KEY",
+			);
+		}
+
 		const payload: Record<string, unknown> = {
 			model: this.model,
 			prompt,

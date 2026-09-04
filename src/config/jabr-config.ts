@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { JABR_URL_DEFAULT } from "../constants/ecosystem.ts";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -24,7 +25,7 @@ import { z } from "zod";
 
 const jabrUrlSchema = z
 	.string()
-	.url("JABR_URL must be a valid URL (e.g. http://localhost:4000)")
+	.url(`JABR_URL must be a valid URL (e.g. ${JABR_URL_DEFAULT})`)
 	.refine(
 		(url) => {
 			try {
@@ -79,7 +80,7 @@ export function jabrUrl(): string {
 	if (!raw) {
 		console.error(
 			"[JABR_CONFIG] Fatal: JABR_URL environment variable is required.\n" +
-				"  Set it to the orchestrator endpoint, e.g. JABR_URL=http://localhost:4000\n" +
+				`  Set it to the orchestrator endpoint, e.g. JABR_URL=${JABR_URL_DEFAULT}\n` +
 				"  (Legacy ORCHESTRATOR_URL is also accepted but deprecated.)",
 		);
 		process.exit(1);

@@ -12,6 +12,15 @@ import { FIXER_CARD, FixerAgent } from "@core/fixer";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
 
+// This E2E requires a live 9Router gateway with a real key. The previous
+// hardcoded key fallback was removed (C1), so skip when one is not configured.
+if (!process.env.NINEROUTER_KEY?.startsWith("sk-")) {
+	console.log(
+		"SKIP: NINEROUTER_KEY not set — cannot run LLM E2E (needs live 9Router gateway)",
+	);
+	process.exit(0);
+}
+
 const INPUT = "fix the login flow bug";
 
 // Canned output from the bug-fix branch of executeTask() — the fallback

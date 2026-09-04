@@ -1,36 +1,19 @@
-import { jabrUrlForPort } from "@config/jabr-config";
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
+import { McpClientAdapter } from "@adapters/mcp-client";
 import { TaskMemory } from "@adapters/task-memory";
 import { EXPLORER_CARD, ExplorerAgent } from "@core/explorer";
-import { PluginEventBusImpl } from "@ports/plugin-event-bus";
-import type { DomainEventBus } from "@ports/plugin-event-bus.types";
-import type { RealtimePort } from "@ports/realtime-port";
 import { initLifecycle } from "./lifecycle.ts";
+import { createRealtimePort } from "./realtime.ts";
 import { runAgent } from "./serve.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
 
 if (import.meta.main) {
 	const taskStore = new TaskMemory();
-	const agent = new ExplorerAgent(taskStore);
+	const mcpClient = new McpClientAdapter();
+	const agent = new ExplorerAgent(taskStore, mcpClient);
 
-	const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-	let realtime: RealtimePort;
-	if (!isNaN(realtimePort) && realtimePort > 0) {
-		realtime = {
-			broadcast: (event) =>
-				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(event),
-				}).catch((e) => console.warn(`[Explorer] realtime emit failed: ${e}`)),
-			emitTo: () => {},
-			on: () => {},
-			getConnectionCount: () => 0,
-		};
-	} else {
-		realtime = startBunWebSocketAdapter({ port: 4008 });
-	}
+	const realtime = createRealtimePort("Explorer");
 
-	const lifecycle = initLifecycle(realtime, "explorer", 4003);
+	const lifecycle = initLifecycle(realtime, "explorer", JABR_PORTS.explorer);
 	lifecycle.announceOnline();
 
 	process.on("SIGTERM", () => {
@@ -43,7 +26,7 @@ if (import.meta.main) {
 	});
 
 	runAgent({
-		port: 4003,
+		port: JABR_PORTS.explorer,
 		card: EXPLORER_CARD,
 		execute: (taskId, text) => {
 			console.log(`[Run:Explorer] dispatching exploration task ${taskId}`);

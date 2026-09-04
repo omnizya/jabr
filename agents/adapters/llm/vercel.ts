@@ -27,13 +27,11 @@ export class VercelLlmAdapter implements LlmPort {
 		const apiKey =
 			opts?.apiKey ??
 			process.env.VERCEL_AI_GATEWAY_KEY ??
-			process.env.AI_GATEWAY_API_KEY ??
-			"";
+			process.env.AI_GATEWAY_API_KEY;
 		const baseUrl = opts?.baseUrl ?? process.env.VERCEL_AI_GATEWAY_BASE_URL;
 		const model =
 			opts?.model ??
-			process.env.VERCEL_AI_GATEWAY_MODEL ??
-			"minimax/minimax-m3";
+			process.env.VERCEL_AI_GATEWAY_MODEL;
 
 		const gateway = createGateway({
 			apiKey,

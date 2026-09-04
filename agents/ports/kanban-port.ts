@@ -45,4 +45,4 @@ export interface KanbanPort {
 	unblock(taskId: string): Promise<void>;
 }
 
-console.log("[KanbanPort] port interface loaded");
+

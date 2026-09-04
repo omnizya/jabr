@@ -144,4 +144,4 @@ export interface GraphMemoryPort {
 	waitForSync(minPeers?: number, timeoutMs?: number): Promise<boolean>;
 }
 
-console.log("[GraphMemoryPort] port interface loaded");
+

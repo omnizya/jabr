@@ -20,4 +20,4 @@ export interface KnowledgePort {
 	list(): Promise<KnowledgeEntry[]>;
 }
 
-console.log("[KnowledgePort] port interface loaded");
+

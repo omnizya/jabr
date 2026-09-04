@@ -1,12 +1,13 @@
+import { NINEROUTER_URL_DEFAULT } from "@constants/ecosystem";
 import type { SearchPort, SearchResult } from "@ports/search-port";
 
-interface NineRouterSearchRequest {
+export interface NineRouterSearchRequest {
 	model: string;
 	query: string;
 	max_results?: number;
 }
 
-interface NineRouterSearchResponse {
+export interface NineRouterSearchResponse {
 	results?: Array<{
 		title?: string;
 		url?: string;
@@ -37,12 +38,12 @@ export class Search9Router implements SearchPort {
 		this.baseUrl = (
 			opts?.baseUrl ??
 			process.env.NINEROUTER_URL ??
-			"http://127.0.0.1:20128"
+			NINEROUTER_URL_DEFAULT
 		).replace(/\/$/, "");
 		this.apiKey =
 			opts?.apiKey ??
 			process.env.NINEROUTER_KEY ??
-			"sk-ac4453b102b24d2f-9eda9y-838fcb60";
+			"";
 		this.model = opts?.model ?? "search-combo";
 		this.maxResults = opts?.maxResults ?? 5;
 	}

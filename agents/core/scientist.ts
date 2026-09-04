@@ -1,5 +1,6 @@
 import type { AgentCard, AgentSkill } from "@agents/types";
 import { jabrUrlForPort } from "@config/jabr-config";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { McpToolPort } from "@ports/mcp-tool-port";
 
 export class ScientistAgent {
@@ -7,7 +8,7 @@ export class ScientistAgent {
 		name: "KHWARIZMI",
 		description:
 			"KHWARIZMI (Al-Khwarizmi) — Master of Calculation. Specialist in data science, scripting, and technical analysis. Uses Python to execute code and analyze data.",
-		url: jabrUrlForPort(4006),
+		url: jabrUrlForPort(JABR_PORTS.scientist),
 		version: "1.0.0",
 		capabilities: {
 			streaming: false,

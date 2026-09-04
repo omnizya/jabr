@@ -1,4 +1,8 @@
 import { OpenAiLlmAdapter } from "@adapters/llm/openai";
+import {
+	NINEROUTER_MODEL_DEFAULT,
+	NINEROUTER_URL_DEFAULT,
+} from "@constants/ecosystem";
 import type { BudgetPort } from "@ports/budget-port";
 
 /**
@@ -13,14 +17,15 @@ import type { BudgetPort } from "@ports/budget-port";
 export class NineRouterLlmAdapter extends OpenAiLlmAdapter {
 	constructor(budget?: BudgetPort) {
 		const baseUrl = (
-			process.env.NINEROUTER_URL ?? "http://127.0.0.1:20128"
+			process.env.NINEROUTER_URL ??
+			NINEROUTER_URL_DEFAULT
 		).replace(/\/$/, "");
 		super(budget, {
 			baseUrl: `${baseUrl}/v1`,
 			apiKey:
-				process.env.NINEROUTER_KEY ?? "sk-ac4453b102b24d2f-9eda9y-838fcb60",
+				process.env.NINEROUTER_KEY ?? "",
 			model:
-				process.env.NINEROUTER_MODEL ?? "openrouter/minimax/minimax-m3:free",
+				process.env.NINEROUTER_MODEL ?? NINEROUTER_MODEL_DEFAULT,
 		});
 	}
 }

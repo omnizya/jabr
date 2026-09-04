@@ -18,12 +18,12 @@ metadata:
 
 ## Procedure
 
-1. Create a worktree: `git worktree add ../branch-name branch-name`
+1. Create a worktree: `git worktree add .worktrees/branch-name branch-name`
 2. Work in the new worktree directory
 3. Run tests and typecheck from within the worktree
 4. Commit in the worktree
 5. Merge back to main: `git merge branch-name`
-6. Clean up: `git worktree remove ../branch-name`
+6. Clean up: `git worktree remove .worktrees/branch-name`
 
 ## Pitfalls
 

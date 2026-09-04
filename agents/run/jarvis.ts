@@ -1,4 +1,3 @@
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
 import { HeadroomAdapter } from "@adapters/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { A2AServer } from "@adapters/http/a2a-server";
@@ -10,14 +9,13 @@ import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
 import { jabrUrl, jabrUrlForPort } from "@config/jabr-config";
 import { JARVIS_CARD, JarvisAgent } from "@core/jarvis";
-import { PluginEventBusImpl } from "@ports/plugin-event-bus";
-import type { DomainEventBus } from "@ports/plugin-event-bus.types";
-import type { RealtimePort } from "@ports/realtime-port";
+import { JABR_PORTS } from "@constants/ecosystem";
 import { initLifecycle } from "./lifecycle.ts";
+import { createRealtimePort } from "./realtime.ts";
 import { extractLastResponse } from "./serve.ts";
 
 if (import.meta.main) {
-	const port = 1337;
+	const port = JABR_PORTS.jarvis;
 	const budget = new HeadroomAdapter();
 	const llm = createLlmAdapter(budget);
 	const search = new Search9Router();
@@ -41,25 +39,9 @@ if (import.meta.main) {
 		agentEndpoint,
 	);
 
-	const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-	let realtime: RealtimePort;
-	if (!isNaN(realtimePort) && realtimePort > 0) {
-		realtime = {
-			broadcast: (event) =>
-				fetch(`http://localhost:${realtimePort}/emit`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(event),
-				}).catch((e) => console.warn(`[Jarvis] realtime emit failed: ${e}`)),
-			emitTo: () => {},
-			on: () => {},
-			getConnectionCount: () => 0,
-		};
-	} else {
-		realtime = startBunWebSocketAdapter({ port: 4008 });
-	}
+	const realtime = createRealtimePort("Jarvis");
 
-	const lifecycle = initLifecycle(realtime, "jarvis", 1337);
+	const lifecycle = initLifecycle(realtime, "jarvis", JABR_PORTS.jarvis);
 	lifecycle.announceOnline();
 	process.on("uncaughtException", (e) => {
 		lifecycle.uncaughtHandler(e);

@@ -1,16 +1,11 @@
-import { jabrUrlForPort } from "@config/jabr-config";
-import {
-	BunWebSocketAdapter,
-	startBunWebSocketAdapter,
-} from "@adapters/bun-websocket-adapter";
 import { HeadroomAdapter } from "@adapters/headroom";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
 import { ORACLE_CARD, OracleAgent } from "@core/oracle";
-import { PluginEventBusImpl } from "@ports/plugin-event-bus";
-import type { DomainEventBus } from "@ports/plugin-event-bus.types";
+import { JABR_PORTS } from "@constants/ecosystem";
 import { initLifecycle } from "./lifecycle.ts";
+import { createRealtimePort } from "./realtime.ts";
 import { runAgent } from "./serve.ts";
 
 if (import.meta.main) {
@@ -36,27 +31,9 @@ if (import.meta.main) {
 	// simple and avoid duplicate adapters, we rely on JABR_REALTIME_PORT from
 	// the orchestrator. When set, we skip starting a second adapter and instead
 	// emit via HTTP to the orchestrator's /emit endpoint.
-	const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-	let realtime: import("@ports/realtime-port").RealtimePort;
-	if (!isNaN(realtimePort) && realtimePort > 0) {
-		// We're a child runner — emit via HTTP to the orchestrator's adapter.
-		realtime = {
-			broadcast: (event) => {
-				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(event),
-				}).catch((e) => console.warn(`[Oracle] realtime emit failed: ${e}`));
-			},
-			emitTo: () => {},
-			on: () => {},
-			getConnectionCount: () => 0,
-		} as import("@ports/realtime-port").RealtimePort;
-	} else {
-		realtime = startBunWebSocketAdapter({ port: 4008 });
-	}
+	const realtime = createRealtimePort("Oracle");
 
-	const lifecycle = initLifecycle(realtime, "oracle", 4001);
+	const lifecycle = initLifecycle(realtime, "oracle", JABR_PORTS.oracle);
 	lifecycle.announceOnline();
 
 	process.on("SIGTERM", () => {
@@ -69,7 +46,7 @@ if (import.meta.main) {
 	});
 
 	runAgent({
-		port: 4001,
+		port: JABR_PORTS.oracle,
 		card: ORACLE_CARD,
 		execute: (taskId, text) => {
 			console.log(`[Run:Oracle] dispatching task ${taskId}`);

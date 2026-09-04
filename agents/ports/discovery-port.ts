@@ -22,4 +22,4 @@ export interface DiscoveryPort {
 	ensureReady?(): Promise<void>;
 }
 
-console.log("[DiscoveryPort] port interface loaded");
+

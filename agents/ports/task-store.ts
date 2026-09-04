@@ -31,4 +31,4 @@ export interface TaskStorePort {
 	): Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }>;
 }
 
-console.log("[TaskStorePort] port interface loaded");
+

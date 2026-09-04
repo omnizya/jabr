@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Dev launcher: orchestrator owns the realtime websocket server on port 4008;
-# every other runner bridges lifecycle events to it via JABR_REALTIME_PORT.
+# Dev launcher: orchestrator owns the realtime websocket server; every other
+# runner bridges lifecycle events to it via JABR_REALTIME_PORT.
 set -u
+
+# Canonical ports — single source of truth: src/constants/ecosystem.ts.
+declare -A JABR_PORT
+while IFS='|' read -r key val; do
+  JABR_PORT[$key]="$val"
+done < <(cd "$(dirname "${BASH_SOURCE[0]}")/.." && bun -e 'import("./src/constants/ecosystem.ts").then((m) => { for (const [k, v] of Object.entries(m.JABR_PORTS)) console.log(`${k}|${v}`); })')
 
 pids=()
 cleanup() {
@@ -14,7 +20,7 @@ trap cleanup EXIT INT TERM
 
 start() {
   local name="$1"; shift
-  JABR_REALTIME_PORT=4008 bun "$@" &
+  JABR_REALTIME_PORT="${JABR_PORT[realtime]}" bun "$@" &
   pids+=($!)
   echo "[dev] started $name (pid ${pids[-1]})"
 }

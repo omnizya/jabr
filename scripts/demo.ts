@@ -26,15 +26,16 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
+import { JABR_PORTS } from "../src/constants/ecosystem.ts";
 
-const FIXER = jabrUrlForPort(4005);
-const LIBRARIAN = jabrUrlForPort(4002);
-const ORACLE = jabrUrlForPort(4001);
-const EXPLORER = jabrUrlForPort(4003);
-const DESIGNER = jabrUrlForPort(4004);
-const SCIENTIST = jabrUrlForPort(4006);
-const JARVIS = jabrUrlForPort(1337);
-const ORCHESTRATOR = jabrUrlOrUndefined() ?? jabrUrlForPort(4000);
+const FIXER = jabrUrlForPort(JABR_PORTS.fixer);
+const LIBRARIAN = jabrUrlForPort(JABR_PORTS.librarian);
+const ORACLE = jabrUrlForPort(JABR_PORTS.oracle);
+const EXPLORER = jabrUrlForPort(JABR_PORTS.explorer);
+const DESIGNER = jabrUrlForPort(JABR_PORTS.designer);
+const SCIENTIST = jabrUrlForPort(JABR_PORTS.scientist);
+const JARVIS = jabrUrlForPort(JABR_PORTS.jarvis);
+const ORCHESTRATOR = jabrUrlOrUndefined() ?? jabrUrlForPort(JABR_PORTS.orchestrator);
 
 let passed = 0;
 let failed = 0;

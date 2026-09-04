@@ -1,5 +1,6 @@
 import { DynamicRegistry } from "@adapters/dynamic-registry";
 import type { AgentCard, AgentSkill } from "@agents/types";
+import { JABR_PORTS } from "./src/constants/ecosystem.ts";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import { jabrUrlForPort } from "./src/config/jabr-config.ts";
 
@@ -67,13 +68,12 @@ const SKILLS: Record<string, AgentSkill[]> = {
 		},
 	],
 };
-
 const seed = {
-	oracle: jabrUrlForPort(4001),
-	librarian: jabrUrlForPort(4002),
-	explorer: jabrUrlForPort(4003),
-	designer: jabrUrlForPort(4004),
-	fixer: jabrUrlForPort(4005),
+	oracle: jabrUrlForPort(JABR_PORTS.oracle),
+	librarian: jabrUrlForPort(JABR_PORTS.librarian),
+	explorer: jabrUrlForPort(JABR_PORTS.explorer),
+	designer: jabrUrlForPort(JABR_PORTS.designer),
+	fixer: jabrUrlForPort(JABR_PORTS.fixer),
 };
 const urlToName: Record<string, string> = {};
 for (const [k, v] of Object.entries(seed)) urlToName[v] = k;

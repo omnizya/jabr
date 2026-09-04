@@ -19,16 +19,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${JABR_TMUX_SESSION:-jabr}"
 
+# Canonical ports — single source of truth: src/constants/ecosystem.ts.
+declare -A JABR_PORT
+while IFS='|' read -r key val; do
+  JABR_PORT[$key]="$val"
+done < <(cd "$ROOT" && bun -e 'import("./src/constants/ecosystem.ts").then((m) => { for (const [k, v] of Object.entries(m.JABR_PORTS)) console.log(`${k}|${v}`); })')
+
 # name:run-script:port
 AGENTS=(
-  "orchestrator:orchestrator:4000"
-  "oracle:oracle:4001"
-  "librarian:librarian:4002"
-  "explorer:explorer:4003"
-  "designer:designer:4004"
-  "fixer:fixer:4005"
-  "scientist:scientist:4006"
-  "jarvis:jarvis:1337"
+  "orchestrator:orchestrator:${JABR_PORT[orchestrator]}"
+  "oracle:oracle:${JABR_PORT[oracle]}"
+  "librarian:librarian:${JABR_PORT[librarian]}"
+  "explorer:explorer:${JABR_PORT[explorer]}"
+  "designer:designer:${JABR_PORT[designer]}"
+  "fixer:fixer:${JABR_PORT[fixer]}"
+  "scientist:scientist:${JABR_PORT[scientist]}"
+  "jarvis:jarvis:${JABR_PORT[jarvis]}"
 )
 
 stop() {

@@ -17,6 +17,7 @@ import type { ResolvedCaller } from "@agents/types";
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
 import { ORCHESTRATOR_CARD, OrchestratorAgent } from "@core/orchestrator";
 import { type AgentConfig, ToolRouter } from "@core/tool-router";
+import { JABR_PORTS } from "@constants/ecosystem";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
@@ -24,7 +25,7 @@ import { ApiKeyRegistry } from "@security/api-key-registry";
 import { bridgeRealtimeToPlugin, initLifecycle } from "./lifecycle.ts";
 
 if (import.meta.main) {
-	const PORT = 4000;
+	const PORT = JABR_PORTS.orchestrator;
 
 	// --- Settlement infrastructure ---
 	if (!process.env.JABR_X402_HMAC_SECRET) {
@@ -60,7 +61,7 @@ if (import.meta.main) {
 	// Real-time event transport: native Bun WebSocket server on port 4008.
 	// Clients subscribe to task-scoped rooms (task-{id}) to receive lifecycle
 	// events (task:created, task:progress, task:completed, task:failed).
-	const realtime: RealtimePort = startBunWebSocketAdapter({ port: 4008 });
+	const realtime: RealtimePort = startBunWebSocketAdapter({ port: JABR_PORTS.realtime });
 
 	// --- Plugin event bus ---
 	// Canonical domain event bus (in-process pub/sub). Emits lifecycle payloads
@@ -97,14 +98,14 @@ if (import.meta.main) {
 	// ToolRouter, which handles all routing, URL resolution, and pricing
 	// without any async discovery protocol or health checks.
 	const seedUrls: Record<string, string> = {
-		oracle: jabrUrlForPort(4001),
-		librarian: jabrUrlForPort(4002),
-		explorer: jabrUrlForPort(4003),
-		designer: jabrUrlForPort(4004),
-		fixer: jabrUrlForPort(4005),
-		scientist: jabrUrlForPort(4006),
-		jarvis: jabrUrlForPort(1337),
-		verification: jabrUrlForPort(4009),
+		jarvis: jabrUrlForPort(JABR_PORTS.jarvis),
+		oracle: jabrUrlForPort(JABR_PORTS.oracle),
+		librarian: jabrUrlForPort(JABR_PORTS.librarian),
+		explorer: jabrUrlForPort(JABR_PORTS.explorer),
+		designer: jabrUrlForPort(JABR_PORTS.designer),
+		fixer: jabrUrlForPort(JABR_PORTS.fixer),
+		scientist: jabrUrlForPort(JABR_PORTS.scientist),
+		verification: jabrUrlForPort(JABR_PORTS.verification),
 	};
 
 	// Fetch agent cards and build static config. The x402Server is wired from
@@ -207,7 +208,7 @@ if (import.meta.main) {
 	const githubWebhook = new GitHubWebhookAdapter({
 		webhookSecret,
 		token: ghToken,
-		port: 4007,
+		port: JABR_PORTS.githubWebhook,
 		delegateUrl: ghDelegate,
 		defaultRepo: process.env.GITHUB_REPO ?? "omnizya/jabr",
 	});

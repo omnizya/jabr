@@ -1,14 +1,11 @@
-import { jabrUrlForPort } from "@config/jabr-config";
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
 import { HeadroomAdapter } from "@adapters/headroom";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
 import { FIXER_CARD, FixerAgent } from "@core/fixer";
-import { PluginEventBusImpl } from "@ports/plugin-event-bus";
-import type { DomainEventBus } from "@ports/plugin-event-bus.types";
-import type { RealtimePort } from "@ports/realtime-port";
+import { JABR_PORTS } from "@constants/ecosystem";
 import { initLifecycle } from "./lifecycle.ts";
+import { createRealtimePort } from "./realtime.ts";
 import { extractLastResponse, runAgent } from "./serve.ts";
 
 if (import.meta.main) {
@@ -17,25 +14,9 @@ if (import.meta.main) {
 	const llm = createLlmAdapter(budget);
 	const agent = new FixerAgent(taskStore, new SkillFS("skills"), llm);
 
-	const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-	let realtime: RealtimePort;
-	if (!isNaN(realtimePort) && realtimePort > 0) {
-		realtime = {
-			broadcast: (event) =>
-				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(event),
-				}).catch((e) => console.warn(`[Fixer] realtime emit failed: ${e}`)),
-			emitTo: () => {},
-			on: () => {},
-			getConnectionCount: () => 0,
-		};
-	} else {
-		realtime = startBunWebSocketAdapter({ port: 4008 });
-	}
+	const realtime = createRealtimePort("Fixer");
 
-	const lifecycle = initLifecycle(realtime, "fixer", 4005);
+	const lifecycle = initLifecycle(realtime, "fixer", JABR_PORTS.fixer);
 	lifecycle.announceOnline();
 
 	process.on("SIGTERM", () => {
@@ -48,7 +29,7 @@ if (import.meta.main) {
 	});
 
 	runAgent({
-		port: 4005,
+		port: JABR_PORTS.fixer,
 		card: FIXER_CARD,
 		execute: (taskId, text) =>
 			agent.execute(taskId, text).catch((e) => {

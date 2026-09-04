@@ -1,35 +1,17 @@
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
 import { A2AServer } from "@adapters/http/a2a-server";
 import { McpClientAdapter } from "@adapters/mcp-client";
 import { ScientistAgent } from "@core/scientist";
-import { PluginEventBusImpl } from "@ports/plugin-event-bus";
-import type { DomainEventBus } from "@ports/plugin-event-bus.types";
-import type { RealtimePort } from "@ports/realtime-port";
+import { JABR_PORTS } from "@constants/ecosystem";
 import { initLifecycle } from "./lifecycle.ts";
+import { createRealtimePort } from "./realtime.ts";
 
-const port = 4006;
+const port = JABR_PORTS.scientist;
 const mcpClient = new McpClientAdapter();
 const scientist = new ScientistAgent(mcpClient);
 
-const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-let realtime: RealtimePort;
-if (!isNaN(realtimePort) && realtimePort > 0) {
-	realtime = {
-		broadcast: (event) =>
-			fetch(`http://localhost:${realtimePort}/emit`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(event),
-			}).catch((e) => console.warn(`[Scientist] realtime emit failed: ${e}`)),
-		emitTo: () => {},
-		on: () => {},
-		getConnectionCount: () => 0,
-	};
-} else {
-	realtime = startBunWebSocketAdapter({ port: 4008 });
-}
+const realtime = createRealtimePort("Scientist");
 
-const lifecycle = initLifecycle(realtime, "scientist", 4006);
+const lifecycle = initLifecycle(realtime, "scientist", JABR_PORTS.scientist);
 lifecycle.announceOnline();
 
 process.on("SIGTERM", () => {

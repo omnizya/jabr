@@ -9,5 +9,3 @@ export interface AgentRegistryPort {
 		agentName?: string,
 	): Promise<string>;
 }
-
-console.log("[AgentRegistryPort] port interface loaded");

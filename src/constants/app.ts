@@ -15,3 +15,15 @@ export {
 	RESEARCH_TEMPERATURE,
 	SYNTHESIS_TEMPERATURE,
 } from "./app-constants";
+
+export { JABR_WORLD_PORTS } from "./jabr-constants.ts";
+
+export {
+	A2A_METHODS,
+	DEV_ALLOWED_ORIGINS,
+	JABR_ENDPOINTS,
+	JABR_PORTS,
+	JABR_URL_DEFAULT,
+	NINEROUTER_MODEL_DEFAULT,
+	NINEROUTER_URL_DEFAULT,
+} from "./ecosystem.ts";
