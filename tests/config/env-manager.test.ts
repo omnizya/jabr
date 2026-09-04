@@ -277,18 +277,18 @@ describe("optionalJsonEnv", () => {
 
   test("parses valid JSON", () => {
     process.env.A2A_API_KEYS = '[{"key":"abc"}]';
-    expect(optionalJsonEnv("A2A_API_KEYS", [])).toEqual([{ key: "abc" }]);
+    expect(optionalJsonEnv<{ key: string }[]>("A2A_API_KEYS", [])).toEqual([{ key: "abc" }]);
   });
 
   test("returns fallback when unset", () => {
-    expect(optionalJsonEnv("A2A_API_KEYS", [{ key: "default" }])).toEqual([
+    expect(optionalJsonEnv<{ key: string }[]>("A2A_API_KEYS", [{ key: "default" }])).toEqual([
       { key: "default" },
     ]);
   });
 
   test("returns fallback on malformed JSON", () => {
     process.env.A2A_API_KEYS = "not-json";
-    expect(optionalJsonEnv("A2A_API_KEYS", [{ key: "default" }])).toEqual([
+    expect(optionalJsonEnv<{ key: string }[]>("A2A_API_KEYS", [{ key: "default" }])).toEqual([
       { key: "default" },
     ]);
   });
@@ -296,7 +296,7 @@ describe("optionalJsonEnv", () => {
   test("warns on malformed JSON", () => {
     useCaptureLogger();
     process.env.A2A_API_KEYS = "not-json";
-    optionalJsonEnv("A2A_API_KEYS", []);
+    optionalJsonEnv<{ key: string }[]>("A2A_API_KEYS", []);
     expect(captured.warn.length).toBeGreaterThan(0);
   });
 });
