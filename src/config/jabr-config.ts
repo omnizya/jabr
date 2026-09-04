@@ -23,8 +23,7 @@ import { JABR_URL_DEFAULT } from "../constants/ecosystem.ts";
 // Schema
 // ---------------------------------------------------------------------------
 
-const jabrUrlSchema = z
-	.string()
+export const jabrUrlSchema = z
 	.url(`JABR_URL must be a valid URL (e.g. ${JABR_URL_DEFAULT})`)
 	.refine(
 		(url) => {
@@ -60,7 +59,7 @@ export const JABR_URL_RAW: string | undefined =
 // Validated accessor
 // ---------------------------------------------------------------------------
 
-let _cachedValidatedUrl: string | null = null;
+export let _cachedValidatedUrl: string | null = null;
 
 /**
  * Returns the validated Jabr orchestrator URL.

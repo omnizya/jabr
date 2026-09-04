@@ -31,13 +31,13 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { jabrUrlForPort } from "../src/config/jabr-config.ts";
+import { jabrUrlForPort } from "@config/jabr-config";
 import {
 	JABR_PORTS,
 	JABR_URL_DEFAULT,
 	NINEROUTER_MODEL_DEFAULT,
 	NINEROUTER_URL_DEFAULT,
-} from "../src/constants/ecosystem.ts";
+} from "@constants/ecosystem";
 
 const ROOT = process.cwd();
 

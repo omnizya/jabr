@@ -26,7 +26,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
-import { JABR_PORTS } from "../src/constants/ecosystem.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
 
 const FIXER = jabrUrlForPort(JABR_PORTS.fixer);
 const LIBRARIAN = jabrUrlForPort(JABR_PORTS.librarian);

@@ -83,7 +83,7 @@ export const A2A_METHODS = {
 // ---------------------------------------------------------------------------
 
 /** Fallback 9Router gateway URL when NINEROUTER_URL is unset (dev default). */
-export const NINEROUTER_URL_DEFAULT = "http://127.0.0.1:20128";
+export const NINEROUTER_URL_DEFAULT = "http://localhost:20127";
 /** Fallback model when NINEROUTER_MODEL is unset. */
 export const NINEROUTER_MODEL_DEFAULT = "openrouter/minimax/minimax-m3:free";
 /** Fallback orchestrator URL when JABR_URL / ORCHESTRATOR_URL is unset. */

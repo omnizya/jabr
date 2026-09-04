@@ -599,7 +599,7 @@ bun run demo
 
 | Variable | Default | Description |
 |-----------|---------|-------------|
-| `NINEROUTER_URL` | `http://127.0.0.1:20128` | LLM gateway URL |
+| `NINEROUTER_URL` | `http://localhost:20127` | LLM gateway URL |
 | `NINEROUTER_KEY` | — | LLM API key |
 | `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
 | `JABR_LLM_PROVIDER` | — | LLM provider selector: `vercel` (or set `VERCEL_AI_GATEWAY_KEY`) for Vercel AI Gateway, unset for 9Router |
