@@ -2,13 +2,13 @@
 
 *Jabr (جبر) — Arabic for "restoration of broken parts," the root of algebra.*
 
-**Version:** 0.4.0
-**Status:** Experimental — not production-ready
+**Version:** 0.4.1
+**Status:** Internal/personal use ready — not for external exposure
 **License:** MIT
 
-Experimental multi-agent system testing **ACP + A2A + MCP** together. Hexagonal architecture (Ports & Adapters).
+Multi-agent orchestration system — ACP + A2A + MCP, hexagonal architecture (Ports & Adapters).
 
-Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` directly.
+Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` directly. Standalone binaries compile via `bun run build`.
 
 ---
 
@@ -153,6 +153,23 @@ extend the selection logic in `factory.ts`.
   }
 }
 ```
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `bun scripts/generate-hmac-secret.ts` | Generate a 256-bit HMAC secret for x402 signing |
+| `bun scripts/generate-hmac-secret.ts --write` | Generate + write to `.env` |
+| `bun scripts/generate-hmac-secret.ts --check` | Validate existing `.env` secret |
+| `bun scripts/task-dlq.ts` | List failed tasks (dead letter queue) |
+| `bun scripts/task-dlq.ts --retry <id>` | Retry a specific failed task |
+| `bun scripts/task-dlq.ts --retry-all` | Retry all failed tasks |
+| `bun scripts/task-dlq.ts --purge` | Delete all failed tasks |
+| `bun scripts/kb-maintenance.ts` | Dedup + TTL cleanup for memory stores |
+| `bun scripts/demo.ts` | End-to-end integration test (all agents) |
+| `bun scripts/build.ts` | Compile standalone binaries |
 
 ---
 
