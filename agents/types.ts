@@ -1,3 +1,4 @@
+import type { TaskStorePort } from "@ports/task-store";
 import type { ApiKeyRegistry } from "@security/api-key-registry";
 
 export interface AgentConfig {
@@ -45,11 +46,20 @@ export interface AgentPricing {
 	};
 }
 
+export interface PushNotificationConfig {
+	/** Callback URL for task state change notifications. */
+	url: string;
+	/** Optional bearer token sent as Authorization header to the callback. */
+	token?: string;
+}
+
 export interface AgentCardCapabilities {
 	streaming?: boolean;
 	pushNotifications?: boolean;
 	/** Whether the agent records state transition history for audit trails. */
 	stateTransitionHistory?: boolean;
+	/** Push notification configuration for async task state callbacks. */
+	pushNotificationConfig?: PushNotificationConfig;
 	extensions?: AgentExtension[];
 	extendedAgentCard?: boolean;
 }
@@ -438,7 +448,11 @@ export interface ResolvedCaller {
 export interface A2AServerConfig {
 	port: number;
 	card: AgentCard;
-	onTask: (message: string, caller?: ResolvedCaller) => Promise<string>;
+	onTask: (
+		message: string,
+		caller?: ResolvedCaller,
+		signal?: AbortSignal,
+	) => Promise<string>;
 	/** ApiKeyRegistry for per-key authentication. */
 	apiKeyRegistry?: ApiKeyRegistry;
 	/** Whether to enforce API key validation on POST /. */
@@ -455,9 +469,14 @@ export interface A2AServerConfig {
 		taskId: string,
 		emit: (event: TaskStreamingEvent) => void,
 		caller?: ResolvedCaller,
+		signal?: AbortSignal,
 	) => Promise<string>;
 	/** Optional world-state handler for GET /.well-known/world-state. */
 	onWorldState?: () => Promise<any>;
+	/** Optional task store for tasks/get and tasks/cancel support. */
+	taskStore?: TaskStorePort;
+	/** Optional push notification config for async task state callbacks. */
+	pushNotificationConfig?: PushNotificationConfig;
 }
 
 export interface RegistryEntry {

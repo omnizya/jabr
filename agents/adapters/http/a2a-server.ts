@@ -1,19 +1,24 @@
 /**
  * a2a-server.ts — A2A v1.0 server with SSE streaming support.
  *
- * Two transport branches:
+ * Transport branches:
  *   - tasks/send (synchronous) — awaits onTask, returns JSON-RPC response.
  *   - tasks/sendSubscribe (streaming) — returns text/event-stream, emits
  *     TaskStatusUpdateEvent and TaskArtifactUpdateEvent frames.
+ *   - tasks/get — retrieve task state by ID.
+ *   - tasks/cancel — cancel a running task.
  */
 
 import { RateLimiter, rateLimitResponse } from "@adapters/rate-limit";
 import { X402Server, x402Reject } from "@adapters/x402/x402-server";
 import type {
 	A2AServerConfig,
+	PushNotificationConfig,
 	ResolvedCaller,
+	TaskState,
 	TaskStreamingEvent,
 } from "@agents/types";
+import type { TaskStorePort } from "@ports/task-store";
 import { ApiKeyRegistry } from "@security/api-key-registry";
 import {
 	buildCorsHeaders,
@@ -146,13 +151,17 @@ export class A2AServer {
 	private readonly registry: ApiKeyRegistry | null;
 	private server: ReturnType<typeof Bun.serve> | null = null;
 
-	// --- in-flight request tracking for graceful shutdown ---
+	// --- in-flight request tracking for graceful shutdown --
 	private inflightSync = 0;
 	private inflightStream = 0;
 	private shuttingDown = false;
 	private drainWaiters: Array<() => void> = [];
 	private drainTimeoutMs: number;
 	private readonly shutdownController: AbortController;
+
+	// --- task cancellation support ---
+	private readonly taskAbortControllers = new Map<string, AbortController>();
+	private readonly taskStore?: TaskStorePort;
 
 	constructor(
 		config: A2AServerConfig & {
@@ -168,6 +177,7 @@ export class A2AServer {
 		this.registry = apiKeyRegistry ?? config.apiKeyRegistry ?? null;
 		this.drainTimeoutMs = config.drainTimeoutMs ?? 30_000;
 		this.shutdownController = new AbortController();
+		this.taskStore = config.taskStore;
 	}
 
 	/**
@@ -479,6 +489,10 @@ export class A2AServer {
 							`[A2AServer] tasks/sendSubscribe starting taskId=${taskId} textLen=${text.length}`,
 						);
 
+						// Create AbortController for cooperative cancellation via tasks/cancel.
+						const streamController = new AbortController();
+						self.taskAbortControllers.set(taskId, streamController);
+
 						// Track in-flight streaming request for graceful shutdown.
 						self.inflightStream++;
 						const onDone = () => {
@@ -486,6 +500,7 @@ export class A2AServer {
 							self._resolveDrainWaiters();
 						};
 						if (self.shuttingDown) {
+							self.taskAbortControllers.delete(taskId);
 							onDone();
 							return new Response(
 								JSON.stringify({
@@ -514,6 +529,7 @@ export class A2AServer {
 										taskId,
 										emitEvent,
 										caller,
+										streamController.signal,
 									);
 								} else {
 									// Fallback: synthetic status events around sync onTask.
@@ -524,7 +540,7 @@ export class A2AServer {
 										message: "Processing",
 										timestamp: new Date().toISOString(),
 									});
-									result = await onTask(text, caller);
+									result = await onTask(text, caller, streamController.signal);
 									emitEvent({
 										type: "artifact",
 										taskId,
@@ -553,6 +569,7 @@ export class A2AServer {
 									timestamp: new Date().toISOString(),
 								});
 							} finally {
+								self.taskAbortControllers.delete(taskId);
 								// Signal stream end. The pull-based stream will close after
 								// flushing any remaining buffered events.
 								end();
@@ -561,6 +578,94 @@ export class A2AServer {
 						})();
 
 						return new Response(stream, { headers: responseHeaders });
+					}
+
+					// --- tasks/get — retrieve task state ---
+					if (method === "tasks/get") {
+						console.log(`[A2AServer] ← POST / tasks/get id=${id}`);
+						const taskId = (params as { taskId?: string })?.taskId;
+						if (!taskId) {
+							return Response.json(
+								err(id, -32600, "Invalid params: missing taskId"),
+								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
+							);
+						}
+						if (!self.taskStore) {
+							return Response.json(
+								err(
+									id,
+									-32603,
+									"Server misconfigured: task store not available",
+								),
+								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
+							);
+						}
+						const task = self.taskStore.get(taskId);
+						if (!task) {
+							return Response.json(
+								err(id, -32000, `Task not found: ${taskId}`),
+								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
+							);
+						}
+						return Response.json(
+							ok(id, {
+								id: task.id,
+								contextId: task.id,
+								status: {
+									state: task.state,
+									timestamp: new Date().toISOString(),
+								},
+								history: task.messages,
+								artifacts: task.artifacts,
+							}),
+							{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
+						);
+					}
+
+					// --- tasks/cancel — cancel a running task ---
+					if (method === "tasks/cancel") {
+						console.log(`[A2AServer] ← POST / tasks/cancel id=${id}`);
+						const taskId = (params as { taskId?: string })?.taskId;
+						if (!taskId) {
+							return Response.json(
+								err(id, -32600, "Invalid params: missing taskId"),
+								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
+							);
+						}
+						// If the task has an in-flight handler, abort it cooperatively.
+						const controller = self.taskAbortControllers.get(taskId);
+						if (controller) {
+							controller.abort("canceled");
+							self.taskAbortControllers.delete(taskId);
+						}
+						if (self.taskStore) {
+							const task = self.taskStore.get(taskId);
+							if (!task) {
+								return Response.json(
+									err(id, -32000, `Task not found: ${taskId}`),
+									{
+										headers: buildCorsHeaders(req.headers.get("Origin")) ?? {},
+									},
+								);
+							}
+							// Only SUBMITTED and WORKING tasks can be canceled.
+							if (task.state !== "submitted" && task.state !== "working") {
+								return Response.json(
+									err(
+										id,
+										-32002,
+										`Task in state '${task.state}' cannot be canceled`,
+									),
+									{
+										headers: buildCorsHeaders(req.headers.get("Origin")) ?? {},
+									},
+								);
+							}
+							self.taskStore.updateState(taskId, "canceled");
+						}
+						return Response.json(ok(id, { id: taskId, state: "canceled" }), {
+							headers: buildCorsHeaders(req.headers.get("Origin")) ?? {},
+						});
 					}
 
 					// --- tasks/send — synchronous branch ---
@@ -596,12 +701,15 @@ export class A2AServer {
 								role?: string;
 								parts: Array<{ kind: string; text?: string }>;
 							};
+							notificationUrl?: string;
+							callbackUrl?: string;
 						};
 						const parts = message.message.parts;
 						const text = parts.find((p) => p.kind === "text")?.text ?? "";
+						const callbackUrl = message.notificationUrl ?? message.callbackUrl;
 
 						console.log(
-							`[A2AServer] ← POST / tasks/send id=${id} textLen=${text.length}`,
+							`[A2AServer] ← POST / tasks/send id=${id} textLen=${text.length} callback=${callbackUrl ?? "none"}`,
 						);
 
 						// Track in-flight sync request for graceful shutdown.
@@ -622,14 +730,77 @@ export class A2AServer {
 							);
 						}
 
-						console.log(`[A2AServer] executing onTask (id=${id})`);
+						// --- Push notification mode: run task async, return task ID immediately ---
+						if (callbackUrl) {
+							const taskId = crypto.randomUUID();
+							const pushController = new AbortController();
+							self.taskAbortControllers.set(taskId, pushController);
+
+							console.log(
+								`[A2AServer] tasks/send push mode taskId=${taskId} callback=${callbackUrl}`,
+							);
+
+							// Fire-and-forget: run task and POST state changes to callback.
+							(async () => {
+								try {
+									self._postCallback(callbackUrl, taskId, "submitted", {
+										message: "Task accepted for execution",
+									});
+
+									const start = performance.now();
+									const result = await onTask(
+										text,
+										caller,
+										pushController.signal,
+									);
+									const latency = Math.round(performance.now() - start);
+									console.log(
+										`[A2AServer] push mode onTask done taskId=${taskId} latency=${latency}ms`,
+									);
+
+									self._postCallback(callbackUrl, taskId, "completed", {
+										result,
+										latencyMs: latency,
+									});
+								} catch (e) {
+									console.error(
+										`[A2AServer] push mode onTask error taskId=${taskId}:`,
+										e,
+									);
+									self._postCallback(callbackUrl, taskId, "failed", {
+										message: String(e),
+									});
+								} finally {
+									self.taskAbortControllers.delete(taskId);
+									self.inflightSync--;
+									self._resolveDrainWaiters();
+								}
+							})();
+
+							const origin = req.headers.get("Origin");
+							const corsHeaders = buildCorsHeaders(origin);
+							return Response.json(ok(id, { id: taskId, state: "submitted" }), {
+								headers: corsHeaders ?? {},
+							});
+						}
+
+						// --- Synchronous mode: await onTask, return result ---
+						// Generate taskId and AbortController for cooperative cancellation.
+						const taskId = crypto.randomUUID();
+						const syncController = new AbortController();
+						self.taskAbortControllers.set(taskId, syncController);
+
+						console.log(
+							`[A2AServer] executing onTask (id=${id} taskId=${taskId})`,
+						);
 						const start = performance.now();
-						const result = await onTask(text, caller);
+						const result = await onTask(text, caller, syncController.signal);
 						const latency = Math.round(performance.now() - start);
 						console.log(
 							`[A2AServer] onTask done (id=${id}) latency=${latency}ms resultLen=${String(result).length}`,
 						);
 						self.inflightSync--;
+						self.taskAbortControllers.delete(taskId);
 						self._resolveDrainWaiters();
 
 						const origin = req.headers.get("Origin");
@@ -743,6 +914,34 @@ export class A2AServer {
 					resolve();
 				}, timeoutMs);
 			}
+		});
+	}
+
+	/**
+	 * POST a task state change to a callback URL.
+	 * Fire-and-forget: errors are logged but never thrown.
+	 */
+	private _postCallback(
+		callbackUrl: string,
+		taskId: string,
+		state: TaskState | "submitted" | "completed" | "failed",
+		extra: Record<string, unknown> = {},
+	): void {
+		const body = {
+			taskId,
+			state,
+			timestamp: new Date().toISOString(),
+			...extra,
+		};
+		fetch(callbackUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		}).catch((err) => {
+			console.error(
+				`[A2AServer] push callback failed url=${callbackUrl} taskId=${taskId}:`,
+				err,
+			);
 		});
 	}
 }

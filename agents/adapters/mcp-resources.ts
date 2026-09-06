@@ -19,7 +19,7 @@ export interface ResourceContext {
 export function registerResources(
 	server: McpServer,
 	ctx: ResourceContext,
-): void {
+): { poll: () => Promise<void> } {
 	// Last-emitted content per URI. Lets us emit `notifications/resources/updated`
 	// only when the underlying data actually changes, not on every read.
 	const lastContent = new Map<string, string>();
@@ -173,4 +173,58 @@ export function registerResources(
 			};
 		},
 	);
+
+	// Standalone poller: re-reads all subscribed URIs and emits change
+	// notifications. The production server calls this on an interval (1s).
+	const poll = async (): Promise<void> => {
+		for (const uri of ctx.subscriptions.listSubscriptions().map((s) => s.uri)) {
+			// Skip templated URIs — they require a taskId variable we don't have here.
+			if (uri.includes("{taskId}")) continue;
+
+			let content: string;
+			if (uri === "jabr://world-state") {
+				const state = await ctx.getWorldState();
+				content = JSON.stringify(state, null, 2);
+			} else if (uri === "jabr://skills") {
+				const skillDir = join(ctx.projectRoot, "skills");
+				if (!existsSync(skillDir)) {
+					content = "[]";
+				} else {
+					const files = readdirSync(skillDir).filter((f) =>
+						f.endsWith(".json"),
+					);
+					const skills = files
+						.map((f) => {
+							try {
+								return JSON.parse(readFileSync(join(skillDir, f), "utf-8"));
+							} catch {
+								return null;
+							}
+						})
+						.filter(Boolean);
+					content = JSON.stringify(skills, null, 2);
+				}
+			} else if (uri === "jabr://memory") {
+				const memPath = join(ctx.projectRoot, "memory", "orchestrator.md");
+				content = existsSync(memPath)
+					? readFileSync(memPath, "utf-8")
+					: "# No memory yet";
+			} else if (uri.startsWith("jabr://tasks/")) {
+				const taskId = uri.replace("jabr://tasks/", "");
+				const task = await ctx.getTask(taskId);
+				content = JSON.stringify(task, null, 2);
+			} else {
+				continue;
+			}
+
+			const prev = lastContent.get(uri);
+			lastContent.set(uri, content);
+			if (!ctx.subscriptions.hasSubscribers(uri)) continue;
+			if (prev === content) continue;
+			if (prev === undefined) continue; // baseline — first read, no change
+			server.server.sendResourceUpdated({ uri });
+		}
+	};
+
+	return { poll };
 }

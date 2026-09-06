@@ -7,139 +7,209 @@
  */
 
 import type { A2AClientPort, A2ATaskResult } from "@ports/a2a-client-port";
-import { ok, type JSONRPCRequest, type JSONRPCResponse } from "@utils/rpc";
+import { type JSONRPCRequest, type JSONRPCResponse, ok } from "@utils/rpc";
 
 export class A2AClient implements A2AClientPort {
-  private nextId = 1;
-  private readonly apiKey?: string;
+	private nextId = 1;
+	private readonly apiKey?: string;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey;
-  }
+	constructor(apiKey?: string) {
+		this.apiKey = apiKey;
+	}
 
-  private headers(): Record<string, string> {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    if (this.apiKey) h["X-API-Key"] = this.apiKey;
-    return h;
-  }
+	private headers(): Record<string, string> {
+		const h: Record<string, string> = { "Content-Type": "application/json" };
+		if (this.apiKey) h["X-API-Key"] = this.apiKey;
+		return h;
+	}
 
-  /**
-   * Send a task synchronously via `tasks/send` and await the full result.
-   */
-  async sendTask(
-    agentUrl: string,
-    message: string,
-    contextId?: string,
-  ): Promise<A2ATaskResult> {
-    const id = this.nextId++;
-    const body: JSONRPCRequest = {
-      jsonrpc: "2.0",
-      id,
-      method: "tasks/send",
-      params: {
-        message: { role: "user", parts: [{ kind: "text", text: message }] },
-        ...(contextId ? { contextId } : {}),
-      },
-    };
+	/**
+	 * Send a task synchronously via `tasks/send` and await the full result.
+	 */
+	async sendTask(
+		agentUrl: string,
+		message: string,
+		contextId?: string,
+	): Promise<A2ATaskResult> {
+		const id = this.nextId++;
+		const body: JSONRPCRequest = {
+			jsonrpc: "2.0",
+			id,
+			method: "tasks/send",
+			params: {
+				message: { role: "user", parts: [{ kind: "text", text: message }] },
+				...(contextId ? { contextId } : {}),
+			},
+		};
 
-    const res = await fetch(agentUrl, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(body),
-    });
+		const res = await fetch(agentUrl, {
+			method: "POST",
+			headers: this.headers(),
+			body: JSON.stringify(body),
+		});
 
-    if (!res.ok) {
-      throw new Error(
-        `A2A sendTask failed: ${res.status} ${res.statusText}`,
-      );
-    }
+		if (!res.ok) {
+			throw new Error(`A2A sendTask failed: ${res.status} ${res.statusText}`);
+		}
 
-    const json = (await res.json()) as JSONRPCResponse;
-    if (json.error) {
-      throw new Error(
-        `A2A sendTask RPC error (code=${json.error.code}): ${json.error.message}`,
-      );
-    }
+		const json = (await res.json()) as JSONRPCResponse;
+		if (json.error) {
+			throw new Error(
+				`A2A sendTask RPC error (code=${json.error.code}): ${json.error.message}`,
+			);
+		}
 
-    return json.result as A2ATaskResult;
-  }
+		return json.result as A2ATaskResult;
+	}
 
-  /**
-   * Send a task asynchronously via `tasks/send` and return the assigned task ID.
-   */
-  async sendTaskAsync(
-    agentUrl: string,
-    message: string,
-    contextId?: string,
-  ): Promise<string> {
-    const id = this.nextId++;
-    const body: JSONRPCRequest = {
-      jsonrpc: "2.0",
-      id,
-      method: "tasks/send",
-      params: {
-        message: { role: "user", parts: [{ kind: "text", text: message }] },
-        ...(contextId ? { contextId } : {}),
-      },
-    };
+	/**
+	 * Send a task asynchronously via `tasks/send` and return immediately
+	 * with the assigned task ID. The caller polls or streams separately
+	 * for completion.
+	 */
+	async sendTaskAsync(
+		agentUrl: string,
+		message: string,
+		contextId?: string,
+	): Promise<string> {
+		const id = this.nextId++;
+		const body: JSONRPCRequest = {
+			jsonrpc: "2.0",
+			id,
+			method: "tasks/send",
+			params: {
+				message: { role: "user", parts: [{ kind: "text", text: message }] },
+				...(contextId ? { contextId } : {}),
+			},
+		};
 
-    const res = await fetch(agentUrl, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(body),
-    });
+		const res = await fetch(agentUrl, {
+			method: "POST",
+			headers: this.headers(),
+			body: JSON.stringify(body),
+		});
 
-    if (!res.ok) {
-      throw new Error(
-        `A2A sendTaskAsync failed: ${res.status} ${res.statusText}`,
-      );
-    }
+		if (!res.ok) {
+			throw new Error(
+				`A2A sendTaskAsync failed: ${res.status} ${res.statusText}`,
+			);
+		}
 
-    const json = (await res.json()) as JSONRPCResponse;
-    if (json.error) {
-      throw new Error(
-        `A2A sendTaskAsync RPC error (code=${json.error.code}): ${json.error.message}`,
-      );
-    }
+		const json = (await res.json()) as JSONRPCResponse;
+		if (json.error) {
+			throw new Error(
+				`A2A sendTaskAsync RPC error (code=${json.error.code}): ${json.error.message}`,
+			);
+		}
 
-    // A2A returns a task object in the result; extract the id.
-    const result = json.result as { id?: string; taskId?: string; text?: string };
-    const taskId = result.id ?? result.taskId;
-    if (!taskId) {
-      // Some agents (e.g. orchestrator) return `{text}` synchronously with no task ID.
-      // Generate a synthetic ID for logging purposes.
-      return `sync-${id}-${Date.now()}`;
-    }
-    return taskId;
-  }
+		// A2A returns a task object in the result; extract the id.
+		const result = json.result as {
+			id?: string;
+			taskId?: string;
+			text?: string;
+		};
+		const taskId = result.id ?? result.taskId;
+		if (!taskId) {
+			// Some agents (e.g. orchestrator) return `{text}` synchronously with no task ID.
+			// Generate a synthetic ID for logging purposes.
+			return `sync-${id}-${Date.now()}`;
+		}
+		return taskId;
+	}
 
-  /**
-   * Discover an agent's capabilities by fetching its AgentCard from
-   * /.well-known/agent-card.json.
-   */
-  async discover(
-    agentUrl: string,
-  ): Promise<Record<string, unknown>> {
-    const res = await fetch(`${agentUrl.replace(/\/$/, "")}/.well-known/agent-card.json`);
-    if (!res.ok) {
-      throw new Error(
-        `A2A discover failed: ${res.status} ${res.statusText}`,
-      );
-    }
-    return (await res.json()) as Record<string, unknown>;
-  }
+	/**
+	 * Retrieve the current state of a task via `tasks/get`.
+	 */
+	async getTask(
+		agentUrl: string,
+		taskId: string,
+	): Promise<Record<string, unknown>> {
+		const id = this.nextId++;
+		const body: JSONRPCRequest = {
+			jsonrpc: "2.0",
+			id,
+			method: "tasks/get",
+			params: { taskId },
+		};
 
-  /**
-   * Check whether an agent is reachable and healthy via a GET /health probe.
-   */
-  async healthCheck(agentUrl: string): Promise<boolean> {
-    const res = await fetch(`${agentUrl.replace(/\/$/, "")}/health`, {
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok;
-  }
+		const res = await fetch(agentUrl, {
+			method: "POST",
+			headers: this.headers(),
+			body: JSON.stringify(body),
+		});
+
+		if (!res.ok) {
+			throw new Error(`A2A getTask failed: ${res.status} ${res.statusText}`);
+		}
+
+		const json = (await res.json()) as JSONRPCResponse;
+		if (json.error) {
+			throw new Error(
+				`A2A getTask RPC error (code=${json.error.code}): ${json.error.message}`,
+			);
+		}
+
+		return (json.result ?? {}) as Record<string, unknown>;
+	}
+
+	/**
+	 * Cancel a running task via `tasks/cancel`.
+	 */
+	async cancelTask(agentUrl: string, taskId: string): Promise<boolean> {
+		const id = this.nextId++;
+		const body: JSONRPCRequest = {
+			jsonrpc: "2.0",
+			id,
+			method: "tasks/cancel",
+			params: { taskId },
+		};
+
+		const res = await fetch(agentUrl, {
+			method: "POST",
+			headers: this.headers(),
+			body: JSON.stringify(body),
+		});
+
+		if (!res.ok) {
+			throw new Error(`A2A cancelTask failed: ${res.status} ${res.statusText}`);
+		}
+
+		const json = (await res.json()) as JSONRPCResponse;
+		if (json.error) {
+			throw new Error(
+				`A2A cancelTask RPC error (code=${json.error.code}): ${json.error.message}`,
+			);
+		}
+
+		const result = json.result as { state?: string } | undefined;
+		return result?.state === "canceled";
+	}
+
+	/**
+	 * Discover an agent's capabilities by fetching its AgentCard from
+	 * /.well-known/agent-card.json.
+	 */
+	async discover(agentUrl: string): Promise<Record<string, unknown>> {
+		const res = await fetch(
+			`${agentUrl.replace(/\/$/, "")}/.well-known/agent-card.json`,
+		);
+		if (!res.ok) {
+			throw new Error(`A2A discover failed: ${res.status} ${res.statusText}`);
+		}
+		return (await res.json()) as Record<string, unknown>;
+	}
+
+	/**
+	 * Check whether an agent is reachable and healthy via a GET /health probe.
+	 */
+	async healthCheck(agentUrl: string): Promise<boolean> {
+		const res = await fetch(`${agentUrl.replace(/\/$/, "")}/health`, {
+			signal: AbortSignal.timeout(5_000),
+		});
+		return res.ok;
+	}
 }
 
 export function createA2AClient(): A2AClient {
-  return new A2AClient();
+	return new A2AClient();
 }

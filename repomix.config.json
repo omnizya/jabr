@@ -1,0 +1,48 @@
+{
+	"$schema": "https://repomix.com/schemas/latest/schema.json",
+	"input": { "maxFileSize": 52428800 },
+	"output": {
+		"filePath": "agent-lab.context.xml",
+		"style": "xml",
+		"parsableStyle": true,
+		"fileSummary": true,
+		"directoryStructure": true,
+		"files": true,
+		"removeComments": true,
+		"removeEmptyLines": true,
+		"compress": true,
+		"topFilesLength": 10,
+		"showLineNumbers": false,
+		"truncateBase64": true,
+		"copyToClipboard": false,
+		"git": {
+			"sortByChanges": false,
+			"includeDiffs": false,
+			"includeLogs": false
+		}
+	},
+	"include": [],
+	"ignore": {
+		"useGitignore": true,
+		"useDotIgnore": true,
+		"useDefaultPatterns": true,
+		"customPatterns": [
+			"**/node_modules/**",
+			"**/.turbo/**",
+			"**/dist/**",
+			"**/coverage/**",
+			"**/*.map",
+			"**/*.png",
+			"**/*.jpg",
+			"**/*.jpeg",
+			"**/*.gif",
+			"**/*.webp",
+			"**/*.woff2",
+			"**/*.ico",
+			"**/memory/**",
+			"**/.serena/**"
+		]
+	},
+	"security": { "enableSecurityCheck": true },
+	"tokenCount": { "encoding": "o200k_base" }
+}

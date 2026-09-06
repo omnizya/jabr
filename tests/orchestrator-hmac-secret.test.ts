@@ -17,7 +17,9 @@ const BUN_BIN = process.execPath;
 
 function runOrchestrator(envOverride: Record<string, string>) {
 	return bunSpawn({
-		cmd: [BUN_BIN, "run", ORCHESTRATOR_ENTRY],
+		// Use --no-env-file to prevent bun from auto-loading .env, which would
+		// populate JABR_X402_HMAC_SECRET into the subprocess environment.
+		cmd: [BUN_BIN, "run", "--no-env-file", ORCHESTRATOR_ENTRY],
 		env: {
 			// Provide a fake auth token so the orchestrator passes the auth gate
 			// and we only test the HMAC secret gate.
@@ -73,8 +75,11 @@ describe("Orchestrator startup — JABR_X402_HMAC_SECRET validation", () => {
 		// (success).  If it exits within this window we capture the exit code and
 		// assert it is NOT 1 with the "required" error.
 		const didExit = await Promise.race([
-			proc.exited.then((code) => ({ exited: true, code })),
-			Bun.sleep(2000).then(() => ({ exited: false })),
+			proc.exited.then((code): { exited: true; code: number } => ({
+				exited: true,
+				code,
+			})),
+			Bun.sleep(2000).then((): { exited: false } => ({ exited: false })),
 		]);
 
 		if (didExit.exited) {

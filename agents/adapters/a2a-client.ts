@@ -50,6 +50,7 @@ export class A2AClient implements AgentRegistryPort {
 		agentUrl: string,
 		text: string,
 		agentName?: string,
+		callbackUrl?: string,
 	): Promise<string> {
 		// Budget check before dispatch. Prefer the explicit agent name (seed key) when
 		// provided; fall back to a best-effort URL substring match only as a last resort.
@@ -74,6 +75,7 @@ export class A2AClient implements AgentRegistryPort {
 					role: "user",
 					parts: [{ kind: "text", text }],
 				},
+				...(callbackUrl ? { notificationUrl: callbackUrl } : {}),
 			},
 		};
 

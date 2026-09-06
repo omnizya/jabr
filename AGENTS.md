@@ -107,6 +107,113 @@ State transition history is recorded per `updateState()` call.
 
 ---
 
+## Codebase Intelligence
+
+Jabr ships three tools that give coding agents deep context without bloating their window:
+
+### Repomix Pack
+
+A compressed repo pack generated via `repomix` (config: `repomix.config.json`, output: `agent-lab.context.xml`).
+
+```bash
+# Generate pack (after significant changes)
+repomix
+
+# Check token count per file
+repomix --token-count-tree 50
+```
+
+### OpenSrc — Dependency Source
+
+Read dependency implementations, not just types. Cache lives at `~/.opensrc/`.
+
+```bash
+# Get source path (auto-fetches on cache miss)
+cat $(opensrc path zod)/src/types.ts
+
+# Pre-fetch multiple deps
+opensrc fetch zod ai brain.js @huggingface/transformers
+
+# Search inside cached source
+rg "parse" $(opensrc path zod)
+```
+
+**Currently cached for this project:** zod, ai, brain.js, @huggingface/transformers.
+
+See `opensrc list` for full cache status.
+
+### Post-Commit Hook
+
+The repomix pack regenerates automatically on every successful commit. To wire it up:
+
+```bash
+# One-time setup
+cat > .git/hooks/post-commit << 'HOOK'
+#!/bin/bash
+# Regenerate repomix pack on commit
+repomix --quiet 2>/dev/null && echo "✅ agent-lab.context.xml regenerated"
+HOOK
+chmod +x .git/hooks/post-commit
+```
+
+### Domain Context Packs (`docs/agent-context/`)
+
+The full repo is ~1.87M tokens — too big for any single context window. We split it by domain so agents load only the slice they need:
+
+| Pack | Scope |
+|------|-------|
+| `core.txt` | Domain logic + ports (hexagonal core) |
+| `adapters.txt` | Infrastructure adapters + security |
+| `composition.txt` | Composition roots + MCP server |
+| `scripts.txt` | CLI scripts + shared utils |
+| `tests.txt` | Unit + e2e tests |
+| `config.txt` | Config files + documentation |
+
+```bash
+# Load one slice
+cat docs/agent-context/core.txt
+
+# Search across all packs
+rg 'TaskStorePort' docs/agent-context/
+
+# Rebuild after significant changes
+./scripts/regen-agent-context.sh
+```
+
+See `docs/agent-context/INDEX.md` for the full manifest and opensrc cache status.
+
+### opensrc — Dependency Source
+
+`opensrc` fetches and caches package source code so agents can read implementations, not just types. Cache lives at `~/.opensrc/`.
+
+```bash
+# Get source path (auto-fetches on cache miss)
+cat $(opensrc path zod)/src/types.ts
+
+# Pre-fetch multiple packages
+opensrc fetch zod hono @hono/zod-openapi
+
+# Search inside cached source
+rg "parse" $(opensrc path zod)
+```
+
+**Currently cached:** `hono`, `better-auth`, `drizzle-orm`, `zod`, `@hono/zod-openapi`.
+
+**Pending (slow connection):** `@a2a-js/sdk`, `@modelcontextprotocol/sdk`.
+
+Run `opensrc fetch @a2a-js/sdk @modelcontextprotocol/sdk` when bandwidth allows.
+
+### When to Use
+
+| Situation | Tool |
+|-----------|------|
+| Need full repo context but context window is tight | Domain packs — load only relevant slice |
+| Agent asks "how does X library work internally?" | `opensrc path <pkg>` — read the actual implementation |
+| Debugging unexpected dependency behavior | `opensrc` — verify edge cases in source |
+| After adding/removing/renaming files | `./scripts/regen-agent-context.sh` |
+
+---
+
 ## Git Conventions
 
 - Stage and commit by topic/domain — one commit per concern

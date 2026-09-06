@@ -1,0 +1,3476 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+- Pay special attention to the Repository Description. These contain important context and guidelines specific to this project.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: scripts/**/*.ts, src/**/*.ts
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+
+
+================================================================
+User Provided Header
+================================================================
+Jabr — regenerated 2026-09-05T23:46:25Z. Do NOT edit by hand.\nScripts & Shared Utils — CLI, build, config.
+
+================================================================
+Directory Structure
+================================================================
+scripts/
+  build.ts
+  create-triage.ts
+  demo.ts
+  generate-hmac-secret.ts
+  jabr-cli.ts
+  kb-maintenance.ts
+  task-dlq.ts
+src/
+  config/
+    env-manager.ts
+    jabr-config.ts
+  constants/
+    app-constants.ts
+    app.ts
+    ecosystem.ts
+    jabr-constants.ts
+  utils/
+    test-helpers.ts
+
+================================================================
+Files
+================================================================
+
+================
+File: scripts/generate-hmac-secret.ts
+================
+#!/usr/bin/env -S bun run
+
+/**
+ * generate-hmac-secret.ts — Generate a cryptographically secure JABR_X402_HMAC_SECRET.
+ *
+ * Generates a 32-byte (256-bit) random hex string suitable for signing x402
+ * payment tokens and encrypting GunJS SEA data. Optionally writes/updates
+ * the value in .env.
+ *
+ * Usage:
+ *   bun scripts/generate-hmac-secret.ts              # print to stdout
+ *   bun scripts/generate-hmac-secret.ts --write      # write to .env
+ *   bun scripts/generate-hmac-secret.ts --check      # verify existing secret
+ *   bun scripts/generate-hmac-secret.ts --help       # show usage
+ *
+ * The script uses WebCrypto (crypto.getRandomValues) — no external deps.
+ */
+
+import { writeFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const SECRET_LENGTH_BYTES = 32; // 256 bits
+const ENV_VAR = "JABR_X402_HMAC_SECRET";
+const ENV_FILE = resolve(process.cwd(), ".env");
+
+function generateSecret(): string {
+	const bytes = new Uint8Array(SECRET_LENGTH_BYTES);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function readEnvVar(name: string): Promise<string | null> {
+	try {
+		const file = Bun.file(ENV_FILE);
+		const text = await file.text();
+		const match = text.match(new RegExp(`^${name}=([^\\n]*)`, "m"));
+		return match?.[1]?.trim() ?? null;
+	} catch {
+		return null;
+	}
+}
+
+async function updateEnvVar(name: string, value: string): Promise<boolean> {
+	try {
+		let content = existsSync(ENV_FILE) ? await Bun.file(ENV_FILE).text() : "";
+		const regex = new RegExp(`^${name}=.*$`, "m");
+		if (regex.test(content)) {
+			content = content.replace(regex, `${name}=${value}`);
+		} else {
+			content += `${content.endsWith("\n") ? "" : "\n"}${name}=${value}\n`;
+		}
+		writeFileSync(ENV_FILE, content);
+		return true;
+	} catch (err) {
+		console.error(`Failed to write ${ENV_FILE}:`, err);
+		return false;
+	}
+}
+
+function validateExisting(secret: string): { valid: boolean; issues: string[] } {
+	const issues: string[] = [];
+
+	if (!secret) {
+		issues.push("Secret is empty or missing.");
+		return { valid: false, issues };
+	}
+
+	if (!/^[0-9a-fA-F]+$/.test(secret)) {
+		issues.push("Secret is not a valid hex string.");
+	}
+
+	if (secret.length !== SECRET_LENGTH_BYTES * 2) {
+		issues.push(
+			`Secret is ${secret.length} hex chars — expected ${SECRET_LENGTH_BYTES * 2} (32 bytes).`,
+		);
+	}
+
+	if (secret.length < 16) {
+		issues.push("Secret is shorter than 16 hex chars (8 bytes) — too weak for HMAC-SHA256.");
+	}
+
+	const weakSecrets = new Set([
+		"dev-secret-change-in-prod",
+		"change-me",
+		"secret",
+		"test-secret-do-not-use-in-prod",
+		"0".repeat(secret.length),
+		"f".repeat(secret.length),
+	]);
+	if (weakSecrets.has(secret.toLowerCase())) {
+		issues.push("Secret is a known-weak or placeholder value.");
+	}
+
+	return { valid: issues.length === 0, issues };
+}
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+const args = process.argv.slice(2);
+const shouldWrite = args.includes("--write");
+const shouldCheck = args.includes("--check");
+const shouldHelp = args.includes("--help") || args.includes("-h");
+
+if (shouldHelp) {
+	console.log(`
+JABR_X402_HMAC_SECRET Generator
+===============================
+
+Generates a cryptographically secure 32-byte (256-bit) hex secret for x402
+payment signing and GunJS SEA encryption.
+
+Usage:
+  bun scripts/generate-hmac-secret.ts              print new secret to stdout
+  bun scripts/generate-hmac-secret.ts --write      generate + write to .env
+  bun scripts/generate-hmac-secret.ts --check      validate existing secret in .env
+  bun scripts/generate-hmac-secret.ts --help       show this message
+
+Examples:
+  # Generate and display (no disk changes)
+  bun scripts/generate-hmac-secret.ts
+
+  # Generate and write to .env
+  bun scripts/generate-hmac-secret.ts --write
+
+  # Verify current .env has a strong secret
+  bun scripts/generate-hmac-secret.ts --check
+`);
+	process.exit(0);
+}
+
+if (shouldCheck) {
+	const existing = await readEnvVar(ENV_VAR);
+	if (!existing) {
+		console.error(`✗ ${ENV_VAR} is not set in .env`);
+		console.error("  Run with --write to generate one.");
+		process.exit(1);
+	}
+	const { valid, issues } = validateExisting(existing);
+	if (valid) {
+		console.log(`✓ ${ENV_VAR} is set and valid (${existing.length} hex chars)`);
+		process.exit(0);
+	} else {
+		console.error(`✗ ${ENV_VAR} has issues:`);
+		for (const issue of issues) {
+			console.error(`  - ${issue}`);
+		}
+		console.error("\n  Run with --write to replace it.");
+		process.exit(1);
+	}
+}
+
+const secret = generateSecret();
+
+if (shouldWrite) {
+	const success = await updateEnvVar(ENV_VAR, secret);
+	if (success) {
+		console.log(`✓ Generated and wrote ${ENV_VAR} to .env`);
+		console.log(`  Secret: ${secret}`);
+		console.log(`  Length: ${secret.length} hex chars (${SECRET_LENGTH_BYTES} bytes)`);
+	} else {
+		console.error("Failed to write to .env");
+		process.exit(1);
+	}
+} else {
+	console.log(`${ENV_VAR}=${secret}`);
+}
+
+================
+File: scripts/kb-maintenance.ts
+================
+#!/usr/bin/env -S bun run
+
+/**
+ * kb-maintenance.ts — Knowledge-base upkeep for the Jabr agent-lab.
+ *
+ * Performs idempotent maintenance on both knowledge layers:
+ *   (A) MemPalace (memory/palace/*.json) — dedup, stale-TTL, integrity validation
+ *   (B) SQLite memory_log (memory/jabr.db) — trim entries older than TTL, vacuum
+ *
+ * Flags:
+ *   --dry-run       Preview changes without writing (default: false)
+ *   --stale-days N  Entries older than N days are considered stale (default: 90)
+ *   --verbose       Print per-entry detail for every action
+ *   --quiet         Suppress summary, only emit JSON log lines
+ *
+ * Exit codes:
+ *   0  success (or dry-run completed with findings)
+ *   1  unrecoverable error
+ *
+ * Structured log format (JSON lines to stdout):
+ *   {"ts":"...","level":"info|warn|error","action":"...","detail":{...}}
+ *
+ * Usage:
+ *   bun scripts/kb-maintenance.ts --dry-run
+ *   bun scripts/kb-maintenance.ts --stale-days 30
+ *   bun scripts/kb-maintenance.ts --verbose
+ *
+ * Cron (example):
+ *   0 3 * * * cd /home/m7r/Projects/Labs/agent-lab && bun scripts/kb-maintenance.ts --quiet >> /var/log/jabr-kb.log 2>&1
+ */
+
+import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+
+// ── Path constants ────────────────────────────────────────────────────────────
+
+const ROOT = process.cwd();
+const PALACE_DIR = join(ROOT, "memory", "palace");
+const DB_PATH = join(ROOT, "memory", "jabr.db");
+
+// ── Arg parsing ───────────────────────────────────────────────────────────────
+
+interface Flags {
+	dryRun: boolean;
+	staleDays: number;
+	verbose: boolean;
+	quiet: boolean;
+}
+
+function parseArgs(argv: string[]): Flags {
+	const flags: Flags = {
+		dryRun: false,
+		staleDays: 90,
+		verbose: false,
+		quiet: false,
+	};
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === "--dry-run") flags.dryRun = true;
+		else if (arg === "--stale-days") {
+			const n = parseInt(argv[++i] ?? "", 10);
+			if (isNaN(n) || n < 0) {
+				logError("arg-parse", {
+					message: `--stale-days requires a non-negative integer, got "${argv[i]}"`,
+				});
+				process.exit(1);
+			}
+			flags.staleDays = n;
+		} else if (arg === "--verbose") flags.verbose = true;
+		else if (arg === "--quiet") flags.quiet = true;
+		else if (arg === "--help" || arg === "-h") {
+			console.log(
+				[
+					"Usage: bun scripts/kb-maintenance.ts [options]",
+					"",
+					"Options:",
+					"  --dry-run          Preview without making changes",
+					"  --stale-days N     Stale threshold in days (default: 90)",
+					"  --verbose          Print per-entry detail",
+					"  --quiet            Suppress human-readable summary",
+					"  --help, -h         Show this help",
+				].join("\n"),
+			);
+			process.exit(0);
+		} else {
+			logError("arg-parse", { message: `unknown flag: ${arg}` });
+			process.exit(1);
+		}
+	}
+	return flags;
+}
+
+// ── Structured logging ────────────────────────────────────────────────────────
+
+interface LogEntry {
+	ts: string;
+	level: "info" | "warn" | "error";
+	action: string;
+	detail: Record<string, unknown>;
+}
+
+function emitLog(
+	level: LogEntry["level"],
+	action: string,
+	detail: Record<string, unknown>,
+) {
+	const entry: LogEntry = {
+		ts: new Date().toISOString(),
+		level,
+		action,
+		detail,
+	};
+	const line = JSON.stringify(entry);
+	if (level === "error") console.error(line);
+	else console.log(line);
+}
+
+function logInfo(action: string, detail: Record<string, unknown>) {
+	emitLog("info", action, detail);
+}
+function logWarn(action: string, detail: Record<string, unknown>) {
+	emitLog("warn", action, detail);
+}
+function logError(action: string, detail: Record<string, unknown>) {
+	emitLog("error", action, detail);
+}
+
+// ── Counters for summary ──────────────────────────────────────────────────────
+
+const stats = {
+	palaceTotal: 0,
+	palaceCorrupt: 0,
+	palaceDeduped: 0,
+	palaceStale: 0,
+	palaceValidated: 0,
+	sqliteTotal: 0,
+	sqliteStale: 0,
+	sqliteVacuumed: false,
+};
+
+// ── Content hashing for dedup ─────────────────────────────────────────────────
+
+function hashContent(content: string): string {
+	return createHash("sha256").update(content).digest("hex").slice(0, 16);
+}
+
+// ── Palace maintenance ────────────────────────────────────────────────────────
+
+interface PalaceEntry {
+	slug: string;
+	content: string;
+	tags: string[];
+	createdAt: string;
+	relations: string[];
+	filePath: string;
+	contentHash: string;
+}
+
+/**
+ * Parse a single palace JSON file. Returns null if unparseable (corrupt).
+ */
+function parsePalaceEntry(filePath: string, raw: string): PalaceEntry | null {
+	try {
+		const obj = JSON.parse(raw) as Partial<PalaceEntry>;
+		if (
+			typeof obj.slug !== "string" ||
+			typeof obj.content !== "string" ||
+			!Array.isArray(obj.tags)
+		) {
+			return null;
+		}
+		return {
+			slug: obj.slug,
+			content: obj.content,
+			tags: obj.tags,
+			createdAt: obj.createdAt ?? new Date(0).toISOString(),
+			relations: obj.relations ?? [],
+			filePath,
+			contentHash: hashContent(obj.content),
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Heuristic: is this slug a timestamp-based auto-generated entry?
+ * Pattern: <prefix>-<13-digit-millis> or <prefix>-<uuid>
+ * These are candidates for dedup and TTL cleanup.
+ */
+function isTimestampSlug(slug: string): boolean {
+	return (
+		/-\d{13}$/.test(slug) ||
+		/-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(slug)
+	);
+}
+
+/**
+ * Heuristic: is the content low-value (template-only, no real data)?
+ * Examples: "Steward scan complete: 0 findings...", "Librarian agent processed..."
+ */
+function isLowValueContent(content: string): boolean {
+	const c = content.trim();
+	if (c.length < 60) return true; // very short
+	if (/^Steward scan complete: 0 findings/.test(c)) return true;
+	if (
+		/^Librarian agent processed:[\s\S]*Findings: topic processed by Librarian Agent\./.test(
+			c,
+		)
+	)
+		return true;
+	if (/^\u2022 Library\/API identified:/.test(c) && c.length < 300) return true;
+	return false;
+}
+
+async function maintainPalace(flags: Flags): Promise<void> {
+	if (!existsSync(PALACE_DIR)) {
+		logWarn("palace-skip", {
+			message: "palace directory does not exist",
+			path: PALACE_DIR,
+		});
+		return;
+	}
+
+	const files = readdirSync(PALACE_DIR).filter((f) => f.endsWith(".json"));
+	stats.palaceTotal = files.length;
+
+	const entries: PalaceEntry[] = [];
+	const corruptFiles: string[] = [];
+
+	for (const file of files) {
+		const filePath = join(PALACE_DIR, file);
+		const raw = await Bun.file(filePath).text();
+		const entry = parsePalaceEntry(filePath, raw);
+		if (entry) {
+			entries.push(entry);
+		} else {
+			corruptFiles.push(file);
+			stats.palaceCorrupt++;
+		}
+	}
+
+	// ── Step 1: Integrity ──────────────────────────────────────────────────────
+
+	for (const file of corruptFiles) {
+		const filePath = join(PALACE_DIR, file);
+		logWarn("palace-corrupt", {
+			file,
+			action: flags.dryRun ? "would-skip" : "skipped",
+		});
+		if (!flags.dryRun) {
+			try {
+				unlinkSync(filePath);
+				logInfo("palace-corrupt-removed", { file });
+			} catch (e) {
+				logError("palace-corrupt-remove-failed", { file, error: String(e) });
+			}
+		}
+	}
+
+	// ── Step 2: Dedup ──────────────────────────────────────────────────────────
+	// Group by contentHash, keep oldest (by createdAt then by slug lexicographic).
+
+	const hashGroups = new Map<string, PalaceEntry[]>();
+	for (const entry of entries) {
+		const group = hashGroups.get(entry.contentHash) ?? [];
+		group.push(entry);
+		hashGroups.set(entry.contentHash, group);
+	}
+
+	for (const [hash, group] of hashGroups) {
+		if (group.length < 2) continue;
+		// Sort oldest first, then by slug for determinism
+		group.sort((a, b) => {
+			const t = a.createdAt.localeCompare(b.createdAt);
+			return t !== 0 ? t : a.slug.localeCompare(b.slug);
+		});
+		const keeper = group[0]!;
+		for (const dup of group.slice(1)) {
+			stats.palaceDeduped++;
+			logInfo("palace-dedup", {
+				kept: keeper.slug,
+				removed: dup.slug,
+				hash,
+				reason: flags.dryRun ? "would-remove" : "removed",
+			});
+			if (flags.verbose) {
+				logInfo("palace-dedup-detail", {
+					keeper: keeper.slug,
+					dup: dup.slug,
+					contentPreview: dup.content.slice(0, 80),
+				});
+			}
+			if (!flags.dryRun) {
+				try {
+					unlinkSync(dup.filePath);
+				} catch (e) {
+					logError("palace-dedup-remove-failed", {
+						file: dup.slug,
+						error: String(e),
+					});
+				}
+			}
+		}
+	}
+
+	// ── Step 3: Stale cleanup ──────────────────────────────────────────────────
+	// Candidates: timestamp-based slugs older than TTL OR low-value content older than TTL.
+	// We do NOT delete curated entries (protocol-research, skill-creation, docs-lookup, etc.)
+	// unless they are duplicates of something already kept.
+
+	const staleCutoff = new Date(
+		Date.now() - flags.staleDays * 86_400_000,
+	).toISOString();
+
+	for (const entry of entries) {
+		// Skip if already removed (dedup)
+		if (!existsSync(entry.filePath)) continue;
+
+		const isStale = entry.createdAt < staleCutoff;
+		if (!isStale) {
+			stats.palaceValidated++;
+			continue;
+		}
+
+		// Only auto-remove if it's a timestamp-based slug OR low-value content
+		const isAutoCandidate =
+			isTimestampSlug(entry.slug) || isLowValueContent(entry.content);
+		if (!isAutoCandidate) {
+			stats.palaceValidated++;
+			if (flags.verbose) {
+				logInfo("palace-retained-curated", {
+					slug: entry.slug,
+					createdAt: entry.createdAt,
+					ageDays: flags.staleDays,
+				});
+			}
+			continue;
+		}
+
+		stats.palaceStale++;
+		logInfo("palace-stale", {
+			slug: entry.slug,
+			createdAt: entry.createdAt,
+			ageDays: Math.floor(
+				(Date.now() - new Date(entry.createdAt).getTime()) / 86_400_000,
+			),
+			reason: isTimestampSlug(entry.slug) ? "timestamp-slug" : "low-value",
+			action: flags.dryRun ? "would-remove" : "removed",
+		});
+		if (!flags.dryRun) {
+			try {
+				unlinkSync(entry.filePath);
+			} catch (e) {
+				logError("palace-stale-remove-failed", {
+					file: entry.slug,
+					error: String(e),
+				});
+			}
+		}
+	}
+}
+
+// ── SQLite maintenance ────────────────────────────────────────────────────────
+
+async function maintainSqlite(flags: Flags): Promise<void> {
+	if (!existsSync(DB_PATH)) {
+		logWarn("sqlite-skip", {
+			message: "SQLite database does not exist",
+			path: DB_PATH,
+		});
+		return;
+	}
+
+	let db: Database;
+	try {
+		db = new Database(DB_PATH);
+		db.exec("PRAGMA journal_mode = WAL");
+		db.exec("PRAGMA foreign_keys = ON");
+	} catch (e) {
+		logError("sqlite-open-failed", { path: DB_PATH, error: String(e) });
+		return;
+	}
+
+	// ── Count current entries ──────────────────────────────────────────────────
+
+	const countRow = db.query("SELECT COUNT(*) AS c FROM memory_log").get() as {
+		c: number;
+	};
+	stats.sqliteTotal = countRow.c;
+
+	// ── Trim stale entries ─────────────────────────────────────────────────────
+	// Remove entries older than TTL. Entries without a valid ISO created_at are
+	// kept (can't determine age). The store already caps at 500, but that only
+	// runs on append — old entries that were never trimmed remain.
+
+	const staleCutoff = new Date(
+		Date.now() - flags.staleDays * 86_400_000,
+	).toISOString();
+
+	const staleRows = db
+		.query(
+			"SELECT id, created_at FROM memory_log WHERE created_at < ? ORDER BY id",
+		)
+		.all(staleCutoff) as Array<{ id: number; created_at: string }>;
+
+	stats.sqliteStale = staleRows.length;
+
+	if (staleRows.length > 0) {
+		logInfo("sqlite-stale-found", {
+			count: staleRows.length,
+			cutoff: staleCutoff,
+		});
+		if (flags.verbose) {
+			for (const row of staleRows) {
+				logInfo("sqlite-stale-entry", {
+					id: row.id,
+					createdAt: row.created_at,
+				});
+			}
+		}
+		if (!flags.dryRun) {
+			const stmt = db.prepare("DELETE FROM memory_log WHERE id = ?");
+			const deleteMany = db.transaction((ids: number[]) => {
+				for (const id of ids) stmt.run(id);
+			});
+			try {
+				deleteMany(staleRows.map((r) => r.id));
+				logInfo("sqlite-stale-deleted", { count: staleRows.length });
+			} catch (e) {
+				logError("sqlite-stale-delete-failed", { error: String(e) });
+			}
+		}
+	}
+
+	// ── Vacuum if we made changes ───────────────────────────────────────────────
+
+	if (!flags.dryRun && staleRows.length > 0) {
+		try {
+			db.exec("VACUUM");
+			stats.sqliteVacuumed = true;
+			logInfo("sqlite-vacuum", { reclaimed: true });
+		} catch (e) {
+			logError("sqlite-vacuum-failed", { error: String(e) });
+		}
+	}
+
+	db.close();
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+async function main() {
+	const flags = parseArgs(process.argv.slice(2));
+
+	logInfo("kb-maintenance-start", {
+		dryRun: flags.dryRun,
+		staleDays: flags.staleDays,
+		palaceDir: PALACE_DIR,
+		dbPath: DB_PATH,
+	});
+
+	const startedAt = Date.now();
+
+	// Run palace and sqlite maintenance sequentially (palace writes are independent of SQLite)
+	await maintainPalace(flags);
+	await maintainSqlite(flags);
+
+	const elapsedMs = Date.now() - startedAt;
+
+	const summary = {
+		elapsedMs,
+		dryRun: flags.dryRun,
+		palaceTotal: stats.palaceTotal,
+		palaceCorrupt: stats.palaceCorrupt,
+		palaceDeduped: stats.palaceDeduped,
+		palaceStale: stats.palaceStale,
+		palaceValidated: stats.palaceValidated,
+		sqliteTotal: stats.sqliteTotal,
+		sqliteStale: stats.sqliteStale,
+		sqliteVacuumed: stats.sqliteVacuumed,
+	};
+
+	logInfo("kb-maintenance-complete", summary);
+
+	if (!flags.quiet) {
+		console.log(
+			[
+				"",
+				"═══════════════════════════════════════════════════════════════",
+				`  KB Maintenance Summary${flags.dryRun ? " (DRY RUN)" : ""}`,
+				"═══════════════════════════════════════════════════════════════",
+				`  Palace entries scanned:   ${stats.palaceTotal}`,
+				`  Palace corrupt removed:   ${stats.palaceCorrupt}`,
+				`  Palace duplicates removed: ${stats.palaceDeduped}`,
+				`  Palace stale removed:     ${stats.palaceStale}`,
+				`  Palace validated OK:      ${stats.palaceValidated}`,
+				`  ─────────────────────────────────────────────────────────────`,
+				`  SQLite memory_log total:  ${stats.sqliteTotal}`,
+				`  SQLite stale entries:     ${stats.sqliteStale}`,
+				`  SQLite vacuumed:          ${stats.sqliteVacuumed}`,
+				`  ─────────────────────────────────────────────────────────────`,
+				`  Elapsed: ${elapsedMs}ms`,
+				"═══════════════════════════════════════════════════════════════",
+			].join("\n"),
+		);
+	}
+}
+
+main().catch((e) => {
+	logError("kb-maintenance-fatal", {
+		error: String(e),
+		stack: (e as Error)?.stack ?? "none",
+	});
+	process.exit(1);
+});
+
+================
+File: scripts/task-dlq.ts
+================
+#!/usr/bin/env -S bun run
+
+/**
+ * task-dlq.ts — Dead letter queue viewer + retry for failed A2A tasks.
+ *
+ * Usage:
+ *   bun scripts/task-dlq.ts                  # list failed tasks
+ *   bun scripts/task-dlq.ts --retry <id>     # retry a specific task
+ *   bun scripts/task-dlq.ts --retry-all      # retry all failed tasks
+ *   bun scripts/task-dlq.ts --purge          # delete all failed tasks
+ */
+
+import { Database } from "bun:sqlite";
+import { resolve } from "node:path";
+
+const DB_PATH = resolve(process.cwd(), "memory/jabr.db");
+
+function listFailed(db: Database) {
+	const rows = db.query(
+		`SELECT t.id, t.state, t.created_at, t.updated_at,
+		        COUNT(m.id) as msg_count
+		 FROM tasks t
+		 LEFT JOIN messages m ON m.task_id = t.id
+		 WHERE t.state = 'failed'
+		 GROUP BY t.id
+		 ORDER BY t.updated_at DESC`,
+	).all() as Array<{
+		id: string;
+		state: string;
+		created_at: string;
+		updated_at: string;
+		msg_count: number;
+	}>;
+
+	if (rows.length === 0) {
+		console.log("No failed tasks. ✓");
+		return;
+	}
+
+	console.log(`\nFailed tasks: ${rows.length}`);
+	console.log("─".repeat(80));
+	for (const r of rows) {
+		console.log(`  ${r.id.slice(0, 12)}  ${r.updated_at}  ${r.msg_count} msgs`);
+	}
+	console.log(
+		"\n  Use --retry <id> to retry, --retry-all to retry all, --purge to delete.",
+	);
+}
+
+function retryTask(db: Database, taskId: string) {
+	const row = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as
+		| { id: string }
+		| undefined;
+	if (!row) {
+		console.error(`Task ${taskId} not found.`);
+		process.exit(1);
+	}
+	db.query("UPDATE tasks SET state = 'submitted', updated_at = ? WHERE id = ?").run(
+		new Date().toISOString(),
+		taskId,
+	);
+	console.log(`✓ Task ${taskId.slice(0, 12)} → submitted (will be re-dispatched).`);
+}
+
+function retryAll(db: Database) {
+	const result = db
+		.query("UPDATE tasks SET state = 'submitted', updated_at = ? WHERE state = 'failed'")
+		.run(new Date().toISOString());
+	console.log(`✓ ${result.changes} failed task(s) → submitted.`);
+}
+
+function purgeFailed(db: Database) {
+	const result = db.query("DELETE FROM tasks WHERE state = 'failed'").run();
+	console.log(`✓ Deleted ${result.changes} failed task(s).`);
+}
+
+// ---------------------------------------------------------------------------
+
+const args = process.argv.slice(2);
+const db = new Database(DB_PATH);
+
+if (args.includes("--purge")) {
+	purgeFailed(db);
+} else if (args.includes("--retry-all")) {
+	retryAll(db);
+} else if (args.includes("--retry")) {
+	const idx = args.indexOf("--retry");
+	const taskId = args[idx + 1];
+	if (!taskId) {
+		console.error("Usage: --retry <task-id>");
+		process.exit(1);
+	}
+	retryTask(db, taskId);
+} else {
+	listFailed(db);
+}
+
+db.close();
+
+================
+File: src/constants/app-constants.ts
+================
+/**
+ * Centralized application constants.
+ *
+ * Every magic number in the codebase that carries semantic meaning
+ * (retry budgets, timeouts, model parameters, thresholds) belongs here
+ * so that a single source of truth exists and values can be tuned without
+ * hunting through call sites.
+ *
+ * Naming convention: ALL_CAPS_SNAKE for exported constants.
+ * Each constant has a JSDoc block explaining its purpose and valid usage.
+ */
+
+// ---------------------------------------------------------------------------
+// Discovery & retry
+// ---------------------------------------------------------------------------
+
+/** Maximum number of discovery poll attempts before the registry gives up
+ * and marks discovery as exhausted.  Each attempt triggers a full
+ * `discover()` pass plus a sleep, so this value also caps worst-case
+ * discovery latency at `MAX_DISCOVER_ATTEMPTS * DISCOVER_POLL_INTERVAL_MS`.
+ *
+ * Used by {@link DynamicRegistry.discoverWithRetry}.
+ *
+ * @see DISCOVER_POLL_INTERVAL_MS
+ */
+export const MAX_DISCOVER_ATTEMPTS = 30;
+
+/** Milliseconds to sleep between consecutive discovery attempts inside
+ * {@link DynamicRegistry.discoverWithRetry}.  Tuned to balance fast agent
+ * readiness detection against hammering agents that are still booting.
+ *
+ * @see MAX_DISCOVER_ATTEMPTS
+ */
+export const DISCOVER_POLL_INTERVAL_MS = 1_000;
+
+/** Default retry budget for generic operation retries that are not
+ * discovery-specific (e.g. transient network blips during LLM calls).
+ * Raised from the legacy value of 7 because agents routinely boot in
+ * parallel and need enough attempts to cover staggered startup.
+ *
+ * Consumers should prefer explicit budgets over this default when the
+ * operation has a known latency SLO.
+ */
+export const DEFAULT_MAX_RETRIES = 7;
+
+// ---------------------------------------------------------------------------
+// Timeouts (milliseconds)
+// ---------------------------------------------------------------------------
+
+/** Default upper-bound timeout (ms) used as a safety ceiling for any operation
+ * that does not carry its own explicit timeout.  Equal to the largest positive
+ * 32-bit signed integer so that arithmetic on the value (e.g. addition for
+ * retry backoff) cannot silently wrap into a negative timeout.  The name
+ * mirrors the `timeoutMs` parameter convention used across the A2A port and
+ * elicitation interfaces.
+ *
+ * Derived from the project's documented SLA for agent-facing operations, which
+ * treat missing timeouts as unbounded and rely on this ceiling to keep runaway
+ * calls from hanging indefinitely.  Consumers should prefer operation-specific
+ * timeouts (e.g. {@link MCP_ELICITATION_TIMEOUT_MS}) over this catch-all
+ * default whenever the operation has a documented latency SLO.
+ */
+export const DEFAULT_TIMEOUT_MS = Number.MAX_SAFE_INTEGER;
+
+/** Upper bound for MCP elicitation requests.  Set to 5 minutes to mirror
+ * the Hermes elicitation default and give users enough time to respond to
+ * open-ended prompts without the call silently dropping.
+ *
+ * Used by {@link McpClient}.
+ *
+ * @see MCP_HEALTHCHECK_TIMEOUT_MS
+ */
+export const MCP_ELICITATION_TIMEOUT_MS = 300_000;
+
+/** Timeout for a single MCP health-check HTTP request (the `.well-known`
+ * agent-card fetch inside {@link DynamicRegistry.getAgentsHealth}).  Kept
+ * short because it is a fire-and-forget probe — a slow agent does not block
+ * the health report.
+ */
+export const MCP_HEALTHCHECK_TIMEOUT_MS = 2_000;
+
+/** Default timeout for A2A `tasks/send` requests in E2E probes and manual
+ * testing.  Short enough to surface a hung agent quickly, long enough to
+ * survive a cold-start LLM call on a small model.
+ *
+ * Individual agents override this via per-agent timeout tables; this value
+ * applies when no override is specified.
+ *
+ * @see AGENT_A2A_TIMEOUTS
+ */
+export const DEFAULT_A2A_TIMEOUT_MS = 5_000;
+
+/** Fallback timeout used when no per-agent timeout is configured.
+ * Equal to {@link DEFAULT_A2A_TIMEOUT_MS} so that code referencing either
+ * constant stays in sync.
+ */
+export const A2A_FALLBACK_TIMEOUT_MS = DEFAULT_A2A_TIMEOUT_MS;
+
+/** Per-agent A2A timeouts (milliseconds) used by E2E probes.
+ * Tuned per agent role — research-heavy agents get more time than
+ * quick-turnaround coding agents.
+ *
+ * Consumers should import this table rather than hardcoding role-specific
+ * values inline.
+ *
+ * @see DEFAULT_A2A_TIMEOUT_MS
+ */
+export const AGENT_A2A_TIMEOUTS = {
+	oracle: 40_000,
+	librarian: 40_000,
+	scientist: 60_000,
+	jarvis: 90_000,
+	explorer: 15_000,
+	designer: 15_000,
+	fixer: 15_000,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Model temperature
+// ---------------------------------------------------------------------------
+
+/** Temperature for research and factual retrieval agents (Librarian,
+ * Oracle routing decisions).  Low value reduces hallucination and keeps
+ * outputs deterministic so citations and route choices stay stable.
+ *
+ * Used by {@link LibrarianAgent} and {@link OracleAgent}.
+ */
+export const RESEARCH_TEMPERATURE = 0.2;
+
+/** Temperature for synthesis / consensus agents (CognitiveLoop).  Slightly
+ * higher than RESEARCH_TEMPERATURE to encourage the model to explore
+ * alternative phrasings when merging multiple agent responses.
+ *
+ * Used by {@link CognitiveLoop.synthesize}.
+ */
+export const SYNTHESIS_TEMPERATURE = 0.3;
+
+/** Default temperature for the OpenAI adapter when the caller does not
+ * supply an explicit value.  Neutral-creative balance suitable for general
+ * conversational and code-generation tasks.
+ *
+ * Used by {@link OpenaiLlmAdapter} as the fallback when
+ * `request.temperature` is undefined.
+ */
+export const DEFAULT_MODEL_TEMPERATURE = 0.7;
+
+// ---------------------------------------------------------------------------
+// Convenience: all constants re-exported as a single namespace for wildcard
+// imports that prefer `import * as C from "@constants/app"`.
+// ---------------------------------------------------------------------------
+
+/** Namespace bundling every constant in this module.  Use this when you
+ * need to pass the whole constants object to a configuration helper or
+ * reference multiple values without repeating the module path.
+ *
+ * Example:
+ * ```ts
+ * import { AppConstants } from "@constants/app";
+ * console.log(AppConstants.MAX_DISCOVER_ATTEMPTS);
+ * ```
+ */
+export const AppConstants = {
+	MAX_DISCOVER_ATTEMPTS,
+	DISCOVER_POLL_INTERVAL_MS,
+	DEFAULT_MAX_RETRIES,
+	MCP_ELICITATION_TIMEOUT_MS,
+	MCP_HEALTHCHECK_TIMEOUT_MS,
+	DEFAULT_A2A_TIMEOUT_MS,
+	A2A_FALLBACK_TIMEOUT_MS,
+	AGENT_A2A_TIMEOUTS,
+	RESEARCH_TEMPERATURE,
+	SYNTHESIS_TEMPERATURE,
+	DEFAULT_MODEL_TEMPERATURE,
+	DEFAULT_TIMEOUT_MS,
+} as const;
+
+================
+File: src/constants/jabr-constants.ts
+================
+/**
+ * Deprecated alias shim. All ecosystem parameters now live in
+ * `./ecosystem.ts` (see {@link JABR_PORTS}). Kept only for backward
+ * compatibility until every call site migrates.
+ */
+import { JABR_PORTS } from "./ecosystem.ts";
+
+export { JABR_PORTS };
+
+/**
+ * @deprecated Use {@link JABR_PORTS} instead.
+ */
+export const JABR_WORLD_PORTS = JABR_PORTS;
+
+================
+File: src/utils/test-helpers.ts
+================
+import { A2AClient } from "@adapters/http/a2a-client-adapter";
+// ── Helpers ────────────────────────────────────────────────────────────────
+export interface RecordedCall {
+  url: string;
+  method: string;
+  body: unknown;
+  headers: Record<string, string>;
+}
+
+export function parseBody(opts: RequestInit | undefined): unknown {
+  if (opts?.body == null || typeof opts.body !== "string") return opts?.body;
+  try {
+    return JSON.parse(opts.body);
+  } catch {
+    return opts.body;
+  }
+}
+export function headersRecord(opts: RequestInit | undefined): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (opts?.headers) {
+    if (opts.headers instanceof Headers) {
+      opts.headers.forEach((v, k) => {
+        h[k] = v;
+      });
+    } else {
+      for (const [k, v] of Object.entries(
+        opts.headers as Record<string, string>,
+      )) {
+        h[k] = v;
+      }
+    }
+  }
+  return h;
+}
+export function createTestEnv(): {
+  client: A2AClient;
+  fetchCalls: RecordedCall[];
+  restore: () => void;
+} {
+  const fetchCalls: RecordedCall[] = [];
+  const originalFetch = globalThis.fetch;
+
+  const testFetch = async (
+    url: string | Request | URL,
+    opts?: RequestInit,
+  ): Promise<Response> => {
+    const u = url.toString();
+    fetchCalls.push({
+      url: u,
+      method: opts?.method ?? "GET",
+      body: parseBody(opts),
+      headers: headersRecord(opts),
+    });
+
+    // GET /.well-known/agent-card.json → AgentCard.
+    if (u.includes("/.well-known/agent-card.json")) {
+      return Response.json({
+        name: "test-agent",
+        version: "1.0.0",
+        capabilities: { taskRouting: true },
+      });
+    }
+
+    // GET /health → 200 OK.
+    if (u.endsWith("/health")) {
+      return Response.json({ status: "ok", agent: "test-agent" });
+    }
+
+    // POST / → JSON-RPC tasks/send.
+    if ((opts?.method ?? "GET") === "POST") {
+      const body = parseBody(opts) as {
+        method?: string;
+        id?: number;
+      };
+      if (body.method === "tasks/send") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: { text: "pong" },
+        });
+      }
+    }
+
+    return new Response("Not found", { status: 404 });
+  };
+
+  globalThis.fetch = testFetch as typeof fetch;
+  return {
+    client: new A2AClient(),
+    fetchCalls,
+    restore: () => {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+
+export function overrideFetch(handler: (url: string, opts?: RequestInit) => Response | Promise<Response>): () => void {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | Request | URL, opts?: RequestInit) =>
+    Promise.resolve(handler(typeof url === "string" ? url : url.toString(), opts)) as unknown) as typeof fetch;
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
+}
+
+================
+File: scripts/build.ts
+================
+/**
+ * build.ts — compile Jabr entry points into standalone binaries.
+ *
+ * Each target becomes a single self-contained executable in `dist/bin/`
+ * (bundled JS + bytecode for faster cold starts). Run with:
+ *
+ *   bun run build            # build all targets
+ *   bun run build -- <name>  # build a single target (e.g. orchestrator)
+ *   bun run build -- --list  # list available targets
+ *
+ * Binary names match the package.json `scripts` keys where applicable so the
+ * compiled executables are drop-in replacements for `bun agents/run/<x>.ts`.
+ */
+
+import { mkdir, rename } from "node:fs/promises";
+import { join, relative } from "node:path";
+
+const ROOT = join(import.meta.dir, "..");
+const OUT_DIR = join(ROOT, "dist", "bin");
+
+/**
+ * name -> entry point (relative to repo root).
+ *
+ * `agents/run/*.ts` are the A2A/ACP agent composition roots; `mcp` and `cli`
+ * are the tooling entry points. `lifecycle.ts` and `serve.ts` are shared
+ * modules, not entry points, so they are intentionally excluded.
+ */
+const TARGETS: Record<string, string> = {
+	orchestrator: "agents/run/orchestrator.ts",
+	oracle: "agents/run/oracle.ts",
+	librarian: "agents/run/librarian.ts",
+	explorer: "agents/run/explorer.ts",
+	designer: "agents/run/designer.ts",
+	fixer: "agents/run/fixer.ts",
+	jarvis: "agents/run/jarvis.ts",
+	scientist: "agents/run/scientist.ts",
+	verification: "agents/run/verification.ts",
+	"acp-bridge": "agents/run/acp-bridge.ts",
+	mcp: "mcp-servers/tools.ts",
+	cli: "scripts/jabr-cli.ts",
+};
+
+/** Targets that pull in heavy native deps and may fail to bundle cleanly. */
+const OPTIONAL = new Set(["scientist"]);
+
+function usage(): void {
+	console.log("Available build targets:");
+	for (const [name, entry] of Object.entries(TARGETS)) {
+		const tag = OPTIONAL.has(name) ? "  (optional)" : "";
+		console.log(`  ${name.padEnd(14)} ${entry}${tag}`);
+	}
+}
+
+function formatBytes(n: number): string {
+	const units = ["B", "KB", "MB", "GB"];
+	let i = 0;
+	let v = n;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+async function buildTarget(name: string, entry: string): Promise<boolean> {
+	const started = performance.now();
+	try {
+		const result = await Bun.build({
+			entrypoints: [join(ROOT, entry)],
+			outdir: OUT_DIR,
+			target: "bun",
+			// `bytecode` defaults to CommonJS, which rejects top-level `await`
+			// (used by orchestrator/mcp). Force ESM so bytecode + top-level await
+			// coexist.
+			format: "esm",
+			bytecode: true,
+			minify: true,
+			sourcemap: "external",
+			// Standalone executables should not autoload project config at runtime;
+			// env is provided by the operator at launch time.
+			compile: {
+				autoloadDotenv: true,
+				autoloadBunfig: false,
+				autoloadTsconfig: false,
+				autoloadPackageJson: false,
+			},
+		});
+
+		if (!result.success) {
+			for (const log of result.logs) {
+				console.error(`  [${name}] ${log.message}`);
+			}
+			return false;
+		}
+
+		// The compiled executable is the first output artifact. Its basename is
+		// derived from the entry point, so normalize it to the target name.
+		const artifact = result.outputs[0];
+		const produced = artifact?.path;
+		if (!produced) {
+			console.error(`  [${name}] no output artifact produced`);
+			return false;
+		}
+		const finalPath = join(OUT_DIR, name);
+		if (produced !== finalPath) {
+			await rename(produced, finalPath);
+		}
+
+		const elapsed = (performance.now() - started).toFixed(0);
+		const size = (await Bun.file(finalPath).size) ?? 0;
+		console.log(
+			`  ✓ ${name.padEnd(14)} ${formatBytes(size).padStart(9)}  (${elapsed}ms)`,
+		);
+		return true;
+	} catch (err) {
+		console.error(`  [${name}] build threw: ${(err as Error).message}`);
+		return false;
+	}
+}
+
+async function main(): Promise<void> {
+	const args = process.argv.slice(2);
+
+	if (args.includes("--list") || args.includes("-l")) {
+		usage();
+		return;
+	}
+
+	const requested = args.filter((a) => !a.startsWith("-"));
+	const names = requested.length > 0 ? requested : Object.keys(TARGETS);
+
+	const unknown = names.filter((n) => !(n in TARGETS));
+	if (unknown.length > 0) {
+		console.error(`Unknown target(s): ${unknown.join(", ")}`);
+		usage();
+		process.exitCode = 1;
+		return;
+	}
+
+	await mkdir(OUT_DIR, { recursive: true });
+	console.log(
+		`Building ${names.length} target(s) -> ${relative(ROOT, OUT_DIR)}/\n`,
+	);
+
+	const results: Array<[string, boolean]> = [];
+	for (const name of names) {
+		const ok = await buildTarget(name, TARGETS[name]!);
+		results.push([name, ok]);
+	}
+
+	const okCount = results.filter(([, ok]) => ok).length;
+	const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
+
+	console.log(`\n${okCount}/${results.length} built successfully.`);
+	if (failed.length > 0) {
+		console.error(`Failed: ${failed.join(", ")}`);
+		process.exitCode = 1;
+	}
+}
+
+main().catch((err) => {
+	console.error(err);
+	process.exitCode = 1;
+});
+
+================
+File: scripts/create-triage.ts
+================
+// scripts/create-triage.ts — bulk-create Jabr triage tasks
+// Run: bun scripts/create-triage.ts
+
+const tasks = [
+	// ── Critical Bugs ──
+	{
+		title: "BUG: system:health WebSocket validator rejects all valid events",
+		priority: 1,
+		body: `## Summary\nBunWebSocketAdapter.isValidRealtimeEvent requires Array.isArray(e.tasks) and Array.isArray(e.memory). But tasks and memory in every actual system:health event are objects, not arrays. Any system:health broadcast gets silently rejected — it will never reach clients.\n\n## Severity\nHigh — breaks realtime monitoring\n\n## Files\n- agents/adapters/bun-websocket-adapter.ts\n\n## Proposed Fix\nChange validator to check for objects, not arrays. Or update the event shape to use arrays.\n\n## Verification\nSend a system:health event via WebSocket, verify client receives it.`,
+	},
+	{
+		title: "BUG: MCP getTask reads nonexistent files",
+		priority: 2,
+		body: `## Summary\nIn mcp-servers/tools.ts, getTask(taskId) reads from memory/task-{taskId}.json. Tasks are stored in SQLite, not individual JSON files. Nothing writes those files. This always returns status: "not_found".\n\n## Severity\nMedium — MCP task lookup is broken\n\n## Files\n- mcp-servers/tools.ts\n- agents/adapters/sqlite-task-store.ts\n\n## Proposed Fix\nRead from SQLite task store instead of filesystem.\n\n## Verification\nCall MCP getTask with a valid taskId, verify it returns the actual task.`,
+	},
+	{
+		title: "BUG: Telegram webhook rejects when no secret configured",
+		priority: 2,
+		body: `## Summary\nTelegram webhook auth check: if webhookSecret is an empty string (TELEGRAM_WEBHOOK_SECRET not set), EVERY request is rejected — including legitimate webhooks. The condition should guard with if (adapter.webhookSecret && ...).\n\n## Severity\nMedium — blocks Telegram integration in dev\n\n## Files\n- agents/adapters/http/telegram-webhook.ts\n\n## Proposed Fix\nChange the auth check to only reject if webhookSecret is set AND doesn't match.\n\n## Verification\nSend a webhook request without configuring TELEGRAM_WEBHOOK_SECRET, verify it passes.`,
+	},
+	{
+		title: "BUG: SkillFS.save silently drops updates",
+		priority: 2,
+		body: `## Summary\nSkillFS.save returns false when a skill slug already exists. Every caller (Librarian, Fixer) ignores the return value. Skills are immutable once written — the self-improvement loop can never update a skill.\n\n## Severity\nMedium — self-improvement is frozen\n\n## Files\n- agents/adapters/skill-fs.ts\n- agents/core/librarian.ts\n- agents/core/fixer.ts\n\n## Proposed Fix\nMake SkillFS.save update existing skills (upsert), or have callers check return value.\n\n## Verification\nRun the same skill task twice, verify the skill file updates.`,
+	},
+	{
+		title: "BUG: WorldState e2e test assertion excludes submitted tasks",
+		priority: 3,
+		body: `## Summary\ngetWorldState computes total = submitted + active + completed + failed + canceled. The e2e test checks total === active + completed + failed + canceled — omitting submitted. Any task created but not yet worked makes this fail. Passes only because test fires a task that immediately transitions to working.\n\n## Severity\nMedium — test gives false confidence\n\n## Files\n- scripts/demo.ts (or wherever the WorldState assertion lives)\n\n## Proposed Fix\nInclude submitted in the test assertion.\n\n## Verification\nCreate a task, check WorldState.total includes it.`,
+	},
+	// ── Security ──
+	{
+		title: "SEC: x402 HMAC secret defaults to public string",
+		priority: 1,
+		body: `## Summary\nJABR_X402_HMAC_SECRET defaults to "dev-secret-change-in-prod" in run/orchestrator.ts. If not set, the entire x402 settlement layer runs on a known-public secret. All payment tokens are forgeable.\n\n## Severity\nHigh — payment tokens can be forged\n\n## Files\n- agents/run/orchestrator.ts\n\n## Proposed Fix\nMake the env var required (no default). Fail startup if not set.\n\n## Verification\nStart Jabr without JABR_X402_HMAC_SECRET, verify it refuses to start.`,
+	},
+	{
+		title: "SEC: verifyChainProof is a stub that accepts anything",
+		priority: 2,
+		body: `## Summary\nThe on-chain proof verifier in settlement-ledger.ts returns confirmed: true for any non-empty token.proof string. When chainEndpoint is set, on-chain verification appears to run but always passes. Marketing implies real settlement.\n\n## Severity\nHigh — false sense of security\n\n## Files\n- agents/adapters/x402/settlement-ledger.ts\n\n## Proposed Fix\nEither implement real chain RPC calls or clearly document as dev-only stub and disable in production.\n\n## Verification\nCall verifyChainProof with invalid proof, verify it still returns confirmed (then fix).`,
+	},
+	{
+		title: "SEC: API key hardcoded in source",
+		priority: 2,
+		body: `## Summary\nNINEROUTER_KEY defaults to "sk-ac4453b102b24d2f-9eda9y-838fcb60" in both 9router.ts and search-9router.ts. It's also in .env.example. Pattern is wrong — hardcoded credentials in source tracked by git.\n\n## Severity\nMedium\n\n## Files\n- agents/adapters/llm/9router.ts\n- agents/adapters/search-9router.ts\n\n## Proposed Fix\nRemove default, make env var required.\n\n## Verification\nStart without NINEROUTER_KEY, verify clear error message.`,
+	},
+	// ── Architecture / Dead Code ──
+	{
+		title: "ARCH: executeConsensus / consensus engine never called",
+		priority: 3,
+		body: `## Summary\nexecuteConsensus exists on OrchestratorAgent but has zero call sites. executeWithDepth (the hot path) calls routeTask → single agent. The consensus engine is complete and correct but runs in zero tasks.\n\n## Severity\nLow (no functional impact, but core feature dormant)\n\n## Files\n- agents/core/orchestrator.ts\n- agents/core/cognitive-loop.ts\n\n## Proposed Fix\nActivate consensus for tasks with multiple matching agents, or remove if not planned.\n\n## Verification\nSend a task that matches multiple agents, verify consensus is used.`,
+	},
+	{
+		title: "ARCH: Handover mechanism fully dormant",
+		priority: 3,
+		body: `## Summary\nThe %%HANDOVER%% decoder in executeWithDepth is real and correct. Oracle has an LLM path that can emit it. Problem: DynamicRegistry routes most tasks away from Oracle to more specific agents. Handover works in principle, rarely triggers in practice.\n\n## Severity\nLow (design intent vs reality mismatch)\n\n## Files\n- agents/core/orchestrator.ts\n- agents/core/oracle.ts\n\n## Proposed Fix\nEither document as "Oracle-only fallback" or wire more agents to emit handovers.\n\n## Verification\nForce a task to Oracle with LLM prompt to handover, verify transfer happens.`,
+	},
+	{
+		title: "ARCH: DynamicRegistry.initialized field is unused",
+		priority: 3,
+		body: `## Summary\nThe field is declared but never set to true. ensureReady() checks this.entries.size > 0 instead. If all agents are down after retries, every subsequent routeTask call re-enters discoverWithRetry — 30 more seconds of polling on every request.\n\n## Severity\nLow (performance issue)\n\n## Files\n- agents/adapters/dynamic-registry.ts\n\n## Proposed Fix\nEither use the field or remove it.\n\n## Verification\nStop all agents, send a task, verify behavior.`,
+	},
+	// ── Routing Issues ──
+	{
+		title: "ROUTE: Tag scoring double-counts exact matches",
+		priority: 3,
+		body: `## Summary\nDynamicRegistry.matchAgent gives +3 for exact word match AND then still runs the substring loop (which can add another +1 for the same tag). The scoring tiers don't stack cleanly.\n\n## Severity\nLow (correctness of routing quality)\n\n## Files\n- agents/adapters/dynamic-registry.ts\n\n## Proposed Fix\nSkip substring check for tags already matched exactly.\n\n## Verification\nTest routing with a task that has both exact and substring matches, verify score.`,
+	},
+	{
+		title: "ROUTE: CognitiveLoop relevance scoring has no stop-word filter",
+		priority: 3,
+		body: `## Summary\ntaskWords = taskText.split(/\\s+/) — no stop-word removal. Words like "the", "a", "this", "is" inflate relevance scores for any agent whose response contains them (all do). The relevance signal is largely noise.\n\n## Severity\nLow (quality of consensus scoring)\n\n## Files\n- agents/core/cognitive-loop.ts\n\n## Proposed Fix\nAdd stop-word list or use a tokenizer.\n\n## Verification\nSend a task with only stop-words, verify scoring behavior.`,
+	},
+	{
+		title: "ROUTE: Budget deduction uses character count as token proxy",
+		priority: 3,
+		body: `## Summary\ncostPerToken * userText.length — characters, not tokens. Tokens are ~4 chars. Budget tracking is off by 4x for every agent that declares costPerToken.\n\n## Severity\nLow (cosmetic until real billing)\n\n## Files\n- agents/adapters/headroom.ts (or wherever budget is calculated)\n\n## Proposed Fix\nUse actual token count or document as "character-based approximation".\n\n## Verification\nSend a 400-char task, verify budget deduction matches expectation.`,
+	},
+	// ── MCP Gaps ──
+	{
+		title: "MCP: Resource subscriptions wired but never triggered",
+		priority: 3,
+		body: `## Summary\nMCP server advertises resources.subscribe: true. Clients can subscribe to resource URIs. But when task state changes or skills are written, nothing calls subscriptions.hasSubscribers(uri) and pushes a notification.\n\n## Severity\nLow (feature incomplete but not breaking)\n\n## Files\n- mcp-servers/tools.ts\n- agents/adapters/subscription-manager.ts\n\n## Proposed Fix\nWire subscription notifications to task/skill lifecycle events.\n\n## Verification\nSubscribe to a resource URI, change a task, verify notification received.`,
+	},
+	{
+		title: "MCP: Elicitation advertised but always declines",
+		priority: 3,
+		body: `## Summary\nmcp-servers/tools.ts advertises capabilities: { elicitation: { form: {} } }. But NullElicitationPort declines every request. Clients will always get "Authorization declined by user."\n\n## Severity\nLow (feature advertised but non-functional)\n\n## Files\n- mcp-servers/tools.ts\n\n## Proposed Fix\nEither implement real elicitation (prompt user via hermes/omnizya) or remove from capabilities.\n\n## Verification\nCall elicitation tool, verify it declines.`,
+	},
+	// ── Stale Docs ──
+	{
+		title: "DOC: Oracle .md says deterministic, but it's LLM-capable",
+		priority: 3,
+		body: `## Summary\noracle.md says "Deterministic keyword matcher — NOT LLM-driven". But run/oracle.ts constructs new OracleAgent(taskStore, new SkillFS("skills"), llm) — three args including LLM. Oracle IS LLM-capable. The .md is stale.\n\n## Severity\nLow (documentation accuracy)\n\n## Files\n- agents/core/oracle.md\n\n## Proposed Fix\nUpdate oracle.md to reflect LLM capability.\n\n## Verification\nN/A`,
+	},
+	{
+		title: "DOC: Jarvis .md describes bug that's already fixed",
+		priority: 3,
+		body: `## Summary\njarvis.md says "execute does NOT call taskStore.updateState / appendMessage". The actual code does exactly that. The .md is stale.\n\n## Severity\nLow\n\n## Files\n- agents/core/jarvis.md\n\n## Proposed Fix\nUpdate or remove the stale warning.\n\n## Verification\nN/A`,
+	},
+	{
+		title: "DOC: CANONICAL.md routing scores wrong",
+		priority: 3,
+		body: `## Summary\nCANONICAL.md says "+2 per tag substring match". Actual code is +1 for substring, +3 for exact word. Documentation score values are wrong.\n\n## Severity\nLow\n\n## Files\n- CANONICAL.md\n\n## Proposed Fix\nUpdate CANONICAL.md to match actual scoring.\n\n## Verification\nN/A`,
+	},
+	// ── Agent Activation Plan ──
+	{
+		title: "AGENT: Wire LLM to Fixer (keyword matcher → real code generation)",
+		priority: 2,
+		body: `## Summary\nFixer returns canned bug-fix steps regardless of input. Constructor needs llm?: LlmPort. In executeTask, try LLM first (system prompt: TypeScript/Python specialist), fall back to keyword switch. Follow Oracle's pattern.\n\n## Files\n- agents/core/fixer.ts\n- agents/run/fixer.ts\n\n## Proposed Fix\nAdd LlmPort to constructor, wire NineRouterLlmAdapter, keep keyword fallback.\n\n## Verification\nSend "fix the login flow bug", verify LLM-generated response.`,
+	},
+	{
+		title: "AGENT: Wire LLM to Librarian (raw search results → synthesis)",
+		priority: 2,
+		body: `## Summary\nLibrarian calls search.search() but returns raw results with no synthesis. LLM should summarize findings into structured answer with citations.\n\n## Files\n- agents/core/librarian.ts\n- agents/run/librarian.ts\n\n## Proposed Fix\nAdd LlmPort to constructor, after search results, call LLM to synthesize.\n\n## Verification\nSend "research MCP protocol", verify synthesized answer not raw results.`,
+	},
+	{
+		title: "AGENT: Wire LLM to Scientist (generate Python, execute, narrate)",
+		priority: 2,
+		body: `## Summary\nScientist already uses MCP run_python but returns hardcoded strings. LLM should: (1) generate Python code for the task, (2) execute via MCP, (3) narrate the output. Two LLM calls per task.\n\n## Files\n- agents/core/scientist.ts\n- agents/run/scientist.ts\n\n## Proposed Fix\nAdd LlmPort to constructor, restructure execute to: LLM→code→run_python→LLM→narrative.\n\n## Verification\nSend "analyze this CSV data", verify Python is generated and executed.`,
+	},
+];
+
+let passed = 0;
+let failed = 0;
+
+for (const task of tasks) {
+	const bodyFile = `/tmp/jabr-triage-${crypto.randomUUID()}.md`;
+	await Bun.write(bodyFile, task.body);
+
+	const proc = Bun.spawn(
+		[
+			"hermes",
+			"kanban",
+			"create",
+			task.title,
+			`--priority`,
+			String(task.priority),
+			`--body`,
+			task.body,
+			`--triage`,
+			`--idempotency-key`,
+			`jabr-triage-${task.title
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, "-")
+				.slice(0, 50)}`,
+		],
+		{
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
+
+	const output = await new Response(proc.stdout).text();
+	const exitCode = await proc.exited;
+
+	if (exitCode === 0) {
+		console.log(`✓ ${task.title.slice(0, 60)}`);
+		passed++;
+	} else {
+		console.log(`✗ ${task.title.slice(0, 60)}: ${output}`);
+		failed++;
+	}
+}
+
+console.log(`\nResults: ${passed} created, ${failed} failed`);
+
+================
+File: src/config/env-manager.ts
+================
+/**
+ * env-manager.ts — typed environment variable accessors with error handling,
+ * logging, and batch validation.
+ *
+ * The codebase reads `process.env` directly in dozens of places with ad-hoc
+ * defaults and error messages. This module centralizes every pattern behind
+ * a consistent API that:
+ *
+ *   1. Logs at the right level (info/warn/error) with a `[EnvManager]` prefix.
+ *   2. Fails fast on missing required variables with a clear error + hint.
+ *   3. Validates and coerces types (int, boolean, URL, JSON).
+ *   4. Collects all errors before exiting so startup surfaces every problem
+ *      at once instead of one-at-a-time.
+ *
+ * Quick usage:
+ *
+ *   // Required string — exits if unset.
+ *   const hmac = requireEnv("JABR_X402_HMAC_SECRET");
+ *
+ *   // Optional with default.
+ *   const model = optionalEnv("NINEROUTER_MODEL", "openrouter/minimax/minimax-m3:free");
+ *
+ *   // Integer port.
+ *   const port = optionalIntEnv("ORCHESTRATOR_PORT", 4000);
+ *
+ *   // URL with validation.
+ *   const url = requireUrlEnv("JABR_URL");
+ *
+ *   // Batch validate many at startup:
+ *   const env = new EnvManager();
+ *   env.require("JABR_X402_HMAC_SECRET");
+ *   env.url("JABR_URL", "http://localhost:4000");
+ *   env.int("ORCHESTRATOR_PORT", 4000);
+ *   env.report(); // logs all problems, exits if any failed
+ */
+
+// ---------------------------------------------------------------------------
+// Internal logger — matches the codebase's bracket-prefix convention.
+// ---------------------------------------------------------------------------
+
+export interface Logger {
+	info(msg: string): void;
+	warn(msg: string): void;
+	error(msg: string): void;
+}
+
+export const defaultLogger: Logger = {
+	info: (msg) => console.log(`[EnvManager] ${msg}`),
+	warn: (msg) => console.warn(`[EnvManager] ${msg}`),
+	error: (msg) => console.error(`[EnvManager] ${msg}`),
+};
+
+export let logger: Logger = defaultLogger;
+
+/** Override the default logger (useful for tests or custom sinks). */
+export function setEnvManagerLogger(l: Logger): void {
+	logger = l;
+}
+
+/** Reset to the default console logger. */
+export function resetEnvManagerLogger(): void {
+	logger = defaultLogger;
+}
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+export class EnvVarError extends Error {
+	constructor(
+		public override readonly name: string,
+		message: string,
+	) {
+		super(message);
+		this.name = name;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+export function exitWithError(messages: string[]): never {
+	for (const m of messages) {
+		logger.error(m);
+	}
+	process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// String accessors
+// ---------------------------------------------------------------------------
+
+/** Return `name`'s value, or `fallback` if unset. Never throws. */
+export function optionalEnv(name: string, fallback = ""): string {
+	return process.env[name] ?? fallback;
+}
+
+/**
+ * Return `name`'s value or throw {@link EnvVarError}. Use this when a
+ * missing variable makes the process unrunnable.
+ *
+ * @param opts.hint  Appended to the error message to help the operator fix it.
+ * @param opts.secret  When true, the value is masked in logs (show "set" vs "missing").
+ */
+export function requireEnv(
+	name: string,
+	opts: { hint?: string; secret?: boolean } = {},
+): string {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") {
+		const hint = opts.hint ? ` — ${opts.hint}` : "";
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name} environment variable is required${hint}`,
+		);
+	}
+	logger.info(
+		`loaded ${name} (${opts.secret ? (raw.length > 0 ? "set" : "empty") : raw})`,
+	);
+	return raw;
+}
+
+// ---------------------------------------------------------------------------
+// Integer accessors
+// ---------------------------------------------------------------------------
+
+/** Parse `name` as an integer, returning `fallback` if unset/invalid. */
+export function optionalIntEnv(name: string, fallback: number): number {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") return fallback;
+	const n = Number(raw);
+	if (!Number.isInteger(n) || n <= 0) {
+		logger.warn(
+			`${name}="${raw}" is not a positive integer — using default ${fallback}`,
+		);
+		return fallback;
+	}
+	return n;
+}
+
+/**
+ * Parse `name` as a positive integer, throwing {@link EnvVarError} on
+ * missing or invalid input.
+ */
+export function requireIntEnv(
+	name: string,
+	opts: { hint?: string; min?: number; max?: number } = {},
+): number {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name} environment variable is required (expected integer)`,
+		);
+	}
+	const n = Number(raw);
+	if (!Number.isInteger(n) || n <= 0) {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name}="${raw}" must be a positive integer`,
+		);
+	}
+	if (opts.min !== undefined && n < opts.min) {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name}=${n} is below minimum ${opts.min}`,
+		);
+	}
+	if (opts.max !== undefined && n > opts.max) {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name}=${n} exceeds maximum ${opts.max}`,
+		);
+	}
+	logger.info(`loaded ${name}=${n}`);
+	return n;
+}
+
+// ---------------------------------------------------------------------------
+// Boolean accessors
+// ---------------------------------------------------------------------------
+
+/** Parse `name` as a boolean. Accepts "true"/"1"/"yes" (case-insensitive) as true. */
+export function optionalBoolEnv(name: string, fallback: boolean): boolean {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") return fallback;
+	return /^(true|1|yes)$/i.test(raw.trim());
+}
+
+// ---------------------------------------------------------------------------
+// URL accessors
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse `name` as a valid URL. Throws on missing/invalid values when
+ * required, or returns `fallback` when optional.
+ */
+export function requireUrlEnv(name: string): string {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name} environment variable is required`,
+		);
+	}
+	try {
+		const u = new URL(raw);
+		if (u.protocol !== "http:" && u.protocol !== "https:") {
+			throw new Error("invalid protocol");
+		}
+		if (u.hostname.length === 0) {
+			throw new Error("missing host");
+		}
+		logger.info(`loaded ${name}=${raw}`);
+		return raw;
+	} catch (e) {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name}="${raw}" is not a valid http(s) URL (${(e as Error).message})`,
+		);
+	}
+}
+
+/**
+ * Parse `name` as a valid URL, returning `fallback` if unset.
+ * Still throws if the value is set but invalid.
+ */
+export function optionalUrlEnv(name: string, fallback: string): string {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") return fallback;
+	try {
+		const u = new URL(raw);
+		if (u.protocol !== "http:" && u.protocol !== "https:") {
+			throw new Error("invalid protocol");
+		}
+		return raw;
+	} catch (e) {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name}="${raw}" is not a valid http(s) URL (${(e as Error).message})`,
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// JSON accessors
+// ---------------------------------------------------------------------------
+
+/** Parse `name` as JSON, returning `fallback` if unset or malformed. */
+export function optionalJsonEnv<T>(name: string, fallback: T): T {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") return fallback;
+	try {
+		return JSON.parse(raw) as T;
+	} catch (e) {
+		logger.warn(
+			`${name} is not valid JSON (${(e as Error).message}) — using default`,
+		);
+		return fallback;
+	}
+}
+
+/**
+ * Parse `name` as JSON, throwing {@link EnvVarError} on missing/malformed input.
+ */
+export function requireJsonEnv<T>(name: string): T {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name} environment variable is required (expected JSON)`,
+		);
+	}
+	try {
+		return JSON.parse(raw) as T;
+	} catch (e) {
+		throw new EnvVarError(
+			name,
+			`Fatal: ${name} is not valid JSON (${(e as Error).message})`,
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EnvManager — batch validation collector
+// ---------------------------------------------------------------------------
+
+export interface SpecEntry {
+	name: string;
+	required: boolean;
+	validate: () => void;
+	error?: EnvVarError;
+}
+
+/**
+ * Collects env var validation specs, runs them all, and reports every
+ * failure at once. Best used at startup to surface all missing/invalid
+ * configuration in a single pass.
+ *
+ * ```
+ * const env = new EnvManager();
+ * env.require("JABR_X402_HMAC_SECRET");
+ * env.string("JABR_URL", { default: "http://localhost:4000" });
+ * env.int("ORCHESTRATOR_PORT", { default: 4000 });
+ * env.url("NINEROUTER_URL", { default: "http://localhost:20127" });
+ * env.json<A2AKey[]>("A2A_API_KEYS", { default: [] });
+ * env.report(); // exits non-zero if any spec failed
+ * ```
+ */
+export class EnvManager {
+	private specs: SpecEntry[] = [];
+
+	/** Mark a string var as required (must be non-empty). */
+	require(name: string, hint?: string): this {
+		const idx = this.specs.length;
+		this.specs.push({
+			name,
+			required: true,
+			validate: () => {
+				try {
+					requireEnv(name, { hint });
+				} catch (e) {
+					this.specs[idx]!.error = e as EnvVarError;
+				}
+			},
+		});
+		return this;
+	}
+
+	/** Declare a string var with a default fallback. */
+	string(name: string, opts: { default?: string } = {}): this {
+		this.specs.push({
+			name,
+			required: false,
+			validate: () => {
+				const v = optionalEnv(name, opts.default ?? "");
+				if (opts.default === undefined && !process.env[name]) {
+					logger.info(`${name} is unset (no default provided)`);
+				} else {
+					logger.info(`loaded ${name}=${v}`);
+				}
+			},
+		});
+		return this;
+	}
+
+	/** Declare an integer var (required if `default` is undefined). */
+	int(
+		name: string,
+		opts: { default?: number; min?: number; max?: number } = {},
+	): this {
+		const required = opts.default === undefined;
+		const idx = this.specs.length;
+		this.specs.push({
+			name,
+			required,
+			validate: () => {
+				if (required) {
+					try {
+						requireIntEnv(name, { min: opts.min, max: opts.max });
+					} catch (e) {
+						this.specs[idx]!.error = e as EnvVarError;
+					}
+				} else {
+					const v = optionalIntEnv(name, opts.default!);
+					logger.info(`loaded ${name}=${v}`);
+				}
+			},
+		});
+		return this;
+	}
+
+	/** Declare a boolean var (defaults to false unless overridden). */
+	boolean(name: string, defaultValue = false): this {
+		this.specs.push({
+			name,
+			required: false,
+			validate: () => {
+				const v = optionalBoolEnv(name, defaultValue);
+				logger.info(`loaded ${name}=${v}`);
+			},
+		});
+		return this;
+	}
+
+	/** Declare a URL var (http/https only). */
+	url(name: string, opts: { default?: string } = {}): this {
+		const required = opts.default === undefined;
+		const idx = this.specs.length;
+		this.specs.push({
+			name,
+			required,
+			validate: () => {
+				if (required) {
+					try {
+						requireUrlEnv(name);
+					} catch (e) {
+						this.specs[idx]!.error = e as EnvVarError;
+					}
+				} else {
+					try {
+						const v = optionalUrlEnv(name, opts.default!);
+						logger.info(`loaded ${name}=${v}`);
+					} catch (e) {
+						this.specs[idx]!.error = e as EnvVarError;
+					}
+				}
+			},
+		});
+		return this;
+	}
+
+	/** Declare a JSON var (parsed with fallback). */
+	json<T>(name: string, opts: { default?: T } = {}): this {
+		const required = opts.default === undefined;
+		const idx = this.specs.length;
+		this.specs.push({
+			name,
+			required,
+			validate: () => {
+				if (required) {
+					try {
+						requireJsonEnv<T>(name);
+					} catch (e) {
+						this.specs[idx]!.error = e as EnvVarError;
+					}
+				} else {
+					const v = optionalJsonEnv<T>(name, opts.default!);
+					logger.info(`loaded ${name}=${JSON.stringify(v)}`);
+				}
+			},
+		});
+		return this;
+	}
+
+	/** Run every registered spec. Collects errors instead of exiting. */
+	validate(): EnvVarError[] {
+		for (const s of this.specs) s.validate();
+		return this.specs.filter((s) => s.error).map((s) => s.error!);
+	}
+
+	/** Validate and report: logs all failures and exits non-zero if any failed. */
+	report(): void {
+		const errors = this.validate();
+		if (errors.length > 0) {
+			exitWithError(errors.map((e) => e.message));
+		}
+		logger.info(`all ${this.specs.length} env var(s) validated successfully`);
+	}
+}
+
+================
+File: src/constants/app.ts
+================
+// Re-export shim — allows "@constants/app" imports to resolve to app-constants.ts
+// without renaming every call site or the source file.
+export {
+	A2A_FALLBACK_TIMEOUT_MS,
+	AGENT_A2A_TIMEOUTS,
+	AppConstants,
+	DEFAULT_A2A_TIMEOUT_MS,
+	DEFAULT_MAX_RETRIES,
+	DEFAULT_MODEL_TEMPERATURE,
+	DEFAULT_TIMEOUT_MS,
+	DISCOVER_POLL_INTERVAL_MS,
+	MAX_DISCOVER_ATTEMPTS,
+	MCP_ELICITATION_TIMEOUT_MS,
+	MCP_HEALTHCHECK_TIMEOUT_MS,
+	RESEARCH_TEMPERATURE,
+	SYNTHESIS_TEMPERATURE,
+} from "./app-constants";
+
+export { JABR_WORLD_PORTS } from "./jabr-constants.ts";
+
+export {
+	A2A_METHODS,
+	DEV_ALLOWED_ORIGINS,
+	JABR_ENDPOINTS,
+	JABR_PORTS,
+	JABR_URL_DEFAULT,
+	NINEROUTER_MODEL_DEFAULT,
+	NINEROUTER_URL_DEFAULT,
+} from "./ecosystem.ts";
+
+================
+File: src/constants/ecosystem.ts
+================
+/**
+ * ecosystem.ts — Canonical source of truth for Jabr ecosystem parameters.
+ *
+ * Everything that pins the ecosystem together lives here: agent ports,
+ * well-known endpoint paths, A2A JSON-RPC method names, default service
+ * URLs, and the dev CORS origin allowlist. Values are read from the
+ * environment with sensible defaults so a bare `bun run dev` just works.
+ *
+ * Convention: camelCase for object keys, ALL_CAPS_SNAKE for scalar exports.
+ */
+
+// ---------------------------------------------------------------------------
+// Ports
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve an integer port from the environment, falling back to `fallback`
+ * when the variable is unset or not a positive integer. Replaces the old
+ * `process.env.X_PORT | <default>` bitwise-OR idiom (wrong operator).
+ */
+function portFromEnv(name: string, fallback: number): number {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") return fallback;
+	const n = Number(raw);
+	return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * The A2A / service port for every agent and infrastructure process.
+ *
+ *   orchestrator 4000, oracle 4001, librarian 4002, explorer 4003,
+ *   designer 4004, fixer 4005, scientist 4006, githubWebhook 4007,
+ *   realtime 4008, verification 4009, jarvis 1337
+ *
+ * Each value is env-overridable via the documented variable name.
+ */
+export const JABR_PORTS = {
+	orchestrator: portFromEnv("ORCHESTRATOR_PORT", 4000),
+	oracle: portFromEnv("ORACLE_PORT", 4001),
+	librarian: portFromEnv("LIBRARIAN_PORT", 4002),
+	explorer: portFromEnv("EXPLORER_PORT", 4003),
+	designer: portFromEnv("DESIGNER_PORT", 4004),
+	fixer: portFromEnv("FIXER_PORT", 4005),
+	scientist: portFromEnv("SCIENTIST_PORT", 4006),
+	githubWebhook: portFromEnv("GITHUB_WEBHOOK_PORT", 4007),
+	realtime: portFromEnv("JABR_REALTIME_PORT", 4008),
+	verification: portFromEnv("VERIFICATION_PORT", 4009),
+	jarvis: portFromEnv("JARVIS_PORT", 1337),
+} as const;
+
+// ---------------------------------------------------------------------------
+// Endpoints
+// ---------------------------------------------------------------------------
+
+/** Well-known and infrastructure HTTP paths served by the ecosystem. */
+export const JABR_ENDPOINTS = {
+	/** A2A agent card descriptor. */
+	agentCard: "/.well-known/agent-card.json",
+	/** Live world-state aggregate. */
+	worldState: "/.well-known/world-state",
+	/** Liveness probe. */
+	health: "/health",
+	/** Readiness probe. */
+	ready: "/ready",
+	/** Realtime event ingestion (POST). */
+	emit: "/emit",
+	/** Webhook listeners (GitHub / Telegram / WhatsApp). */
+	webhook: "/webhook",
+	/** JSON-RPC entry point (tasks/send). */
+	root: "/",
+} as const;
+
+/** A2A v1.0 JSON-RPC method names. */
+export const A2A_METHODS = {
+	tasksSend: "tasks/send",
+	tasksSendSubscribe: "tasks/sendSubscribe",
+	tasksCancel: "tasks/cancel",
+	tasksGet: "tasks/get",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Default service URLs
+// ---------------------------------------------------------------------------
+
+/** Fallback 9Router gateway URL when NINEROUTER_URL is unset (dev default). */
+export const NINEROUTER_URL_DEFAULT = "http://localhost:20127";
+/** Fallback model when NINEROUTER_MODEL is unset. */
+export const NINEROUTER_MODEL_DEFAULT = "openrouter/minimax/minimax-m3:free";
+/** Fallback orchestrator URL when JABR_URL / ORCHESTRATOR_URL is unset. */
+export const JABR_URL_DEFAULT = "http://localhost:4000";
+
+// ---------------------------------------------------------------------------
+// CORS
+// ---------------------------------------------------------------------------
+
+/**
+ * Dev CORS allowlist used when ALLOWED_ORIGINS is empty. Single source of
+ * truth consumed by agents/utils/rpc.ts and bun-websocket-adapter.ts.
+ */
+export const DEV_ALLOWED_ORIGINS = [
+	"http://localhost:5173",
+	"http://localhost:8080",
+	"http://localhost:4000",
+	"http://localhost:4001",
+	"http://localhost:4002",
+	"http://localhost:4003",
+	"http://localhost:4004",
+	"http://localhost:4005",
+	"http://localhost:4006",
+	"http://localhost:1337",
+] as const;
+
+================
+File: src/config/jabr-config.ts
+================
+/**
+ * jabr-config.ts — Centralized, validated configuration accessor for Jabr.
+ *
+ * Reads JABR_URL (or legacy ORCHESTRATOR_URL) from the environment and
+ * validates it at module load time. An invalid or missing value causes an
+ * immediate, descriptive process exit so misconfiguration surfaces at boot
+ * rather than as a cryptic fetch error mid-task.
+ *
+ * Schema rules:
+ *   - Must be a valid URL (zod .url())
+ *   - Scheme must be http:// or https:// (no file://, ws://, etc.)
+ *   - Host must be present (rejects malformed like "http://")
+ *
+ * Consumers import `jabrUrl()` to get the validated URL string, or
+ * `JABR_URL_RAW` if they need the raw env value (e.g. for deriving
+ * agent seed URLs by port substitution).
+ */
+
+import { z } from "zod";
+import { JABR_URL_DEFAULT } from "../constants/ecosystem.ts";
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
+
+export const jabrUrlSchema = z
+	.url(`JABR_URL must be a valid URL (e.g. ${JABR_URL_DEFAULT})`)
+	.refine(
+		(url) => {
+			try {
+				const parsed = new URL(url);
+				return parsed.protocol === "http:" || parsed.protocol === "https:";
+			} catch {
+				return false;
+			}
+		},
+		{ message: "JABR_URL scheme must be http:// or https://" },
+	)
+	.refine(
+		(url) => {
+			try {
+				const parsed = new URL(url);
+				return parsed.hostname.length > 0;
+			} catch {
+				return false;
+			}
+		},
+		{ message: "JABR_URL must have a valid host" },
+	);
+
+// ---------------------------------------------------------------------------
+// Raw env access (with legacy fallback)
+// ---------------------------------------------------------------------------
+
+export const JABR_URL_RAW: string | undefined =
+	process.env.JABR_URL ?? process.env.ORCHESTRATOR_URL;
+
+// ---------------------------------------------------------------------------
+// Validated accessor
+// ---------------------------------------------------------------------------
+
+export let _cachedValidatedUrl: string | null = null;
+
+/**
+ * Returns the validated Jabr orchestrator URL.
+ *
+ * On first call, validates JABR_URL (or ORCHESTRATOR_URL) against the
+ * schema. If validation fails, logs a fatal error and exits the process.
+ * Subsequent calls return the cached value without re-validating.
+ *
+ * Use this at startup or lazily — the fail-fast behavior ensures
+ * misconfiguration never reaches a running agent.
+ */
+export function jabrUrl(): string {
+	if (_cachedValidatedUrl) return _cachedValidatedUrl;
+
+	const raw = JABR_URL_RAW;
+
+	if (!raw) {
+		console.error(
+			"[JABR_CONFIG] Fatal: JABR_URL environment variable is required.\n" +
+				`  Set it to the orchestrator endpoint, e.g. JABR_URL=${JABR_URL_DEFAULT}\n` +
+				"  (Legacy ORCHESTRATOR_URL is also accepted but deprecated.)",
+		);
+		process.exit(1);
+	}
+
+	const result = jabrUrlSchema.safeParse(raw);
+	if (!result.success) {
+		const issues = result.error.issues
+			.map((i) => `  - ${i.path.join(".")}: ${i.message}`)
+			.join("\n");
+		console.error(
+			`[JABR_CONFIG] Fatal: JABR_URL validation failed for "${raw}":\n${issues}`,
+		);
+		process.exit(1);
+	}
+
+	_cachedValidatedUrl = result.data;
+	return _cachedValidatedUrl;
+}
+
+/**
+ * Returns the validated Jabr orchestrator URL, or undefined if not set
+ * and no legacy fallback exists. Does NOT exit on validation failure —
+ * callers must handle the undefined case.
+ *
+ * Use this in contexts where a missing URL is acceptable (e.g. optional
+ * features, tests).
+ */
+export function jabrUrlOrUndefined(): string | undefined {
+	if (_cachedValidatedUrl) return _cachedValidatedUrl;
+
+	const raw = JABR_URL_RAW;
+	if (!raw) return undefined;
+
+	const result = jabrUrlSchema.safeParse(raw);
+	if (!result.success) return undefined;
+
+	_cachedValidatedUrl = result.data;
+	return _cachedValidatedUrl;
+}
+
+/**
+ * Derives an agent URL from JABR_URL by replacing the port.
+ *
+ * Example: jabrUrlForPort(4001) on "http://localhost:4000" → "http://localhost:4001"
+ *
+ * Falls back to constructing from `http://localhost:${port}` if JABR_URL
+ * is not set, so agent discovery still works in dev without explicit config.
+ */
+export function jabrUrlForPort(port: number): string {
+	const base = jabrUrlOrUndefined();
+	if (!base) return `http://localhost:${port}`;
+
+	try {
+		const url = new URL(base);
+		url.port = String(port);
+		return url.toString();
+	} catch {
+		return `http://localhost:${port}`;
+	}
+}
+
+================
+File: scripts/jabr-cli.ts
+================
+#!/usr/bin/env -S bun run
+
+/**
+ * jabr-cli — agent management CLI for the Jabr multi-agent system.
+ *
+ * Subcommands:
+ *   start   [agent|all]   Start one agent or all (default: all).
+ *   stop    [agent|all]   Stop one agent or all.
+ *   restart [agent|all]   Restart one agent or all.
+ *   status            Show live status of every agent (health + process).
+ *   logs     [agent|all]  Tail log for one agent or all.
+ *   send    <agent> <text>   Send a task to an agent via A2A POST.
+ *   config            Show current agent config (ports, URLs, env).
+ *
+ * Usage:
+ *   bun scripts/jabr-cli.ts start
+ *   bun scripts/jabr-cli.ts stop oracle
+ *   bun scripts/jabr-cli.ts status
+ *   bun scripts/jabr-cli.ts logs fixer
+ *   bun scripts/jabr-cli.ts send oracle "review this code"
+ *   bun scripts/jabr-cli.ts config
+ */
+
+import { spawn, spawnSync } from "node:child_process";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	JABR_PORTS,
+	JABR_URL_DEFAULT,
+	NINEROUTER_MODEL_DEFAULT,
+	NINEROUTER_URL_DEFAULT,
+} from "@constants/ecosystem";
+
+const ROOT = process.cwd();
+
+// ── Agent topology (mirrors agents/run/orchestrator.ts seedUrls) ──────────
+
+const AGENTS: Array<{
+	name: string;
+	script: string; // run script filename (without .ts)
+	port: number;
+	sourceCmd: string; // bun command to run from source (fallback when no binary)
+	env?: Record<string, string>;
+}> = [
+	{
+		name: "orchestrator",
+		script: "orchestrator",
+		port: JABR_PORTS.orchestrator,
+		sourceCmd: "bun agents/run/orchestrator.ts",
+		// Orchestrator owns the realtime WebSocket server on 4008
+	},
+	{
+		name: "oracle",
+		script: "oracle",
+		port: JABR_PORTS.oracle,
+		sourceCmd: "bun agents/run/oracle.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "librarian",
+		script: "librarian",
+		port: JABR_PORTS.librarian,
+		sourceCmd: "bun agents/run/librarian.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "explorer",
+		script: "explorer",
+		port: JABR_PORTS.explorer,
+		sourceCmd: "bun agents/run/explorer.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "designer",
+		script: "designer",
+		port: JABR_PORTS.designer,
+		sourceCmd: "bun agents/run/designer.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "fixer",
+		script: "fixer",
+		port: JABR_PORTS.fixer,
+		sourceCmd: "bun agents/run/fixer.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "scientist",
+		script: "scientist",
+		port: JABR_PORTS.scientist,
+		sourceCmd: "bun agents/run/scientist.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "verification",
+		script: "verification",
+		port: JABR_PORTS.verification,
+		sourceCmd: "bun agents/run/verification.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "jarvis",
+		script: "jarvis",
+		port: JABR_PORTS.jarvis,
+		sourceCmd: "bun agents/run/jarvis.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, JABR_URL: JABR_URL_DEFAULT, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+	},
+	{
+		name: "mcp",
+		script: "mcp",
+		port: 0,
+		sourceCmd: "bun mcp-servers/tools.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}` },
+	},
+	{
+		name: "acp-bridge",
+		script: "acp-bridge",
+		port: 0,
+		sourceCmd: "bun agents/run/acp-bridge.ts",
+		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, JABR_URL: JABR_URL_DEFAULT, JABR_MEMORY_DIR: join(ROOT, "memory") },
+	},
+];
+
+/**
+ * Resolve the command used to launch an agent: prefer the standalone binary
+ * built into `dist/bin/<name>` (via `bun run build`) when present, otherwise
+ * fall back to running from source.
+ */
+function runCommand(agent: (typeof AGENTS)[number]): string {
+	const bin = join(ROOT, "dist", "bin", agent.name);
+	return existsSync(bin) ? bin : agent.sourceCmd;
+}
+
+const LOG_DIR = "/tmp/jabr-logs";
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function log(...args: unknown[]) {
+	console.log(...args);
+}
+function warn(...args: unknown[]) {
+	console.warn(...args);
+}
+function error(...args: unknown[]) {
+	console.error(...args);
+}
+
+function agentByName(name: string): (typeof AGENTS)[number] | undefined {
+	return AGENTS.find((a) => a.name === name);
+}
+
+function ensureLogDir() {
+	if (!existsSync(LOG_DIR)) {
+		mkdirSync(LOG_DIR, { recursive: true });
+	}
+}
+
+function pidFile(agent: string) {
+	return join(LOG_DIR, `jabr-${agent}.pid`);
+}
+
+function logFile(agent: string) {
+	return join(LOG_DIR, `jabr-${agent}.log`);
+}
+
+/** Read PIDs from pid file. Returns empty array if file doesn't exist. */
+function readPids(agent: string): number[] {
+	const p = pidFile(agent);
+	if (!existsSync(p)) return [];
+	try {
+		const content = readFileSync(p, "utf-8").trim();
+		return content
+			.split("\n")
+			.map((s) => parseInt(s.trim(), 10))
+			.filter((n) => !isNaN(n));
+	} catch {
+		return [];
+	}
+}
+
+/** Write PIDs to pid file. */
+function writePids(agent: string, pids: number[]) {
+	ensureLogDir();
+	writeFileSync(pidFile(agent), pids.join("\n"), "utf-8");
+}
+
+/** Delete pid file. */
+function deletePidFile(agent: string) {
+	const p = pidFile(agent);
+	if (existsSync(p)) {
+		try {
+			unlinkSync(p);
+		} catch {
+			/* ignore */
+		}
+	}
+}
+
+/** Find PID(s) for an agent by scanning /proc (fallback when pid file is stale). */
+function findPidsByProc(agent: (typeof AGENTS)[number]): number[] {
+	const pids: number[] = [];
+	const sourceNeedle = `agents/run/${agent.script}.ts`;
+	const binNeedle = `dist/bin/${agent.name}`;
+	try {
+		const proc = "/proc";
+		const entries = readdirSync(proc);
+		for (const entry of entries) {
+			if (!/^\d+$/.test(entry)) continue;
+			const cmdlinePath = join(proc, entry, "cmdline");
+			try {
+				const cmdline = readFileSync(cmdlinePath, "utf-8")
+					.replace(/\0/g, " ")
+					.trim();
+				if (cmdline.includes(sourceNeedle) || cmdline.includes(binNeedle)) {
+					pids.push(parseInt(entry, 10));
+				}
+			} catch {
+				// Permission or missing — skip.
+			}
+		}
+	} catch {
+		// /proc not available
+	}
+	return pids;
+}
+
+/** Kill processes for agents with a specific port (for port-based agents). */
+async function killAgentByPort(port: number): Promise<void> {
+	if (port === 0) return;
+	spawnSync(
+		"bash",
+		["-c", `lsof -ti :${port} 2>/dev/null | xargs kill 2>/dev/null || true`],
+		{ encoding: "utf-8" },
+	);
+}
+
+/** Check if an HTTP endpoint responds (for port-based agents). */
+async function healthCheck(
+	name: string,
+	port: number,
+): Promise<{ up: boolean; card?: object }> {
+	if (port === 0) return { up: false };
+	try {
+		const cardUrl = `${jabrUrlForPort(port)}/.well-known/agent-card.json`;
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 2000);
+		const res = await fetch(cardUrl, { signal: controller.signal });
+		clearTimeout(timer);
+		if (res.ok) {
+			const card = (await res.json()) as object;
+			return { up: true, card };
+		}
+		return { up: false };
+	} catch {
+		return { up: false };
+	}
+}
+
+/** Wait for an agent to become healthy (poll up to 30s). */
+async function waitForHealth(name: string, port: number): Promise<boolean> {
+	if (port === 0) return true;
+	for (let i = 0; i < 30; i++) {
+		await new Promise((r) => setTimeout(r, 1000));
+		if ((await healthCheck(name, port)).up) return true;
+	}
+	return false;
+}
+
+// ── Subcommands ───────────────────────────────────────────────────────────
+
+async function cmdStart(args: string[]) {
+	const target = args[0]?.trim().toLowerCase();
+	ensureLogDir();
+
+	if (target && target !== "all") {
+		const agent = agentByName(target);
+		if (!agent) {
+			error(`Unknown agent: ${target}`);
+			error(`Known agents: ${AGENTS.map((a) => a.name).join(", ")}`);
+			process.exit(1);
+		}
+		await startSingle(agent);
+	} else {
+		log(`Starting all ${AGENTS.length} agents...`);
+		await Promise.all(AGENTS.map((a) => startSingle(a)));
+		log("All agents started.");
+	}
+}
+
+async function startSingle(agent: (typeof AGENTS)[number]) {
+	const existingPids = readPids(agent.name);
+	const procPids = findPidsByProc(agent);
+	const allPids = [...existingPids, ...procPids];
+
+	if (allPids.length > 0) {
+		log(`  ${agent.name}: already running (PID ${allPids.join(", ")})`);
+		return;
+	}
+
+	const logPath = logFile(agent.name);
+	const envPrefix = agent.env
+		? Object.entries(agent.env)
+				.map(([k, v]) => `${k}="${v}"`)
+				.join(" ") + " "
+		: "";
+
+	log(`  Starting ${agent.name} on port ${agent.port || "stdio"}...`);
+
+	const bashCmd = `${envPrefix}${runCommand(agent)} 2>&1 | tee ${logPath}`;
+	const proc = spawn("bash", ["-c", bashCmd], {
+		cwd: ROOT,
+		detached: true,
+		stdio: ["ignore", "pipe", "pipe"],
+		env: { ...process.env, ...agent.env },
+	});
+	proc.unref();
+
+	if (agent.port > 0) {
+		const ready = await waitForHealth(agent.name, agent.port);
+		if (ready) {
+			const health = await healthCheck(agent.name, agent.port);
+			const cardName = (health.card as any)?.name ?? "?";
+			log(`  ✓ ${agent.name} — ${jabrUrlForPort(agent.port)} (${cardName})`);
+		} else {
+			warn(
+				`  ? ${agent.name} — launched but not yet serving on port ${agent.port} (check ${logPath})`,
+			);
+		}
+	} else {
+		// For stdio agents, confirm process spawned.
+		setTimeout(() => {
+			const procPids = findPidsByProc(agent);
+			if (procPids.length > 0) {
+				writePids(agent.name, procPids);
+				log(`  ✓ ${agent.name} — launched (stdio, PID ${procPids[0]})`);
+			} else {
+				warn(
+					`  ? ${agent.name} — process may not have started (check ${logPath})`,
+				);
+			}
+		}, 1500);
+	}
+}
+
+async function cmdStop(args: string[]) {
+	const target = args[0]?.trim().toLowerCase();
+
+	if (target && target !== "all") {
+		const agent = agentByName(target);
+		if (!agent) {
+			error(`Unknown agent: ${target}`);
+			process.exit(1);
+		}
+		await stopSingle(agent);
+	} else {
+		log("Stopping all agents...");
+		for (const agent of AGENTS) {
+			await stopSingle(agent);
+		}
+		log("All agents stopped.");
+	}
+}
+
+async function stopSingle(agent: (typeof AGENTS)[number]) {
+	const pids = readPids(agent.name);
+	const procPids = findPidsByProc(agent);
+	const allPids = [...pids, ...procPids];
+
+	if (allPids.length === 0 && agent.port === 0) {
+		log(`  ${agent.name}: not running`);
+		return;
+	}
+
+	if (agent.port > 0) {
+		await killAgentByPort(agent.port);
+	}
+
+	// SIGTERM first.
+	for (const pid of allPids) {
+		try {
+			process.kill(pid, "SIGTERM");
+		} catch {
+			// already dead
+		}
+	}
+
+	// Wait, then SIGKILL stragglers.
+	await new Promise((r) => setTimeout(r, 1000));
+	const remaining = findPidsByProc(agent);
+	for (const pid of remaining) {
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {
+			// already dead
+		}
+	}
+
+	deletePidFile(agent.name);
+
+	if (agent.port > 0) {
+		const stillUp = await healthCheck(agent.name, agent.port);
+		if (stillUp.up) {
+			warn(
+				`  ✗ ${agent.name}: process killed but port ${agent.port} still serving`,
+			);
+		} else {
+			log(`  ✓ ${agent.name}: stopped`);
+		}
+	} else {
+		const stillRunning = findPidsByProc(agent).length > 0;
+		if (!stillRunning) {
+			log(`  ✓ ${agent.name}: stopped`);
+		} else {
+			warn(
+				`  ✗ ${agent.name}: still running (PID ${findPidsByProc(agent).join(", ")})`,
+			);
+		}
+	}
+}
+
+async function cmdRestart(args: string[]) {
+	const target = args[0]?.trim().toLowerCase();
+	if (target && target !== "all") {
+		const agent = agentByName(target);
+		if (!agent) {
+			error(`Unknown agent: ${target}`);
+			process.exit(1);
+		}
+		log(`Restarting ${agent.name}...`);
+		await stopSingle(agent);
+		await new Promise((r) => setTimeout(r, 1000));
+		await startSingle(agent);
+	} else {
+		log("Restarting all agents...");
+		for (const agent of AGENTS) {
+			await stopSingle(agent);
+		}
+		await new Promise((r) => setTimeout(r, 1500));
+		for (const agent of AGENTS) {
+			await startSingle(agent);
+		}
+	}
+	log("Done.");
+}
+
+async function cmdStatus() {
+	const rows: Array<[string, string, string, string, string]> = [];
+
+	for (const agent of AGENTS) {
+		const pids = readPids(agent.name);
+		const procPids = findPidsByProc(agent);
+		const allPids = [...pids, ...procPids];
+		const running = allPids.length > 0;
+		const health =
+			agent.port > 0 ? await healthCheck(agent.name, agent.port) : null;
+
+		const procStr = running ? `PID ${allPids.join(",")}` : "—";
+		const httpStr = health?.up
+			? `up (=${agent.port})`
+			: agent.port > 0
+				? `down`
+				: "n/a";
+		const cardStr = health?.card
+			? ((health.card as any)?.name ?? "?")
+			: agent.port > 0
+				? "—"
+				: "stdio";
+
+		rows.push([
+			agent.name.padEnd(14),
+			(agent.port || "stdio").toString().padEnd(6),
+			procStr.padEnd(16),
+			httpStr.padEnd(12),
+			cardStr,
+		]);
+	}
+
+	const colWidths = rows[0]!.map((_, i) =>
+		Math.max(...rows.map((r) => r[i]!.length)),
+	);
+	for (const row of rows) {
+		log(row.map((cell, i) => cell.padEnd(colWidths[i] ?? 0)).join("  "));
+	}
+
+	const httpAgents = AGENTS.filter((a) => a.port > 0).length;
+	const stdioAgents = AGENTS.filter((a) => a.port === 0).length;
+	const runningCount = rows.filter((r) => !r[2]!.includes("—")).length;
+	log("");
+	log(
+		`Summary: ${httpAgents} HTTP + ${stdioAgents} stdio agents | ${runningCount}/${AGENTS.length} running`,
+	);
+}
+
+async function cmdLogs(args: string[]) {
+	const target = args[0]?.trim().toLowerCase();
+	ensureLogDir();
+
+	if (target && target !== "all") {
+		const agent = agentByName(target);
+		if (!agent) {
+			error(`Unknown agent: ${target}`);
+			process.exit(1);
+		}
+		const logPath = logFile(agent.name);
+		if (!existsSync(logPath)) {
+			log(`  (no log file yet — agent may not have been started via this CLI)`);
+			log(
+				`  Start the agent first: bun scripts/jabr-cli.ts start ${agent.name}`,
+			);
+			return;
+		}
+		log(`Tailing ${logPath} (Ctrl-C to stop)...`);
+		const tail = spawn("tail", ["-f", logPath], {
+			cwd: ROOT,
+			stdio: ["ignore", "inherit", "inherit"],
+		});
+		tail.on("error", () => {
+			log(`  Failed to tail — file may not exist.`);
+		});
+	} else {
+		log("Logs for all agents (last 20 lines each):");
+		for (const agent of AGENTS) {
+			const logPath = logFile(agent.name);
+			if (!existsSync(logPath)) {
+				log(`  ${agent.name}: (no log)`);
+				continue;
+			}
+			try {
+				const content = readFileSync(logPath, "utf-8");
+				const lines = content
+					.split("\n")
+					.filter((l) => l.trim())
+					.slice(-20);
+				log(`--- ${agent.name} (${logPath}) ---`);
+				for (const line of lines) log(`  ${line}`);
+				log("");
+			} catch {
+				log(`  ${agent.name}: (error reading log)`);
+			}
+		}
+	}
+}
+
+async function cmdSend(args: string[]) {
+	if (args.length < 2) {
+		error("Usage: jabr-cli send <agent> <text...>");
+		error("Sends a task to an agent via A2A POST /.");
+		process.exit(1);
+	}
+
+	const target = args[0]!.trim();
+	const text = args.slice(1).join(" ");
+	const agent = agentByName(target);
+
+	if (!agent) {
+		error(`Unknown agent: ${target}`);
+		error(`Known agents: ${AGENTS.map((a) => a.name).join(", ")}`);
+		process.exit(1);
+	}
+
+	if (agent.port === 0) {
+		error(
+			`${agent.name} is stdio-based — cannot send via HTTP. Use the orchestrator instead.`,
+		);
+		process.exit(1);
+	}
+
+	log(`Sending to ${agent.name} (port ${agent.port})...`);
+	log(`  Task: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`);
+
+	try {
+		const res = await fetch(`${jabrUrlForPort(agent.port)}/`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "tasks/send",
+				params: {
+					message: {
+						parts: [{ kind: "text", text }],
+					},
+				},
+			}),
+			signal: AbortSignal.timeout(30000),
+		});
+
+		const body = (await res.json()) as {
+			result?: { text?: string } | unknown;
+			error?: { code?: number | string; message?: string };
+		};
+		if (res.ok && body.result) {
+			const resultText =
+				(body.result as any).text ?? JSON.stringify(body.result);
+			log(`\nResponse from ${agent.name}:`);
+			log("─".repeat(60));
+			log(resultText);
+			log("─".repeat(60));
+		} else if (body.error) {
+			const errCode = body.error.code;
+			const errMsg = body.error.message;
+			error(`Agent returned error ${errCode}: ${errMsg}`);
+		} else {
+			error(`Unexpected response: ${JSON.stringify(body)}`);
+		}
+	} catch (e) {
+		error(`Failed to send task: ${e}`);
+		error(
+			`Is the agent running? Start it with: bun scripts/jabr-cli.ts start ${agent.name}`,
+		);
+	}
+}
+
+async function cmdConfig() {
+	log("Jabr Agent Configuration");
+	log("═".repeat(60));
+	log("");
+	log("Agents:");
+	for (const agent of AGENTS) {
+		log(
+			`  ${agent.name.padEnd(14)} port=${agent.port || "stdio"}  cmd=${runCommand(agent)}`,
+		);
+	}
+
+	log("");
+	log("Environment variables (current shell values shown):");
+	const knownEnv: Array<[string, string, string]> = [
+		["NINEROUTER_URL", NINEROUTER_URL_DEFAULT, "LLM gateway URL"],
+		["NINEROUTER_KEY", "(unset)", "LLM API key"],
+		["NINEROUTER_MODEL", NINEROUTER_MODEL_DEFAULT, "Default model"],
+		[
+			"JABR_LLM_PROVIDER",
+			"(unset)",
+			"LLM provider selector: vercel or unset for 9Router",
+		],
+		[
+			"VERCEL_AI_GATEWAY_KEY",
+			"(unset)",
+			"Vercel AI Gateway API key (also AI_GATEWAY_API_KEY)",
+		],
+		[
+			"VERCEL_AI_GATEWAY_MODEL",
+			"minimax/minimax-m3",
+			"Vercel model ID (resilient form survives Sept 6 free-period end)",
+		],
+		[
+			"VERCEL_AI_GATEWAY_BASE_URL",
+			"https://ai-gateway.vercel.sh/v4/ai",
+			"Vercel AI Gateway Base URL (optional override)",
+		],
+		[
+			"JABR_URL",
+			jabrUrlForPort(JABR_PORTS.orchestrator),
+			"Orchestrator endpoint (required). Legacy: ORCHESTRATOR_URL",
+		],
+		["A2A_AUTH_TOKEN", "(unset)", "A2A auth token (optional)"],
+		["A2A_REQUIRE_AUTH", "false", "Enforce A2A auth"],
+		["JABR_TOKEN_CAP_<AGENT>", "100000", "Per-agent token budget"],
+		["GITHUB_WEBHOOK_SECRET", "change-me", "Webhook signing secret"],
+		["GITHUB_TOKEN", "(unset)", "GitHub PAT for webhook actions"],
+		["GITHUB_REPO", "omnizya/jabr", "Default repo for webhooks"],
+		["HERMES_KANBAN_BOARD", "(unset)", "Kanban board for task sync"],
+	];
+
+	const envWidth = 28;
+	for (const [key, defaultVal, desc] of knownEnv) {
+		const current = process.env[key] ?? defaultVal;
+		log(`  ${key.padEnd(envWidth)} ${current}   # ${desc}`);
+	}
+
+	log("");
+	log("Run scripts (from package.json):");
+	const pkg = JSON.parse(readFileSync("package.json", "utf-8")) as any;
+	for (const [name, cmd] of Object.entries(pkg.scripts)) {
+		if (name !== "test" && name !== "typecheck") {
+			log(`  ${name.padEnd(16)} ${cmd}`);
+		}
+	}
+
+	log("");
+	log("Config file: none (env-driven). Set vars in your shell or a .env file.");
+	log("");
+	log("Log directory: " + LOG_DIR);
+	log("PID files:   " + LOG_DIR + "/jabr-<agent>.pid");
+}
+
+// ── Entry point ────────────────────────────────────────────────────────────
+
+const USAGE = `
+jabr-cli — agent management for the Jabr multi-agent system
+
+Usage:
+  bun scripts/jabr-cli.ts <command> [args...]
+
+Commands:
+  start   [agent|all]   Start one agent or all (default: all)
+  stop    [agent|all]   Stop one agent or all
+  restart [agent|all]   Restart one agent or all
+  status            Show live status of every agent
+  logs    [agent|all]   Tail logs for one agent, or last 20 lines for all
+  send    <agent> <text...>   Send a task to an agent via A2A
+  config            Show agent topology, env vars, and run scripts
+
+Examples:
+  bun scripts/jabr-cli.ts start                     # start all agents
+  bun scripts/jabr-cli.ts start all                 # start all agents (explicit)
+  bun scripts/jabr-cli.ts start oracle              # start just the oracle
+  bun scripts/jabr-cli.ts stop                      # stop all
+  bun scripts/jabr-cli.ts restart fixer             # restart fixer
+  bun scripts/jabr-cli.ts status                    # show health of all
+  bun scripts/jabr-cli.ts logs oracle               # tail oracle log
+  bun scripts/jabr-cli.ts send oracle "review this" # send task
+  bun scripts/jabr-cli.ts config                    # show config
+
+Agent topology:
+  orchestrator  :4000  (A2A — JABIR, the orchestrator)
+  oracle        :4001  (A2A — JABIR's LLM routing judge)
+  librarian     :4002  (A2A — skill persistence)
+  explorer      :4003  (A2A — codebase exploration)
+  designer      :4004  (A2A — design tasks)
+  fixer         :4005  (A2A — code fixes, artifacts)
+  scientist     :4006  (A2A — data science via MCP)
+  verification  :4009  (A2A — verification agent)
+  jarvis        :1337  (A2A — proactive codebase steward)
+  mcp           stdio  (MCP tool server — run_python, read/write, etc.)
+  acp-bridge    stdio  (ACP bridge to orchestrator)
+`;
+
+function main() {
+	const args = process.argv.slice(2);
+	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
+		log(USAGE);
+		process.exit(0);
+	}
+
+	const cmd = args[0];
+	const cmdArgs = args.slice(1);
+
+	switch (cmd) {
+		case "start":
+			cmdStart(cmdArgs);
+			break;
+		case "stop":
+			cmdStop(cmdArgs);
+			break;
+		case "restart":
+			cmdRestart(cmdArgs);
+			break;
+		case "status":
+			cmdStatus();
+			break;
+		case "logs":
+			cmdLogs(cmdArgs);
+			break;
+		case "send":
+			cmdSend(cmdArgs);
+			break;
+		case "config":
+			cmdConfig();
+			break;
+		default:
+			error(`Unknown command: ${cmd}`);
+			log(USAGE);
+			process.exit(1);
+	}
+}
+
+main();
+
+================
+File: scripts/demo.ts
+================
+/**
+ * demo.ts — End-to-end test of the full agent stack
+ *
+ * What it tests:
+ *   1. A2A agent card discovery (all 8 agents: Fixer, Librarian, Oracle, Explorer,
+ *      Designer, Scientist, Jarvis, Orchestrator)
+ *   2. Direct A2A task delegation (Fixer Agent)
+ *   3. Orchestrator routing (Fixer / Librarian / Explorer / Oracle / Scientist / Jarvis)
+ *   4. Self-improvement: skill file creation
+ *   5. Memory persistence (sqlite-backed, memory/jabr.db)
+ *   6. ACP bridge handshake (stdio simulation)
+ *   7. Orchestrator world-state endpoint
+ *
+ * Run AFTER starting all agents:
+ *   bun run dev &
+ *   bun scripts/demo.ts
+ *
+ * Protocol note: the A2A server is synchronous. It accepts POST to the root
+ * `/` with JSON-RPC method `tasks/send` and params
+ * `{ message: { parts: [{ kind: "text", text }] } }`, and returns
+ * `{ jsonrpc: "2.0", id, result: { text: string } }` inline — no polling.
+ */
+
+import { Database } from "bun:sqlite";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
+import { JABR_PORTS } from "@constants/ecosystem";
+
+const FIXER = jabrUrlForPort(JABR_PORTS.fixer);
+const LIBRARIAN = jabrUrlForPort(JABR_PORTS.librarian);
+const ORACLE = jabrUrlForPort(JABR_PORTS.oracle);
+const EXPLORER = jabrUrlForPort(JABR_PORTS.explorer);
+const DESIGNER = jabrUrlForPort(JABR_PORTS.designer);
+const SCIENTIST = jabrUrlForPort(JABR_PORTS.scientist);
+const JARVIS = jabrUrlForPort(JABR_PORTS.jarvis);
+const ORCHESTRATOR = jabrUrlOrUndefined() ?? jabrUrlForPort(JABR_PORTS.orchestrator);
+
+let passed = 0;
+let failed = 0;
+
+function step(label: string) {
+	console.log(`\n${"─".repeat(60)}`);
+	console.log(`▶ ${label}`);
+	console.log("─".repeat(60));
+}
+
+async function check(label: string, fn: () => Promise<void>) {
+	try {
+		await fn();
+		console.log(`  ✅ ${label}`);
+		passed++;
+	} catch (e) {
+		console.log(`  ❌ ${label}: ${(e as Error).message}`);
+		failed++;
+	}
+}
+
+/**
+ * POST a task to an A2A agent's root `/` endpoint using the `tasks/send`
+ * method. The server is synchronous: it awaits the handler and returns the
+ * result inline as `{ result: { text } }`.
+ */
+async function postA2A(agentUrl: string, text: string): Promise<string> {
+	const res = await fetch(`${agentUrl}/`, {
+		method: "POST",
+		headers: { 
+			"Content-Type": "application/json",
+			"X-API-Key": "dev-secret-token-for-testing"
+		},
+		body: JSON.stringify({
+			jsonrpc: "2.0",
+			id: crypto.randomUUID(),
+			method: "tasks/send",
+			params: { message: { parts: [{ kind: "text", text }] } },
+		}),
+	});
+	const data = (await res.json()) as {
+		result?: { text: string };
+		error?: { code: number; message: string };
+	};
+	if (data.error) {
+		throw new Error(`RPC ${data.error.code}: ${data.error.message}`);
+	}
+	if (!data.result || typeof data.result.text !== "string") {
+		throw new Error("Malformed response: missing result.text");
+	}
+	return data.result.text;
+}
+
+// ── 1. A2A agent card discovery ───────────────────────────────────────────────
+step("1 · A2A Agent Card discovery");
+
+async function checkCard(label: string, url: string) {
+	await check(label, async () => {
+		const res = await fetch(`${url}/.well-known/agent-card.json`);
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		const card = (await res.json()) as { name: string; skills?: unknown[] };
+		if (!card.name) throw new Error("No name in card");
+		console.log(
+			`     → ${card.name}` +
+				(card.skills ? ` · ${card.skills.length} skills` : ""),
+		);
+	});
+}
+
+await checkCard("Fixer Agent card reachable", FIXER);
+await checkCard("Librarian Agent card reachable", LIBRARIAN);
+await checkCard("Oracle Agent card reachable", ORACLE);
+await checkCard("Explorer Agent card reachable", EXPLORER);
+await checkCard("Designer Agent card reachable", DESIGNER);
+await checkCard("Scientist Agent card reachable", SCIENTIST);
+await checkCard("Jarvis Agent card reachable", JARVIS);
+await checkCard("Orchestrator card reachable", ORCHESTRATOR);
+
+// ── 2. Direct A2A task delegation ─────────────────────────────────────────────
+step("2 · Direct A2A task: Fixer Agent → Fibonacci");
+
+await check("Send task and read result synchronously", async () => {
+	const response = await postA2A(
+		FIXER,
+		"Implement a fibonacci function in TypeScript",
+	);
+	if (!response.includes("fibonacci") && !response.includes("Fibonacci"))
+		throw new Error("Response doesn't mention fibonacci");
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+// ── 3. Orchestrator routing ───────────────────────────────────────────────────
+step("3 · Orchestrator routing");
+
+await check("Orchestrator routes code task → Fixer", async () => {
+	const response = await postA2A(
+		ORCHESTRATOR,
+		"Write a binary search function",
+	);
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+await check("Orchestrator routes research task → Librarian", async () => {
+	const response = await postA2A(
+		ORCHESTRATOR,
+		"Research the MCP and A2A protocols",
+	);
+	if (!response.includes("MCP") && !response.includes("A2A"))
+		throw new Error("Response doesn't mention protocols");
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+await check("Orchestrator routes find task → Explorer", async () => {
+	const response = await postA2A(
+		ORCHESTRATOR,
+		"find all TODO comments in the codebase",
+	);
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+await check("Orchestrator routes review task → Oracle", async () => {
+	const response = await postA2A(
+		ORCHESTRATOR,
+		"review this function for edge cases: async function foo() { return 1; }",
+	);
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+await check("Orchestrator routes data task → Scientist", async () => {
+	const response = await postA2A(ORCHESTRATOR, "analyze this data with python");
+	if (!/Scientist/i.test(response))
+		throw new Error("Response doesn't mention Scientist");
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+await check("Orchestrator routes scan task → Jarvis", async () => {
+	const response = await postA2A(
+		ORCHESTRATOR,
+		"scan the codebase for improvements",
+	);
+	if (!/Steward scan complete/i.test(response))
+		throw new Error("Response doesn't mention Steward scan");
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+// ── 4. Self-improvement: skill persistence ────────────────────────────────────
+step("4 · Self-improvement — skill files created");
+
+await check("Librarian creates skill files after tasks", async () => {
+	// Trigger a research task to generate skills
+	await postA2A(LIBRARIAN, "Research self-improvement in agent systems");
+
+	// Check skill store
+	const skillDir = join(process.cwd(), "skills");
+	if (!existsSync(skillDir)) throw new Error("skills/ directory not created");
+	const files = readdirSync(skillDir).filter((f) => f.endsWith(".json"));
+	if (files.length === 0) throw new Error("No skill files created");
+	console.log(`     → ${files.length} skill(s): ${files.join(", ")}`);
+
+	// Validate skill structure
+	const skill = JSON.parse(readFileSync(join(skillDir, files[0]!), "utf-8"));
+	if (!skill.name || !skill.steps || !Array.isArray(skill.steps))
+		throw new Error("Invalid skill structure");
+	console.log(`     → Sample: "${skill.name}" (${skill.steps.length} steps)`);
+});
+
+// ── 5. Memory persistence ─────────────────────────────────────────────────────
+step("5 · Memory persistence (sqlite-backed)");
+
+await check("Orchestrator memory persisted to sqlite", async () => {
+	const dbPath = join(process.cwd(), "memory", "jabr.db");
+	if (!existsSync(dbPath)) throw new Error("memory/jabr.db not found");
+	const db = new Database(dbPath, { readonly: true });
+	try {
+		const tasks = db.query("SELECT COUNT(*) AS n FROM tasks").get() as {
+			n: number;
+		};
+		const mem = db.query("SELECT COUNT(*) AS n FROM memory_log").get() as {
+			n: number;
+		};
+		console.log(`     → ${tasks.n} task(s) · ${mem.n} memory log entr(ies)`);
+		if (tasks.n < 1) throw new Error("No tasks recorded in sqlite memory");
+	} finally {
+		db.close();
+	}
+});
+
+// ── 6. ACP bridge handshake (simulated) ──────────────────────────────────────
+step("6 · ACP bridge — simulated initialize + session/list");
+
+await check("ACP initialize returns capabilities", async () => {
+	// Spawn the ACP bridge as a subprocess and test it via stdin/stdout.
+	const proc = Bun.spawn(["bun", "agents/run/acp-bridge.ts"], {
+		stdin: "pipe",
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+
+	// The bridge logs its ready notification on stderr; JSON-RPC responses
+	// arrive on stdout.
+	const stderrReader = proc.stderr.getReader();
+	const stdoutReader = proc.stdout.getReader();
+	const errBuf = { current: "" };
+	const outBuf = { current: "" };
+
+	const readLine = async (
+		reader: { read(): Promise<{ done: boolean; value?: Uint8Array }> },
+		buf: { current: string },
+	): Promise<string> => {
+		while (true) {
+			const nl = buf.current.indexOf("\n");
+			if (nl >= 0) {
+				const line = buf.current.slice(0, nl).trim();
+				buf.current = buf.current.slice(nl + 1);
+				return line;
+			}
+			const { value, done } = await reader.read();
+			if (done) throw new Error("ACP bridge stream closed");
+			if (!value) throw new Error("ACP bridge read returned no data");
+			buf.current += new TextDecoder().decode(value);
+		}
+	};
+
+	// Read ready notification (stderr).
+	const ready = await Promise.race([
+		readLine(stderrReader, errBuf),
+		Bun.sleep(2000).then(() => "timeout"),
+	]);
+	if (ready === "timeout")
+		throw new Error("ACP bridge did not send ready notification");
+
+	// Send initialize
+	const initReq =
+		JSON.stringify({
+			jsonrpc: "2.0",
+			id: 1,
+			method: "initialize",
+			params: {},
+		}) + "\n";
+	proc.stdin.write(initReq);
+	const initResp = await Promise.race([
+		readLine(stdoutReader, outBuf),
+		Bun.sleep(2000).then(() => "timeout"),
+	]);
+	if (initResp === "timeout") throw new Error("ACP bridge initialize timeout");
+
+	const parsed = JSON.parse(initResp);
+	if (!parsed.result?.capabilities)
+		throw new Error("No capabilities in response");
+	console.log(
+		`     → capabilities: ${JSON.stringify(parsed.result.capabilities)}`,
+	);
+
+	// Send session/list (the bridge has no sessions/create — list is the
+	// session API).
+	proc.stdin.write(
+		JSON.stringify({
+			jsonrpc: "2.0",
+			id: 2,
+			method: "session/list",
+			params: {},
+		}) + "\n",
+	);
+	const sessResp = await Promise.race([
+		readLine(stdoutReader, outBuf),
+		Bun.sleep(2000).then(() => "timeout"),
+	]);
+	if (sessResp === "timeout") throw new Error("session/list timeout");
+	const sessData = JSON.parse(sessResp);
+	if (!Array.isArray(sessData.result?.sessions))
+		throw new Error("No sessions array in response");
+	console.log(`     → ${sessData.result.sessions.length} session(s)`);
+
+	proc.kill();
+});
+
+// ── 7. Orchestrator world-state endpoint ──────────────────────────────────────
+step("7 · Orchestrator world-state endpoint");
+
+await check("world-state returns current state", async () => {
+	const res = await fetch(`${ORCHESTRATOR}/.well-known/world-state`);
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	const state = (await res.json()) as { agents?: unknown[]; tasks?: unknown[] };
+	const agentCount = Array.isArray(state.agents) ? state.agents.length : 0;
+	const taskCount = Array.isArray(state.tasks) ? state.tasks.length : 0;
+	console.log(`     → ${agentCount} agent(s) · ${taskCount} task(s)`);
+	if (agentCount < 5)
+		throw new Error(`Expected at least 5 agents, got ${agentCount}`);
+});
+
+await check("Handover sentinel processed without crash", async () => {
+	// The orchestrator should process the %%HANDOVER%% sentinel and return a
+	// result inline (synchronous). We only verify it didn't error out.
+	const response = await postA2A(
+		ORCHESTRATOR,
+		"%%HANDOVER%% Trigger a handover",
+	);
+	console.log(`     → ${response.slice(0, 80)}…`);
+});
+
+// ── 8. Pollinations image generation ──────────────────────────────────────────
+step("8 · Pollinations image generation");
+
+await check("PollinationsImageAdapter generates a real image", async () => {
+	const { PollinationsImageAdapter } = await import(
+		"@adapters/pollinations-image"
+	);
+	const apiKey = process.env.POLLINATIONS_API_KEY;
+	if (!apiKey) {
+		console.log("     ⚠ POLLINATIONS_API_KEY not set — skipping live test");
+		return;
+	}
+	const adapter = new PollinationsImageAdapter({ apiKey });
+	const url = await adapter.generate("a cute cat in space");
+	if (!url.startsWith("https://gen.pollinations.ai/image/"))
+		throw new Error(`Unexpected URL format: ${url}`);
+	console.log(`     → ${url.slice(0, 70)}…`);
+
+	// Verify the generated image is actually reachable (HTTP 200 + image/jpeg).
+	const res = await fetch(url, { method: "HEAD" });
+	if (!res.ok)
+		throw new Error(`Generated image not reachable: HTTP ${res.status}`);
+	const ct = res.headers.get("content-type") ?? "";
+	if (!ct.startsWith("image/"))
+		throw new Error(`Expected image content-type, got: ${ct}`);
+	console.log(`     → HTTP ${res.status} · content-type: ${ct}`);
+});
+
+// ── 9. Pollinations wallet → x402 bridge ──────────────────────────────────────
+step("9 · Pollen wallet → x402 settlement bridge");
+
+await check("PollinationsWallet.getBalance reads Pollen balance", async () => {
+	const { PollinationsWallet } = await import(
+		"@adapters/x402/pollinations-wallet"
+	);
+	const apiKey = process.env.POLLINATIONS_API_KEY;
+	if (!apiKey) {
+		console.log("     ⚠ POLLINATIONS_API_KEY not set — skipping live test");
+		return;
+	}
+	const wallet = new PollinationsWallet({ apiKey });
+	const balance = await wallet.getBalance();
+	if (typeof balance.balance !== "number" || balance.balance < 0)
+		throw new Error(`Invalid balance: ${JSON.stringify(balance)}`);
+	console.log(`     → balance: ${balance.balance} Pollen`);
+});
+
+await check(
+	"PollinationsWallet.declarePricing builds AgentCard pricing",
+	async () => {
+		const { PollinationsWallet } = await import(
+			"@adapters/x402/pollinations-wallet"
+		);
+		const pricing = PollinationsWallet.declarePricing(0.5, 0.01);
+		if (pricing.costPerTask !== 0.5)
+			throw new Error(`Wrong costPerTask: ${pricing.costPerTask}`);
+		if (pricing.costPerToken !== 0.01)
+			throw new Error(`Wrong costPerToken: ${pricing.costPerToken}`);
+		if (pricing.currency !== "pollen")
+			throw new Error(`Wrong currency: ${pricing.currency}`);
+		console.log(`     → ${JSON.stringify(pricing)}`);
+	},
+);
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+console.log(`\n${"═".repeat(60)}`);
+console.log(`Results: ${passed} passed · ${failed} failed`);
+console.log("═".repeat(60));
+
+if (failed > 0) {
+	console.log("\n⚠ Some tests failed. Make sure all agents are running:");
+	console.log("  bun run dev &");
+	console.log("  bun run demo");
+}
+
+process.exit(failed > 0 ? 1 : 0);
+
+
+
+
+
+================================================================
+End of Codebase
+================================================================

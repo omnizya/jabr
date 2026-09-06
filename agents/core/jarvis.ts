@@ -17,8 +17,11 @@ export const JARVIS_CARD: AgentCard = {
 	version: "1.0.0",
 	capabilities: {
 		streaming: true,
-		pushNotifications: false,
+		pushNotifications: true,
 		stateTransitionHistory: true,
+		pushNotificationConfig: {
+			url: "",
+		},
 	},
 	securitySchemes: {},
 	securityRequirements: [],
