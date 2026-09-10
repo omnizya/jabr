@@ -43,9 +43,13 @@ import type {
 	GunInstance,
 	GunNode,
 	GunPeerUrl,
-} from "@/types/gun";
+} from "@/types/types";
 
-export const Gun: GunConstructor<GunInstance> = GunModule;
+// Gun's shipped typings are partial: they omit the runtime members used here
+// (SEA, user(), map/once) and type GunOptions.file as `string`. Shim the
+// runtime-accurate surface at this seam.
+export const Gun: GunConstructor<GunInstance> =
+	GunModule as unknown as GunConstructor<GunInstance>;
 
 // ── GunJS Memory Adapter ─────────────────────────────────────────────────────
 

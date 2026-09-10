@@ -6,7 +6,7 @@ import type {
 	CognitiveLoopConfig,
 	ConsensusInput,
 	ConsensusResult,
-} from "@/types/agents";
+} from "@/types/types";
 
 const DEFAULTS: Required<CognitiveLoopConfig> = {
 	judgeAgentName: "oracle",

@@ -154,7 +154,7 @@ function buildSSEStream(): {
 }
 
 export class A2AServer {
-	private readonly config: A2AServerConfig;
+	private readonly config: A2AServerConfig<ApiKeyRegistry, TaskStorePort>;
 	private readonly rateLimiter: RateLimiter;
 	private readonly x402: X402Server | null;
 	private readonly registry: ApiKeyRegistry | null;
@@ -173,14 +173,12 @@ export class A2AServer {
 	private readonly taskStore?: TaskStorePort;
 
 	constructor(
-		config: A2AServerConfig & {
-			onWorldState?: () => Promise<any>;
-		},
+		config: A2AServerConfig<ApiKeyRegistry, TaskStorePort>,
 		rateLimiter?: RateLimiter,
 		x402?: X402Server,
 		apiKeyRegistry?: ApiKeyRegistry,
 	) {
-		this.config = config as any;
+		this.config = config;
 		this.rateLimiter = rateLimiter ?? new RateLimiter();
 		this.x402 = x402 ?? null;
 		this.registry = apiKeyRegistry ?? config.apiKeyRegistry ?? null;
@@ -212,7 +210,7 @@ export class A2AServer {
 			onWorldState,
 			requireAuth,
 			enableOAuth,
-		} = this.config as any;
+		} = this.config;
 		const rateLimiter = this.rateLimiter;
 		const x402 = this.x402;
 		const registry = this.registry;

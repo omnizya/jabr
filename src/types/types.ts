@@ -1,3 +1,10 @@
+import type { AgentRegistryPort } from "@/ports/agent-registry";
+import type { BudgetPort } from "@/ports/budget-port";
+import type { KanbanPort } from "@/ports/kanban-port";
+import type { MemoryStorePort } from "@/ports/memory-store";
+import type { DomainEventBus } from "@/ports/plugin-event-bus.types";
+import type { RealtimePort } from "@/ports/realtime-port";
+
 export interface GunNode {
 	get(path: string): GunNode;
 	put(data: unknown, cb?: (ack: GunAck) => void): void;
@@ -70,17 +77,42 @@ export interface AgentConfig {
 	card: AgentCard;
 }
 
-export interface ToolRouterConfig<O, M, N, I, Z, Y, A, X, P> {
+/** Minimal structural type for delegation-capable clients (X402Client, registry). */
+export interface TaskDelegator {
+	delegateTask(
+		agentUrl: string,
+		text: string,
+		agentName?: string,
+	): Promise<string>;
+}
+
+/** Structural subset of CognitiveLoop used for consensus evaluation. */
+export interface ConsensusEvaluator {
+	evaluate(
+		inputs: ConsensusInput[],
+		taskText: string,
+	): Promise<ConsensusResult>;
+}
+
+/** Structural subset of KnowledgePort for query-only augmentation consumers. */
+export interface ToolRouterKnowledgePort {
+	query(
+		text: string,
+		topK?: number,
+	): Promise<Array<{ slug: string; content: string }>>;
+}
+
+export interface ToolRouterConfig {
 	agents: Record<string, AgentConfig>;
-	registry?: O; // AgentRegistryPort; // T
-	x402Client?: M; // X402Client; // P
-	budget?: N; // BudgetPort; // B
-	cognitiveLoop?: I; // CognitiveLoop; //C
-	memory?: Z; //MemoryStorePort; // M
-	knowledge?: Y; //KnowledgePort; // K
-	kanban?: A; //KanbanPort; // G
-	realtime?: X; //RealtimePort; // R
-	pluginEventBus?: P; // DomainEventBus; // D
+	registry?: AgentRegistryPort;
+	x402Client?: TaskDelegator;
+	budget?: BudgetPort;
+	cognitiveLoop?: ConsensusEvaluator;
+	memory?: MemoryStorePort;
+	knowledge?: ToolRouterKnowledgePort;
+	kanban?: KanbanPort;
+	realtime?: RealtimePort;
+	pluginEventBus?: DomainEventBus;
 }
 /** The subset of WebhookPayload this bridge needs — no infrastructure types. */
 export type WebhookSource = "github" | "telegram" | "whatsapp" | "generic";
@@ -574,7 +606,7 @@ export interface A2AServerConfig<R, S> {
 		signal?: AbortSignal,
 	) => Promise<string>;
 	/** Optional world-state handler for GET /.well-known/world-state. */
-	onWorldState?: () => Promise<any>;
+	onWorldState?: () => Promise<Record<string, unknown>>;
 	/** Optional task store for tasks/get and tasks/cancel support. */
 	taskStore?: S; //TaskStorePort;
 	/** Optional push notification config for async task state callbacks. */

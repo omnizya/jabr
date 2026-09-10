@@ -7,6 +7,7 @@
  * - Budget tracking via BudgetPort
  */
 
+import type { BudgetPort } from "@ports/budget-port";
 import type { LlmPort, LlmRequest, LlmResponse } from "@ports/llm-port";
 
 const DEFAULT_MODEL_TEMPERATURE = 0.7;

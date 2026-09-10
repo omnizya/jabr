@@ -20,8 +20,9 @@ import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
 import { verbose } from "@utils/logger";
+import type { AgentConfig } from "@/types/types";
 import { ORCHESTRATOR_CARD, OrchestratorAgent } from "../core/orchestrator.ts";
-import { type AgentConfig, ToolRouter } from "../core/tool-router.ts";
+import { ToolRouter } from "../core/tool-router.ts";
 import { ApiKeyRegistry } from "../security/api-key-registry.ts";
 import { bridgeRealtimeToPlugin, initLifecycle } from "./lifecycle.ts";
 

@@ -4,8 +4,11 @@ import type {
 	TaskStartPayload,
 } from "@/ports";
 import type { TaskStorePort } from "@/ports/task-store";
-import type { ConsensusInput, ToolRouterConfig } from "@/types/agents";
-import type { AgentCard } from "@/types/types";
+import type {
+	AgentCard,
+	ConsensusInput,
+	ToolRouterConfig,
+} from "@/types/types";
 
 export type { ConsensusInput };
 

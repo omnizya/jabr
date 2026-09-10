@@ -1,13 +1,12 @@
 /**
  * jwt.ts — JWT signing and verification for OAuth 2.1 bearer tokens.
  *
- * Uses jose (HS256) for compact JWS tokens. The signing secret is derived
- * from JABR_JWT_SECRET env var (or falls back to JABR_X402_HMAC_SECRET).
+ * Implements HS256 compact JWS locally via the WebCrypto `crypto.subtle`
+ * API (no external JWT library). The signing secret is derived from
+ * JABR_JWT_SECRET env var (or falls back to JABR_X402_HMAC_SECRET).
  * Tokens are short-lived (default 15 min) and carry scopes, caller identity,
  * and the agent allowlist inherited from the originating API key.
  */
-
-import { type JWTPayload, jwtVerify, SignJWT } from "jose";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +19,7 @@ export type OAuthScope =
 	| "a2a:stream" // SSE streaming
 	| "a2a:admin"; // tasks/cancel, token management
 
-export interface TokenClaims extends JWTPayload {
+export interface TokenClaims {
 	/** Subject — caller description from ApiKeyRegistry. */
 	sub: string;
 	/** Scopes granted to this token. */
@@ -30,7 +29,13 @@ export interface TokenClaims extends JWTPayload {
 	/** Token type: "access" or "refresh". */
 	token_type: "access" | "refresh";
 	/** JWT Key ID — which signing secret was used. */
-	kid: string;
+	kid?: string;
+	/** Issued-at timestamp (unix seconds). */
+	iat?: number;
+	/** Expiration timestamp (unix seconds). */
+	exp?: number;
+	/** Unique token ID (revocation / thumbprint association). */
+	jti?: string;
 }
 
 export interface VerifiedToken {
@@ -46,9 +51,9 @@ export interface VerifiedToken {
 // Helpers
 // ---------------------------------------------------------------------------
 
-let signingSecret: Uint8Array | null = null;
+let signingSecret: Uint8Array<ArrayBuffer> | null = null;
 
-function getSecret(): Uint8Array {
+function getSecret(): Uint8Array<ArrayBuffer> {
 	if (signingSecret) return signingSecret;
 	const secret =
 		process.env.JABR_JWT_SECRET ?? process.env.JABR_X402_HMAC_SECRET;
@@ -73,14 +78,54 @@ export const REFRESH_TOKEN_TTL_SECONDS = Number(
 
 /** Key ID derived from the first 8 chars of the SHA-256 of the secret. */
 async function kid(): Promise<string> {
-	const buf = await crypto.subtle.digest(
-		"SHA-256",
-		getSecret() as BufferSource,
-	);
-	return Array.from(new Uint8Array(buf as ArrayBuffer))
+	const buf = await crypto.subtle.digest("SHA-256", getSecret());
+	return Array.from(new Uint8Array(buf))
 		.slice(0, 8)
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
+}
+
+let cachedSigningKey: CryptoKey | null = null;
+
+/** Import the HMAC-SHA256 signing key once and reuse it across calls. */
+async function getSigningKey(): Promise<CryptoKey> {
+	if (!cachedSigningKey) {
+		cachedSigningKey = await crypto.subtle.importKey(
+			"raw",
+			getSecret(),
+			{ name: "HMAC", hash: "SHA-256" },
+			false,
+			["sign", "verify"],
+		);
+	}
+	return cachedSigningKey;
+}
+
+/** Base64url-encode a UTF-8 string (JSON claims / header segment). */
+function b64url(input: string): string {
+	return Buffer.from(input, "utf-8").toString("base64url");
+}
+
+/** Base64url-encode raw bytes (signature segment). */
+function b64urlBytes(bytes: Uint8Array): string {
+	return Buffer.from(bytes).toString("base64url");
+}
+
+/** Sign a compact JWS with HS256 (header.payload.signature). */
+async function signCompact(
+	keyId: string,
+	claims: Record<string, unknown>,
+): Promise<string> {
+	const headerSegment = b64url(JSON.stringify({ alg: "HS256", kid: keyId }));
+	const payloadSegment = b64url(JSON.stringify(claims));
+	const signingInput = `${headerSegment}.${payloadSegment}`;
+	const key = await getSigningKey();
+	const signature = await crypto.subtle.sign(
+		"HMAC",
+		key,
+		new TextEncoder().encode(signingInput),
+	);
+	return `${signingInput}.${b64urlBytes(new Uint8Array(signature))}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,17 +150,15 @@ export async function mintAccessToken(opts: {
 	const ttl = opts.ttlSeconds ?? ACCESS_TOKEN_TTL_SECONDS;
 	const keyId = await kid();
 
-	return new SignJWT({
+	return signCompact(keyId, {
 		sub: opts.subject,
 		scope: opts.scopes.join(" "),
 		allowed_agents: opts.agents,
 		token_type: "access",
-	})
-		.setProtectedHeader({ alg: "HS256", kid: keyId })
-		.setIssuedAt(now)
-		.setExpirationTime(now + ttl)
-		.setJti(crypto.randomUUID())
-		.sign(getSecret());
+		iat: now,
+		exp: now + ttl,
+		jti: crypto.randomUUID(),
+	});
 }
 
 /**
@@ -134,17 +177,15 @@ export async function mintRefreshToken(opts: {
 	const ttl = opts.ttlSeconds ?? REFRESH_TOKEN_TTL_SECONDS;
 	const keyId = await kid();
 
-	return new SignJWT({
+	return signCompact(keyId, {
 		sub: opts.subject,
 		scope: "a2a:read",
 		allowed_agents: opts.agents,
 		token_type: "refresh",
-	})
-		.setProtectedHeader({ alg: "HS256", kid: keyId })
-		.setIssuedAt(now)
-		.setExpirationTime(now + ttl)
-		.setJti(crypto.randomUUID())
-		.sign(getSecret());
+		iat: now,
+		exp: now + ttl,
+		jti: crypto.randomUUID(),
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -158,13 +199,61 @@ export async function mintRefreshToken(opts: {
  * Returns parsed claims + thumbprint on success.
  */
 export async function verifyToken(token: string): Promise<VerifiedToken> {
-	const { payload, protectedHeader } = await jwtVerify(token, getSecret(), {
-		algorithms: ["HS256"],
-		requiredClaims: ["sub", "scope", "token_type", "exp", "iat"],
-	});
+	const parts = token.split(".");
+	const headerPart = parts[0];
+	const payloadPart = parts[1];
+	const signaturePart = parts[2];
+	if (
+		headerPart === undefined ||
+		payloadPart === undefined ||
+		signaturePart === undefined
+	) {
+		throw new Error("Invalid JWT");
+	}
 
-	if (payload.token_type !== "access" && payload.token_type !== "refresh") {
-		throw new Error(`Invalid token_type: ${String(payload.token_type)}`);
+	// Reject tokens not signed with HS256 before touching the signature path.
+	let payload: unknown;
+	try {
+		const header = JSON.parse(
+			Buffer.from(headerPart, "base64url").toString("utf-8"),
+		) as { alg?: unknown };
+		if (header.alg !== "HS256") {
+			throw new Error("Invalid JWT");
+		}
+		payload = JSON.parse(
+			Buffer.from(payloadPart, "base64url").toString("utf-8"),
+		);
+	} catch {
+		throw new Error("Invalid JWT");
+	}
+
+	// Verify the HMAC signature over the unmodified compact segments.
+	const signingInput = `${headerPart}.${payloadPart}`;
+	const key = await getSigningKey();
+	const signature = Buffer.from(signaturePart, "base64url");
+	const valid = await crypto.subtle.verify(
+		"HMAC",
+		key,
+		signature,
+		new TextEncoder().encode(signingInput),
+	);
+	if (!valid) {
+		throw new Error("signature verification failed");
+	}
+
+	// Required claims (mirrors jose requiredClaims): sub, scope, token_type, exp, iat.
+	const claims = payload as Record<string, unknown>;
+	if (typeof claims.sub !== "string" || typeof claims.scope !== "string") {
+		throw new Error("Invalid JWT");
+	}
+	if (claims.token_type !== "access" && claims.token_type !== "refresh") {
+		throw new Error(`Invalid token_type: ${String(claims.token_type)}`);
+	}
+	if (typeof claims.iat !== "number" || typeof claims.exp !== "number") {
+		throw new Error("Invalid JWT");
+	}
+	if (claims.exp <= Math.floor(Date.now() / 1000)) {
+		throw new Error("Expiration time (exp) check failed");
 	}
 
 	// Compute a thumbprint for revocation lookups.

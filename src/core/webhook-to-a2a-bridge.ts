@@ -10,12 +10,14 @@
 import type { A2AClientPort } from "@ports/a2a-client-port";
 import type { WebhookEvent, WebhookToA2ABridgeConfig } from "@/types/types";
 
+export type { WebhookEvent };
+
 export class WebhookToA2ABridge {
 	private readonly a2aClient: A2AClientPort;
 	private readonly hermesUrl: string;
 	private readonly innerEvent?: (payload: WebhookEvent) => Promise<unknown>;
 
-	constructor(config: WebhookToA2ABridgeConfig) {
+	constructor(config: WebhookToA2ABridgeConfig<A2AClientPort>) {
 		this.a2aClient = config.a2aClient;
 		this.hermesUrl = config.hermesUrl;
 		this.innerEvent = config.onEvent;
@@ -72,7 +74,7 @@ export class WebhookToA2ABridge {
 }
 
 export function createWebhookToA2ABridge(
-	config: WebhookToA2ABridgeConfig,
+	config: WebhookToA2ABridgeConfig<A2AClientPort>,
 ): WebhookToA2ABridge {
 	return new WebhookToA2ABridge(config);
 }
