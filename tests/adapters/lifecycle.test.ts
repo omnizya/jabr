@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
-import { bridgeRealtimeToPlugin, initLifecycle } from "@run/lifecycle";
+import {
+	bridgeRealtimeToPlugin,
+	initLifecycle,
+} from "../../src/runtime/lifecycle";
 
 describe("initLifecycle", () => {
 	test("announceOnline emits agent:online with agent name and optional port", () => {

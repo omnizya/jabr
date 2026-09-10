@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { ApiKeyRegistry } from "@security/api-key-registry";
+import { ApiKeyRegistry } from "../src/security/api-key-registry";
 
 describe("ApiKeyRegistry", () => {
 	const entries = [

@@ -4,16 +4,17 @@
  * jabr-cli — agent management CLI for the Jabr multi-agent system.
  *
  * Subcommands:
- *   start   [agent|all]   Start one agent or all (default: all).
- *   stop    [agent|all]   Stop one agent or all.
- *   restart [agent|all]   Restart one agent or all.
- *   status            Show live status of every agent (health + process).
- *   logs     [agent|all]  Tail log for one agent or all.
- *   send    <agent> <text>   Send a task to an agent via A2A POST.
- *   config            Show current agent config (ports, URLs, env).
+ *   start   [agent|all] [--verbose]   Start one agent or all with optional verbose logs.
+ *   stop    [agent|all]               Stop one agent or all.
+ *   restart [agent|all] [--verbose]   Restart one agent or all with optional verbose logs.
+ *   status                            Show live status of every agent (health + process).
+ *   logs    [agent|all]               Tail log for one agent or all.
+ *   send    <agent> <text>            Send a task to an agent via A2A POST.
+ *   config                            Show current agent config (ports, URLs, env).
  *
  * Usage:
- *   bun scripts/jabr-cli.ts start
+ *   bun scripts/jabr-cli.ts start --verbose
+ *   bun scripts/jabr-cli.ts start oracle --verbose
  *   bun scripts/jabr-cli.ts stop oracle
  *   bun scripts/jabr-cli.ts status
  *   bun scripts/jabr-cli.ts logs fixer
@@ -38,10 +39,17 @@ import {
 	NINEROUTER_MODEL_DEFAULT,
 	NINEROUTER_URL_DEFAULT,
 } from "@constants/ecosystem";
+import {
+	DEFAULT_SCOPES,
+	mintAccessToken,
+	mintRefreshToken,
+	type OAuthScope,
+	parseScopes,
+} from "@security/jwt";
 
 const ROOT = process.cwd();
 
-// ── Agent topology (mirrors agents/run/orchestrator.ts seedUrls) ──────────
+// ── Agent topology (mirrors src/runtime/orchestrator.ts seedUrls) ──────────
 
 const AGENTS: Array<{
 	name: string;
@@ -54,78 +62,107 @@ const AGENTS: Array<{
 		name: "orchestrator",
 		script: "orchestrator",
 		port: JABR_PORTS.orchestrator,
-		sourceCmd: "bun agents/run/orchestrator.ts",
+		sourceCmd: "bun src/runtime/orchestrator.ts",
 		// Orchestrator owns the realtime WebSocket server on 4008
 	},
 	{
 		name: "oracle",
 		script: "oracle",
 		port: JABR_PORTS.oracle,
-		sourceCmd: "bun agents/run/oracle.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/oracle.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "librarian",
 		script: "librarian",
 		port: JABR_PORTS.librarian,
-		sourceCmd: "bun agents/run/librarian.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/librarian.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "explorer",
 		script: "explorer",
 		port: JABR_PORTS.explorer,
-		sourceCmd: "bun agents/run/explorer.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/explorer.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "designer",
 		script: "designer",
 		port: JABR_PORTS.designer,
-		sourceCmd: "bun agents/run/designer.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/designer.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "fixer",
 		script: "fixer",
 		port: JABR_PORTS.fixer,
-		sourceCmd: "bun agents/run/fixer.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/fixer.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "scientist",
 		script: "scientist",
 		port: JABR_PORTS.scientist,
-		sourceCmd: "bun agents/run/scientist.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/scientist.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "verification",
 		script: "verification",
 		port: JABR_PORTS.verification,
-		sourceCmd: "bun agents/run/verification.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/verification.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "jarvis",
 		script: "jarvis",
 		port: JABR_PORTS.jarvis,
-		sourceCmd: "bun agents/run/jarvis.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, JABR_URL: JABR_URL_DEFAULT, A2A_AUTH_TOKEN: "dev-secret-token-for-testing" },
+		sourceCmd: "bun src/runtime/agents/jarvis.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			JABR_URL: JABR_URL_DEFAULT,
+			A2A_AUTH_TOKEN: "dev-secret-token-for-testing",
+		},
 	},
 	{
 		name: "mcp",
 		script: "mcp",
 		port: 0,
-		sourceCmd: "bun mcp-servers/tools.ts",
+		sourceCmd: "bun src/protocols/mcp/server/tools.ts",
 		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}` },
 	},
 	{
 		name: "acp-bridge",
 		script: "acp-bridge",
 		port: 0,
-		sourceCmd: "bun agents/run/acp-bridge.ts",
-		env: { JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`, JABR_URL: JABR_URL_DEFAULT, JABR_MEMORY_DIR: join(ROOT, "memory") },
+		sourceCmd: "bun src/runtime/acp-bridge.ts",
+		env: {
+			JABR_REALTIME_PORT: `${JABR_PORTS.realtime}`,
+			JABR_URL: JABR_URL_DEFAULT,
+			JABR_MEMORY_DIR: join(ROOT, "memory"),
+		},
 	},
 ];
 
@@ -207,7 +244,7 @@ function deletePidFile(agent: string) {
 /** Find PID(s) for an agent by scanning /proc (fallback when pid file is stale). */
 function findPidsByProc(agent: (typeof AGENTS)[number]): number[] {
 	const pids: number[] = [];
-	const sourceNeedle = `agents/run/${agent.script}.ts`;
+	const sourceNeedle = agent.sourceCmd.replace(/^bun\s+/, "");
 	const binNeedle = `dist/bin/${agent.name}`;
 	try {
 		const proc = "/proc";
@@ -277,8 +314,14 @@ async function waitForHealth(name: string, port: number): Promise<boolean> {
 // ── Subcommands ───────────────────────────────────────────────────────────
 
 async function cmdStart(args: string[]) {
-	const target = args[0]?.trim().toLowerCase();
+	const verbose = args.includes("--verbose") || args.includes("-v");
+	const filteredArgs = args.filter((a) => a !== "--verbose" && a !== "-v");
+	const target = filteredArgs[0]?.trim().toLowerCase();
 	ensureLogDir();
+
+	const startEnv = verbose
+		? { ...process.env, JABR_VERBOSE: "true" }
+		: process.env;
 
 	if (target && target !== "all") {
 		const agent = agentByName(target);
@@ -287,15 +330,20 @@ async function cmdStart(args: string[]) {
 			error(`Known agents: ${AGENTS.map((a) => a.name).join(", ")}`);
 			process.exit(1);
 		}
-		await startSingle(agent);
+		await startSingle(agent, startEnv);
 	} else {
-		log(`Starting all ${AGENTS.length} agents...`);
-		await Promise.all(AGENTS.map((a) => startSingle(a)));
+		log(
+			`Starting all ${AGENTS.length} agents${verbose ? " (verbose mode)" : ""}...`,
+		);
+		await Promise.all(AGENTS.map((a) => startSingle(a, startEnv)));
 		log("All agents started.");
 	}
 }
 
-async function startSingle(agent: (typeof AGENTS)[number]) {
+async function startSingle(
+	agent: (typeof AGENTS)[number],
+	envOverride?: Record<string, string | undefined>,
+) {
 	const existingPids = readPids(agent.name);
 	const procPids = findPidsByProc(agent);
 	const allPids = [...existingPids, ...procPids];
@@ -306,20 +354,20 @@ async function startSingle(agent: (typeof AGENTS)[number]) {
 	}
 
 	const logPath = logFile(agent.name);
-	const envPrefix = agent.env
-		? Object.entries(agent.env)
-				.map(([k, v]) => `${k}="${v}"`)
-				.join(" ") + " "
-		: "";
+	const mergedEnv = { ...process.env, ...agent.env, ...envOverride };
 
 	log(`  Starting ${agent.name} on port ${agent.port || "stdio"}...`);
 
-	const bashCmd = `${envPrefix}${runCommand(agent)} 2>&1 | tee ${logPath}`;
+	// Env is injected via spawn()'s `env` option below — never serialized into
+	// the shell string (values may contain quotes/`$`/`{}` and would break out
+	// of `bash -c`, e.g. OPENCODE_CONFIG_CONTENT). The shell only wraps the
+	// run command so stdout/stderr tee into the per-agent log file.
+	const bashCmd = `${runCommand(agent)} 2>&1 | tee ${logPath}`;
 	const proc = spawn("bash", ["-c", bashCmd], {
 		cwd: ROOT,
 		detached: true,
 		stdio: ["ignore", "pipe", "pipe"],
-		env: { ...process.env, ...agent.env },
+		env: mergedEnv,
 	});
 	proc.unref();
 
@@ -427,7 +475,13 @@ async function stopSingle(agent: (typeof AGENTS)[number]) {
 }
 
 async function cmdRestart(args: string[]) {
-	const target = args[0]?.trim().toLowerCase();
+	const verboseFlag = args.includes("--verbose") || args.includes("-v");
+	const filteredArgs = args.filter((a) => a !== "--verbose" && a !== "-v");
+	const target = filteredArgs[0]?.trim().toLowerCase();
+	const startEnv = verboseFlag
+		? { ...process.env, JABR_VERBOSE: "true" }
+		: process.env;
+
 	if (target && target !== "all") {
 		const agent = agentByName(target);
 		if (!agent) {
@@ -437,15 +491,15 @@ async function cmdRestart(args: string[]) {
 		log(`Restarting ${agent.name}...`);
 		await stopSingle(agent);
 		await new Promise((r) => setTimeout(r, 1000));
-		await startSingle(agent);
+		await startSingle(agent, startEnv);
 	} else {
-		log("Restarting all agents...");
+		log(`Restarting all agents${verboseFlag ? " (verbose mode)" : ""}...`);
 		for (const agent of AGENTS) {
 			await stopSingle(agent);
 		}
 		await new Promise((r) => setTimeout(r, 1500));
 		for (const agent of AGENTS) {
-			await startSingle(agent);
+			await startSingle(agent, startEnv);
 		}
 	}
 	log("Done.");
@@ -663,10 +717,20 @@ async function cmdConfig() {
 		],
 		["A2A_AUTH_TOKEN", "(unset)", "A2A auth token (optional)"],
 		["A2A_REQUIRE_AUTH", "false", "Enforce A2A auth"],
+		[
+			"JABR_VERBOSE",
+			"false",
+			"Verbose agent logging (set by: start/restart --verbose)",
+		],
+		[
+			"JABR_JWT_SECRET",
+			"(unset)",
+			"JWT signing secret (falls back to JABR_X402_HMAC_SECRET)",
+		],
 		["JABR_TOKEN_CAP_<AGENT>", "100000", "Per-agent token budget"],
 		["GITHUB_WEBHOOK_SECRET", "change-me", "Webhook signing secret"],
 		["GITHUB_TOKEN", "(unset)", "GitHub PAT for webhook actions"],
-		["GITHUB_REPO", "omnizya/jabr", "Default repo for webhooks"],
+		["GITHUB_REPO", "omnizya/jabr", "Default repo for webhook actions"],
 		["HERMES_KANBAN_BOARD", "(unset)", "Kanban board for task sync"],
 	];
 
@@ -692,6 +756,119 @@ async function cmdConfig() {
 	log("PID files:   " + LOG_DIR + "/jabr-<agent>.pid");
 }
 
+// ── Token generation ─────────────────────────────────────────────────────
+
+async function cmdToken(args: string[]) {
+	if (args.length === 0 || args[0] === "-h" || args[0] === "--help") {
+		log(
+			"Usage: jabr-cli token <subject> [scopes] [--ttl <seconds>] [--agents <list>]",
+		);
+		log("");
+		log("Generates a JWT access + refresh token pair for testing.");
+		log("");
+		log("Options:");
+		log("  <subject>       Caller identity (sub claim)");
+		log(
+			"  [scopes]        Space-separated scopes (default: a2a:read a2a:write a2a:stream)",
+		);
+		log("  --ttl <seconds> Access token lifetime (default: 900 = 15 min)");
+		log(
+			"  --agents <list> Comma-separated agent allowlist (default: empty = all)",
+		);
+		log("  --json          Output as JSON (default: plain text)");
+		log("");
+		log("Examples:");
+		log("  jabr-cli token my-agent");
+		log(
+			'  jabr-cli token my-agent "a2a:read a2a:write" --agents oracle,librarian',
+		);
+		log("  jabr-cli token my-agent --ttl 3600 --json");
+		process.exit(0);
+	}
+
+	const subject = args[0];
+	if (!subject) {
+		error(
+			"Usage: jabr-cli token <subject> [scopes] [--ttl <seconds>] [--agents <list>]",
+		);
+		process.exit(1);
+	}
+	const tokenScopes: string[] = [];
+	let ttlSeconds: number | undefined;
+	let agents: string[] = [];
+	let jsonOutput = false;
+
+	for (let i = 1; i < args.length; i++) {
+		const a = args[i];
+		if (a === undefined) break;
+		if (a === "--ttl") {
+			ttlSeconds = parseInt(args[++i] ?? "900", 10);
+		} else if (a === "--agents") {
+			agents = (args[++i] ?? "")
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+		} else if (a === "--json") {
+			jsonOutput = true;
+		} else if (!a.startsWith("--")) {
+			tokenScopes.push(a);
+		}
+	}
+
+	let scopes =
+		tokenScopes.length > 0
+			? parseScopes(tokenScopes.join(" "))
+			: [...DEFAULT_SCOPES];
+	if (tokenScopes.length > 0 && scopes.length === 0) {
+		warn(
+			`No valid scopes provided (valid: a2a:read, a2a:write, a2a:stream, a2a:admin); using defaults.`,
+		);
+		scopes = [...DEFAULT_SCOPES];
+	}
+
+	try {
+		const accessToken = await mintAccessToken({
+			subject,
+			scopes,
+			agents,
+			ttlSeconds,
+		});
+		const refreshToken = await mintRefreshToken({ subject, agents });
+
+		if (jsonOutput) {
+			log(
+				JSON.stringify(
+					{
+						access_token: accessToken,
+						refresh_token: refreshToken,
+						token_type: "Bearer",
+						expires_in: ttlSeconds ?? 900,
+						scope: scopes.join(" "),
+						subject,
+						agents,
+					},
+					null,
+					2,
+				),
+			);
+		} else {
+			log("Access Token:");
+			log(accessToken);
+			log("");
+			log("Refresh Token:");
+			log(refreshToken);
+			log("");
+			log(`Subject:  ${subject}`);
+			log(`Scopes:   ${scopes.join(" ")}`);
+			log(`Agents:   ${agents.length > 0 ? agents.join(", ") : "(all)"}`);
+			log(`TTL:      ${ttlSeconds ?? 900}s`);
+		}
+	} catch (e) {
+		error(`Failed to generate token: ${e}`);
+		process.exit(1);
+	}
+}
+
 // ── Entry point ────────────────────────────────────────────────────────────
 
 const USAGE = `
@@ -701,18 +878,29 @@ Usage:
   bun scripts/jabr-cli.ts <command> [args...]
 
 Commands:
-  start   [agent|all]   Start one agent or all (default: all)
-  stop    [agent|all]   Stop one agent or all
-  restart [agent|all]   Restart one agent or all
-  status            Show live status of every agent
-  logs    [agent|all]   Tail logs for one agent, or last 20 lines for all
-  send    <agent> <text...>   Send a task to an agent via A2A
-  config            Show agent topology, env vars, and run scripts
+  start   [agent|all] [--verbose]   Start one agent or all (default: all)
+  stop    [agent|all]               Stop one agent or all
+  restart [agent|all] [--verbose]   Restart one agent or all
+  status                            Show live status of every agent
+  logs    [agent|all]               Tail logs for one agent, or last 20 lines for all
+  send    <agent> <text...>         Send a task to an agent via A2A
+  token   <subject> [scopes]        Generate JWT access+refresh tokens
+  config                            Show agent topology, env vars, and run scripts
+
+Options:
+  -v, --verbose   Start/restart agents with verbose logging (sets JABR_VERBOSE=true
+                  for the spawned processes; extra diagnostics appear in the agent logs)
+
+Logs:
+  Agent stdout/stderr and PID files are written to /tmp/jabr-logs/*
+     /tmp/jabr-logs/jabr-<agent>.log   # agent log output
+     /tmp/jabr-logs/jabr-<agent>.pid   # process IDs
+  Tail a live log with: bun scripts/jabr-cli.ts logs <agent>
 
 Examples:
   bun scripts/jabr-cli.ts start                     # start all agents
-  bun scripts/jabr-cli.ts start all                 # start all agents (explicit)
-  bun scripts/jabr-cli.ts start oracle              # start just the oracle
+  bun scripts/jabr-cli.ts start all --verbose       # start all agents, verbose logs
+  bun scripts/jabr-cli.ts start oracle --verbose    # start just the oracle, verbose
   bun scripts/jabr-cli.ts stop                      # stop all
   bun scripts/jabr-cli.ts restart fixer             # restart fixer
   bun scripts/jabr-cli.ts status                    # show health of all
@@ -762,6 +950,9 @@ function main() {
 			break;
 		case "send":
 			cmdSend(cmdArgs);
+			break;
+		case "token":
+			cmdToken(cmdArgs);
 			break;
 		case "config":
 			cmdConfig();

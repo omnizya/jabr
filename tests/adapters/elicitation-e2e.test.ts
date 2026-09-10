@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { McpClientAdapter } from "@adapters/mcp-client";
+import { McpClientAdapter } from "@adapters/mcp/mcp-client";
 import { FakeElicitationPort } from "@ports/elicitation-port";
 import type { ElicitationDecision } from "@ports/elicitation-port";
 

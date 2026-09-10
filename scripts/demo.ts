@@ -35,7 +35,8 @@ const EXPLORER = jabrUrlForPort(JABR_PORTS.explorer);
 const DESIGNER = jabrUrlForPort(JABR_PORTS.designer);
 const SCIENTIST = jabrUrlForPort(JABR_PORTS.scientist);
 const JARVIS = jabrUrlForPort(JABR_PORTS.jarvis);
-const ORCHESTRATOR = jabrUrlOrUndefined() ?? jabrUrlForPort(JABR_PORTS.orchestrator);
+const ORCHESTRATOR =
+	jabrUrlOrUndefined() ?? jabrUrlForPort(JABR_PORTS.orchestrator);
 
 let passed = 0;
 let failed = 0;
@@ -65,9 +66,9 @@ async function check(label: string, fn: () => Promise<void>) {
 async function postA2A(agentUrl: string, text: string): Promise<string> {
 	const res = await fetch(`${agentUrl}/`, {
 		method: "POST",
-		headers: { 
+		headers: {
 			"Content-Type": "application/json",
-			"X-API-Key": "dev-secret-token-for-testing"
+			"X-API-Key": "dev-secret-token-for-testing",
 		},
 		body: JSON.stringify({
 			jsonrpc: "2.0",
@@ -228,7 +229,7 @@ step("6 · ACP bridge — simulated initialize + session/list");
 
 await check("ACP initialize returns capabilities", async () => {
 	// Spawn the ACP bridge as a subprocess and test it via stdin/stdout.
-	const proc = Bun.spawn(["bun", "agents/run/acp-bridge.ts"], {
+	const proc = Bun.spawn(["bun", "src/runtime/acp-bridge.ts"], {
 		stdin: "pipe",
 		stdout: "pipe",
 		stderr: "pipe",

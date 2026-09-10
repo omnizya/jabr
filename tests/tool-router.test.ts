@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { X402Client } from "@adapters/x402/x402-client";
-import { CognitiveLoop } from "@agents/core/cognitive-loop";
 import type { AgentCard } from "@agents/types";
-import { MAX_HANDOVER_DEPTH, ToolRouter } from "@core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
@@ -11,6 +9,8 @@ import type { MemoryStorePort } from "@ports/memory-store";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { RealtimePort } from "@ports/realtime-port";
 import type { TaskStorePort } from "@ports/task-store";
+import { CognitiveLoop } from "../src/core/cognitive-loop";
+import { MAX_HANDOVER_DEPTH, ToolRouter } from "../src/core/tool-router";
 
 // ---- helpers ----
 

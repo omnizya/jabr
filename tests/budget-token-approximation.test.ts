@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { HeadroomAdapter } from "@adapters/headroom";
+import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import type { AgentCard } from "@agents/types";
-import { OrchestratorAgent } from "@core/orchestrator";
-import { ToolRouter } from "@core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { OrchestratorAgent } from "../src/core/orchestrator";
+import { ToolRouter } from "../src/core/tool-router";
 
 // ---- Fixed-budget HeadroomAdapter with known cap for deterministic assertions ----
 

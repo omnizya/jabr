@@ -15,9 +15,6 @@ export {
 	RESEARCH_TEMPERATURE,
 	SYNTHESIS_TEMPERATURE,
 } from "./app-constants";
-
-export { JABR_WORLD_PORTS } from "./jabr-constants.ts";
-
 export {
 	A2A_METHODS,
 	DEV_ALLOWED_ORIGINS,
@@ -27,3 +24,6 @@ export {
 	NINEROUTER_MODEL_DEFAULT,
 	NINEROUTER_URL_DEFAULT,
 } from "./ecosystem.ts";
+export { JABR_WORLD_PORTS } from "./jabr-constants.ts";
+
+export const MAX_HANDOVER_DEPTH = 3;

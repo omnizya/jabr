@@ -26,18 +26,18 @@ start() {
 }
 
 # Orchestrator owns the realtime server — no JABR_REALTIME_PORT for it.
-bun agents/run/orchestrator.ts &
+bun src/runtime/orchestrator.ts &
 pids+=($!)
 echo "[dev] started orchestrator (pid ${pids[-1]})"
 
-start oracle agents/run/oracle.ts
-start librarian agents/run/librarian.ts
-start explorer agents/run/explorer.ts
-start designer agents/run/designer.ts
-start fixer agents/run/fixer.ts
-start jarvis agents/run/jarvis.ts
-start scientist agents/run/scientist.ts
-start mcp mcp-servers/tools.ts
-start acp-bridge agents/run/acp-bridge.ts
+start oracle src/runtime/agents/oracle.ts
+start librarian src/runtime/agents/librarian.ts
+start explorer src/runtime/agents/explorer.ts
+start designer src/runtime/agents/designer.ts
+start fixer src/runtime/agents/fixer.ts
+start jarvis src/runtime/agents/jarvis.ts
+start scientist src/runtime/agents/scientist.ts
+start mcp src/protocols/mcp/server/tools.ts
+start acp-bridge src/runtime/acp-bridge.ts
 
 wait

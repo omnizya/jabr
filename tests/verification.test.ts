@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { ConsensusInput } from "@agents/core/cognitive-loop";
 import type { AgentCard, AgentSkill, SkillDocument } from "@agents/types";
-import { VerificationAgent, type VerificationResult } from "@core/verification";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
+import type { ConsensusInput } from "../src/core/cognitive-loop";
+import {
+	VerificationAgent,
+	type VerificationResult,
+} from "../src/core/verification";
 
 // ---- test helpers ----
 

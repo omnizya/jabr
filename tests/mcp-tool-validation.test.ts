@@ -16,7 +16,7 @@ import {
 	cappedString,
 	safePath,
 	strictObject,
-} from "../mcp-servers/validation.ts";
+} from "../src/protocols/mcp/server/validation.ts";
 
 // ---------------------------------------------------------------------------
 // strictObject — rejects unknown keys

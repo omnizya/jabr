@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-	CognitiveLoop,
-	type ConsensusInput,
-} from "@agents/core/cognitive-loop";
 import type { AgentCard, AgentSkill } from "@agents/types";
+import { CognitiveLoop, type ConsensusInput } from "../src/core/cognitive-loop";
 
 const makeCard = (skills: AgentSkill[] = []): AgentCard => ({
 	name: "test-agent",

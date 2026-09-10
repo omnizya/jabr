@@ -24,6 +24,12 @@ function runOrchestrator(envOverride: Record<string, string>) {
 			// Provide a fake auth token so the orchestrator passes the auth gate
 			// and we only test the HMAC secret gate.
 			A2A_AUTH_TOKEN: "test-auth-token-do-not-use-in-prod",
+			// A dev `bun run dev` may already hold the default ports (4000 A2A,
+			// 4007 GitHub webhook, 4008 realtime). Pin this subprocess to free
+			// ports so it does not die with EADDRINUSE before reaching the gate.
+			ORCHESTRATOR_PORT: "42100",
+			GITHUB_WEBHOOK_PORT: "42107",
+			JABR_REALTIME_PORT: "42108",
 			...envOverride,
 		},
 		stdout: "pipe",

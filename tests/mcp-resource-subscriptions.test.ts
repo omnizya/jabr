@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerResources } from "@adapters/mcp-resources";
+import { registerResources } from "@adapters/mcp/mcp-resources";
 import { openJabrDb } from "@adapters/sqlite-db";
 import { SqliteTaskStore } from "@adapters/sqlite-task-store";
 import { SubscriptionManager } from "@adapters/subscription-manager";

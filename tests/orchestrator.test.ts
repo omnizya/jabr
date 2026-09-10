@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentCard } from "@agents/types";
 import { encodeHandover } from "@agents/types";
-import { OrchestratorAgent } from "@core/orchestrator";
-import { ToolRouter } from "@core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
@@ -10,6 +8,8 @@ import type { KnowledgePort } from "@ports/knowledge-port";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { RealtimePort } from "@ports/realtime-port";
 import type { TaskStorePort } from "@ports/task-store";
+import { OrchestratorAgent } from "../src/core/orchestrator";
+import { ToolRouter } from "../src/core/tool-router";
 
 // ---- helpers ----
 
@@ -428,7 +428,7 @@ describe("OrchestratorAgent.executeWithDepth — %%HANDOVER%% chain", () => {
 describe("OrchestratorAgent — no handover when not at max depth", () => {
 	test("completes with result when MAX_HANDOVER_DEPTH reached and handover present", async () => {
 		// Constant verification: MAX_HANDOVER_DEPTH === 3
-		const { MAX_HANDOVER_DEPTH } = await import("@core/tool-router");
+		const { MAX_HANDOVER_DEPTH } = await import("../src/core/tool-router");
 		expect(MAX_HANDOVER_DEPTH).toBe(3);
 	});
 });

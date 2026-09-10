@@ -40,6 +40,10 @@ Thumbs.db
 
 # Repo mix
 repomix-output.xml
+agent-lab.context.xml
+
+# Session continuation artifacts (transient agent state)
+.omo/run-continuation/
 
 # Jabr persistence
 memory/*.db
@@ -84,3 +88,8 @@ brand/generation.log
 mempalace.yaml
 entities.json
 dist/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+.grit

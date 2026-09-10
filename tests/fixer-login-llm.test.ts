@@ -4,13 +4,13 @@
  * Expected: LLM-generated response (NOT canned keyword matcher fallback)
  */
 
-import { HeadroomAdapter } from "@adapters/headroom";
+import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { FIXER_CARD, FixerAgent } from "@core/fixer";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 
 // This E2E requires a live 9Router gateway with a real key. The previous
 // hardcoded key fallback was removed (C1), so skip when one is not configured.

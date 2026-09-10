@@ -50,7 +50,7 @@ describe("SkillFS.save", () => {
 		expect(written.usageCount).toBe(5);
 	});
 
-	test("overwrites the file and returns true when saving a duplicate slug", () => {
+	test("returns false and keeps the first version when saving a duplicate slug", () => {
 		const fs = new SkillFS(dir);
 		const first = makeDoc({
 			name: "beta",
@@ -66,11 +66,11 @@ describe("SkillFS.save", () => {
 		fs.save("beta", first);
 		const result = fs.save("beta", second);
 
-		expect(result).toBe(true);
+		expect(result).toBe(false);
 
 		const written = JSON.parse(readFileSync(join(dir, "beta.json"), "utf-8"));
-		expect(written.description).toBe("second version");
-		expect(written.usageCount).toBe(42);
+		expect(written.description).toBe("first version");
+		expect(written.usageCount).toBe(1);
 		expect(written.name).toBe("beta");
 	});
 
@@ -94,7 +94,7 @@ describe("SkillFS.save", () => {
 		expect(fs.exists("missing")).toBe(false);
 	});
 
-	test("overwrites leave only one file on disk for the slug", () => {
+	test("idempotent save leaves only one file on disk for the slug", () => {
 		const fs = new SkillFS(dir);
 
 		fs.save("single", makeDoc({ usageCount: 0 }));
@@ -102,6 +102,6 @@ describe("SkillFS.save", () => {
 
 		expect(fs.list()).toEqual(["single"]);
 		const written = JSON.parse(readFileSync(join(dir, "single.json"), "utf-8"));
-		expect(written.usageCount).toBe(99);
+		expect(written.usageCount).toBe(0);
 	});
 });

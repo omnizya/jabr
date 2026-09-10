@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { A2AServer } from "@adapters/http/a2a-server";
 import type { A2AServerConfig, ResolvedCaller } from "@agents/types";
-import { ApiKeyRegistry } from "@security/api-key-registry";
+import { ApiKeyRegistry } from "../src/security/api-key-registry";
 
 function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
 	return {

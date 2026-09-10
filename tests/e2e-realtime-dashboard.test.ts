@@ -11,7 +11,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { BunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
+import { BunWebSocketAdapter } from "@adapters/websocket/bun-websocket-adapter";
 import type { RealtimeEvent } from "@ports/realtime-port";
 
 function delay(ms: number): Promise<void> {

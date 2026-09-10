@@ -25,23 +25,23 @@ while IFS='|' read -r key val; do
   JABR_PORT[$key]="$val"
 done < <(cd "$ROOT" && bun -e 'import("./src/constants/ecosystem.ts").then((m) => { for (const [k, v] of Object.entries(m.JABR_PORTS)) console.log(`${k}|${v}`); })')
 
-# name:run-script:port
+# name:entry-path:port
 AGENTS=(
-  "orchestrator:orchestrator:${JABR_PORT[orchestrator]}"
-  "oracle:oracle:${JABR_PORT[oracle]}"
-  "librarian:librarian:${JABR_PORT[librarian]}"
-  "explorer:explorer:${JABR_PORT[explorer]}"
-  "designer:designer:${JABR_PORT[designer]}"
-  "fixer:fixer:${JABR_PORT[fixer]}"
-  "scientist:scientist:${JABR_PORT[scientist]}"
-  "jarvis:jarvis:${JABR_PORT[jarvis]}"
+  "orchestrator:src/runtime/orchestrator.ts:${JABR_PORT[orchestrator]}"
+  "oracle:src/runtime/agents/oracle.ts:${JABR_PORT[oracle]}"
+  "librarian:src/runtime/agents/librarian.ts:${JABR_PORT[librarian]}"
+  "explorer:src/runtime/agents/explorer.ts:${JABR_PORT[explorer]}"
+  "designer:src/runtime/agents/designer.ts:${JABR_PORT[designer]}"
+  "fixer:src/runtime/agents/fixer.ts:${JABR_PORT[fixer]}"
+  "scientist:src/runtime/agents/scientist.ts:${JABR_PORT[scientist]}"
+  "jarvis:src/runtime/agents/jarvis.ts:${JABR_PORT[jarvis]}"
 )
 
 stop() {
   echo "Stopping tmux session '$SESSION' and agent processes..."
   tmux kill-session -t "$SESSION" 2>/dev/null || true
   # Kill any lingering agent run processes (safest: match the run scripts).
-  pkill -f "agents/run/.*\.ts" 2>/dev/null || true
+  pkill -f "src/runtime/.*\.ts" 2>/dev/null || true
   echo "Stopped."
 }
 
@@ -97,21 +97,22 @@ start() {
   fi
 
   # Kill any lingering agent processes so ports are free.
-  pkill -f "agents/run/.*\.ts" 2>/dev/null || true
+  pkill -f "src/runtime/.*\.ts" 2>/dev/null || true
   sleep 1
 
   # Create the session with the first agent in the first pane.
   local first_name first_script
-  IFS=':' read -r first_name first_script <<< "${AGENTS[0]}"
+  IFS=':' read -r first_name first_script _port <<< "${AGENTS[0]}"
   tmux new-session -d -s "$SESSION" -n "$first_name" \
-    "cd '$ROOT' && bun agents/run/$first_script.ts 2>&1 | tee /tmp/jabr-$first_name.log"
+    "cd '$ROOT' && bun $first_script 2>&1 | tee /tmp/jabr-$first_name.log"
 
-  # Add a pane for each remaining agent.
+  # Add a pane for each remaining agent — bridge realtime events to the
+  # orchestrator's websocket (JABR_REALTIME_PORT convention, same as dev.sh).
   for entry in "${AGENTS[@]:1}"; do
     local name script
-    IFS=':' read -r name script <<< "$entry"
+    IFS=':' read -r name script _port <<< "$entry"
     tmux split-window -t "$SESSION" \
-      "cd '$ROOT' && bun agents/run/$script.ts 2>&1 | tee /tmp/jabr-$name.log"
+      "cd '$ROOT' && JABR_REALTIME_PORT=${JABR_PORT[realtime]} bun $script 2>&1 | tee /tmp/jabr-$name.log"
     tmux select-layout -t "$SESSION" tiled 2>/dev/null || true
   done
 

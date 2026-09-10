@@ -1,4 +1,5 @@
-This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where comments have been removed, empty lines have been removed, content has been formatted for parsing in plain style, content has been compressed (code blocks are separated by ⋮---- delimiter).
 
 ================================================================
 File Summary
@@ -38,756 +39,60 @@ Notes:
 ------
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: agents/run/**/*.ts, mcp-servers/**/*.ts
+- Only files matching these patterns are included: src/runtime/**/*.ts, src/protocols/mcp/**/*.ts
+- Files matching these patterns are excluded: **/node_modules/**, **/.turbo/**, **/dist/**, **/coverage/**, **/*.map, **/*.png, **/*.jpg, **/*.jpeg, **/*.gif, **/*.webp, **/*.woff2, **/*.ico, **/memory/**, **/.serena/**
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
-- Files are sorted by Git change count (files with more changes are at the bottom)
+- Code comments have been removed from supported file types
+- Empty lines have been removed from all files
+- Content has been formatted for parsing in plain style
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+- Long base64 data strings (e.g., data:image/png;base64,...) have been truncated to reduce token count
 
 
 ================================================================
 User Provided Header
 ================================================================
-Jabr — regenerated 2026-09-05T23:46:25Z. Do NOT edit by hand.\nComposition Roots & MCP Server — wiring layer. No business logic.
+Jabr — regenerated 2026-09-09T23:01:01Z. Do NOT edit by hand.\nComposition Roots & MCP Server — wiring layer. No business logic.
 
 ================================================================
 Directory Structure
 ================================================================
-agents/
-  run/
+src/
+  protocols/
+    mcp/
+      server/
+        index.ts
+        tools.ts
+        validation.ts
+  runtime/
+    agents/
+      designer.ts
+      explorer.ts
+      fixer.ts
+      index.ts
+      jarvis.ts
+      librarian.ts
+      oracle.ts
+      scientist.ts
+      verification.ts
     acp-bridge.ts
-    designer.ts
-    explorer.ts
-    fixer.ts
-    jarvis.ts
-    librarian.ts
     lifecycle.ts
-    oracle.ts
     orchestrator.ts
     realtime.ts
-    scientist.ts
     serve.ts
-    verification.ts
-mcp-servers/
-  tools.ts
-  validation.ts
 
 ================================================================
 Files
 ================================================================
 
 ================
-File: agents/run/realtime.ts
+File: src/protocols/mcp/server/index.ts
 ================
-/**
- * realtime.ts — DRY factory for the duplicated realtime-emit block
- * that every specialist runner contained (C2 anti-pattern fix).
- *
- * When JABR_REALTIME_PORT is set, connects to that port via HTTP POST
- * (the child-runner mode). Otherwise, starts a local Bun WebSocket
- * adapter on `fallbackPort` (which defaults to JABR_PORTS.realtime).
- */
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter";
-import { jabrUrlForPort } from "@config/jabr-config";
-import { JABR_PORTS } from "@constants/ecosystem";
-import type { RealtimePort } from "@ports/realtime-port";
 
-export function createRealtimePort(
-	name: string,
-	fallbackPort: number = JABR_PORTS.realtime,
-): RealtimePort {
-	const realtimePort = Number(process.env.JABR_REALTIME_PORT);
-	if (!isNaN(realtimePort) && realtimePort > 0) {
-		return {
-			broadcast: (event) =>
-				fetch(`${jabrUrlForPort(realtimePort)}/emit`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(event),
-				}).catch((e) => console.warn(`[${name}] realtime emit failed: ${e}`)),
-			emitTo: () => {},
-			on: () => {},
-			getConnectionCount: () => 0,
-		};
-	}
-	return startBunWebSocketAdapter({ port: fallbackPort });
-}
 
 ================
-File: mcp-servers/validation.ts
-================
-/**
- * validation.ts — Shared Zod schemas for MCP tool input validation.
- *
- * Every MCP tool input schema must:
- *   1. Reject unknown keys (strict mode) — prevents silent injection of extra fields.
- *   2. Cap string lengths — prevents memory exhaustion from arbitrarily large inputs.
- *   3. Validate paths — prevents directory traversal outside the workspace.
- *
- * Import these helpers in mcp-servers/tools.ts and any future tool registrations.
- */
-
-import { z } from "zod";
-
-// ---------------------------------------------------------------------------
-// String with max length
-// ---------------------------------------------------------------------------
-
-/**
- * Zod string with an upper bound on length.
- * Caps are chosen per-field to balance usability with DoS protection.
- */
-export function cappedString(
-	maxLength: number,
-	description?: string,
-): z.ZodString {
-	const schema = z.string().max(maxLength);
-	return description ? schema.describe(description) : schema;
-}
-
-// ---------------------------------------------------------------------------
-// Strict object — rejects unknown keys
-// ---------------------------------------------------------------------------
-
-/**
- * Zod object schema in strict mode.
- *
- * By default Zod *strips* unknown keys. Strict mode rejects them with a
- * ZodError, which the MCP SDK surfaces as an InvalidParams McpError.
- *
- * Use this for every tool's inputSchema so that a client cannot smuggle
- * extra fields past validation (e.g. {path: "x", "__proto__": {...}}).
- */
-export function strictObject<T extends z.ZodRawShape>(
-	shape: T,
-): z.ZodObject<T> {
-	return z.object(shape).strict();
-}
-
-// ---------------------------------------------------------------------------
-// Safe relative path — no traversal
-// ---------------------------------------------------------------------------
-
-/**
- * Validates a relative workspace path.
- *
- * Rejects:
- *   - Absolute paths (start with "/")
- *   - Home expansion (start with "~")
- *   - Directory traversal (contains "..")
- *
- * Length is capped at 500 chars to match cappedString semantics.
- */
-export const safePath = (description?: string): z.ZodString => {
-	const schema = z
-		.string()
-		.max(500)
-		.refine((p) => !p.startsWith("/"), "Path must be relative, not absolute")
-		.refine((p) => !p.includes(".."), "Path must not contain '..' (traversal)")
-		.refine((p) => !p.startsWith("~"), "Path must not start with '~'");
-	return description ? schema.describe(description) : schema;
-};
-
-// ---------------------------------------------------------------------------
-// Bounded number
-// ---------------------------------------------------------------------------
-
-/**
- * Zod number with lower and upper bounds.
- */
-export function boundedNumber(
-	min: number,
-	max: number,
-	description?: string,
-): z.ZodNumber {
-	const schema = z.number().min(min).max(max);
-	return description ? schema.describe(description) : schema;
-}
-
-================
-File: agents/run/verification.ts
-================
-import { SkillFS } from "@adapters/skill-fs";
-import { TaskMemory } from "@adapters/task-memory";
-import { VERIFICATION_CARD, VerificationAgent } from "@core/verification";
-import { JABR_PORTS } from "@constants/ecosystem";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { runAgent } from "./serve.ts";
-
-if (import.meta.main) {
-	const taskStore = new TaskMemory();
-	const agent = new VerificationAgent(taskStore, new SkillFS("skills"));
-
-	const realtime = createRealtimePort("Verification");
-
-	const lifecycle = initLifecycle(realtime, "verification", JABR_PORTS.verification);
-	lifecycle.announceOnline();
-
-	process.on("SIGTERM", () => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Verification] uncaught exception:`, e);
-	});
-
-	runAgent({
-		port: JABR_PORTS.verification,
-		card: VERIFICATION_CARD,
-		execute: (taskId, text) => {
-			console.log(`[Run:Verification] dispatching verification task ${taskId}`);
-			return agent.execute(taskId, text);
-		},
-		taskStore,
-	});
-}
-
-================
-File: agents/run/lifecycle.ts
-================
-import type {
-	AgentCompletePayload,
-	AgentErrorPayload,
-	AgentStartPayload,
-	DomainEventBus,
-} from "@ports/plugin-event-bus.types";
-import type { RealtimePort } from "@ports/realtime-port";
-
-/**
- * Wire agent lifecycle events into a RealtimePort and an optional DomainEventBus.
- *
- * Registers the following on the current process:
- *  - uncaughtException → agent:error (via returned uncaughtHandler)
- *  - unhandledRejection → agent:error
- *
- * Note: SIGINT/SIGTERM are NOT registered here. Callers that construct an
- * A2AServer must register their own signal handlers and invoke
- * `server.shutdown()` to drain in-flight work before exiting. This avoids
- * a race where `process.exit(0)` in a generic signal handler would terminate
- * the process before the async drain completes.
- *
- * Returns:
- *  - announceOnline(): call after the server is listening.
- *  - announceOffline(): call before process exit (emits agent:offline + onAgentComplete).
- *  - uncaughtHandler: pass to your own process.on("uncaughtException") so you
- *    can add per-agent logging around it.
- *  - cleanup(): removes the unhandledRejection listener and is meant for test
- *    teardown.
- *
- * Usage (e.g. in agents/run/oracle.ts):
- *   const lifecycle = initLifecycle(realtime, "oracle", 4001, bus);
- *   lifecycle.announceOnline();
- *   process.on("uncaughtException", (e) => { lifecycle.uncaughtHandler(e); ... });
- *   // SIGINT / SIGTERM are wired by the caller (see serve.ts for the pattern).
- */
-export function initLifecycle(
-	realtime: RealtimePort,
-	agentName: string,
-	port?: number,
-	bus?: DomainEventBus,
-): {
-	announceOnline: () => void;
-	announceOffline: () => void;
-	uncaughtHandler: (e: unknown) => void;
-	cleanup: () => void;
-} {
-	const agentId = crypto.randomUUID();
-	const provider = "unknown";
-	const model = "unknown";
-	const startedAt = new Date().toISOString();
-
-	const announceOnline = () => {
-		// Wire-level event
-		realtime.broadcast({
-			type: "agent:online",
-			agent: agentName,
-			...(port !== undefined ? { port } : {}),
-		});
-
-		// Plugin bus event
-		if (bus) {
-			const payload: AgentStartPayload = {
-				agentId,
-				agentName,
-				provider,
-				model,
-				startedAt,
-				metadata: port !== undefined ? { port } : undefined,
-			};
-			bus.emit("onAgentStart", payload);
-		}
-	};
-
-	const announceOffline = () => {
-		// Wire-level event
-		realtime.broadcast({ type: "agent:offline", agent: agentName });
-
-		// Plugin bus event
-		if (bus) {
-			const completedAt = new Date().toISOString();
-			const payload: AgentCompletePayload = {
-				agentId,
-				agentName,
-				provider,
-				model,
-				startedAt,
-				completedAt,
-				durationMs: Date.now() - new Date(startedAt).getTime(),
-			};
-			bus.emit("onAgentComplete", payload);
-		}
-	};
-
-	const uncaughtHandler = (e: unknown) => {
-		// Wire-level event
-		realtime.broadcast({
-			type: "agent:error",
-			agent: agentName,
-			error: String(e),
-		});
-
-		// Plugin bus event
-		if (bus) {
-			const erroredAt = new Date().toISOString();
-			const payload: AgentErrorPayload = {
-				agentId,
-				agentName,
-				provider,
-				model,
-				erroredAt,
-				error: sanitizeError(e),
-				recoverable: isRecoverable(e),
-			};
-			bus.emit("onAgentError", payload);
-		}
-	};
-
-	const onUnhandledRejection = (reason: unknown) => {
-		uncaughtHandler(reason);
-	};
-
-	process.on("unhandledRejection", onUnhandledRejection);
-
-	const cleanup = () => {
-		process.off("unhandledRejection", onUnhandledRejection);
-	};
-
-	return { announceOnline, announceOffline, uncaughtHandler, cleanup };
-}
-
-function sanitizeError(err: unknown): AgentErrorPayload["error"] {
-	if (err instanceof Error) {
-		return {
-			message: err.message,
-			code: (err as any).code ?? undefined,
-			stack: err.stack ?? undefined,
-		};
-	}
-	if (typeof err === "object" && err !== null) {
-		return {
-			message: String((err as any).message ?? err),
-			code: (err as any).code ?? undefined,
-			stack: (err as any).stack ?? undefined,
-		};
-	}
-	return { message: String(err) };
-}
-
-function isRecoverable(err: unknown): boolean {
-	if (err instanceof Error) {
-		const name = err.name;
-		return name === "AbortError" || name === "TimeoutError";
-	}
-	return false;
-}
-
-/**
- * Bridge RealtimePort wire events to the PluginEventBus.
- *
- * Projects transport-layer events (colon-separated) onto the canonical
- * plugin bus (on-prefixed camelCase). This is the single integration point
- * for the two naming conventions documented in ADR-001.
- */
-export function bridgeRealtimeToPlugin(
-	realtime: RealtimePort,
-	bus: DomainEventBus,
-): void {
-	realtime.on("agent:online", (e) => {
-		bus.emit("onAgentStart", {
-			agentId: e.agent,
-			agentName: e.agent,
-			provider: "unknown",
-			model: "unknown",
-			startedAt: new Date().toISOString(),
-			...(e.port !== undefined ? { metadata: { port: e.port } } : {}),
-		});
-	});
-
-	realtime.on("agent:error", (e) => {
-		bus.emit("onAgentError", {
-			agentId: e.agent,
-			agentName: e.agent,
-			provider: "unknown",
-			model: "unknown",
-			erroredAt: new Date().toISOString(),
-			error: { message: e.error },
-			recoverable: true,
-		});
-	});
-
-	realtime.on("task:created", (e) => {
-		bus.emit("onTaskStart", {
-			taskId: e.taskId,
-			title: "",
-			assignee: e.agent,
-			priority: 0,
-			startedAt: new Date().toISOString(),
-		});
-	});
-
-	realtime.on("task:completed", (e) => {
-		const now = new Date().toISOString();
-		bus.emit("onTaskComplete", {
-			taskId: e.taskId,
-			title: "",
-			assignee: "",
-			priority: 0,
-			startedAt: now,
-			completedAt: now,
-			durationMs: 0,
-			summary: typeof e.result === "string" ? e.result : undefined,
-		});
-	});
-
-	realtime.on("task:failed", (e) => {
-		const now = new Date().toISOString();
-		bus.emit("onTaskFailed", {
-			taskId: e.taskId,
-			title: "",
-			assignee: "",
-			priority: 0,
-			startedAt: now,
-			failedAt: now,
-			durationMs: 0,
-			error: { message: e.error },
-			retryable: false,
-			retryCount: 0,
-		});
-	});
-}
-
-================
-File: agents/run/acp-bridge.ts
-================
-import { StdioBridge } from "@adapters/http/stdio-bridge";
-import { openJabrDb } from "@adapters/sqlite-db";
-import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
-import { jabrUrl } from "@config/jabr-config";
-import { join } from "node:path";
-
-if (import.meta.main) {
-	try {
-		// Use JABR_MEMORY_DIR if set, otherwise fall back to process.cwd()/memory
-		const memoryDir = process.env.JABR_MEMORY_DIR ?? join(process.cwd(), "memory");
-		const bridgeDbPath = join(memoryDir, "jabr-bridge.db");
-		const db = openJabrDb(bridgeDbPath);
-		const bridge = new StdioBridge({
-			orchestratorUrl: jabrUrl(),
-			memory: new SqliteMemoryStore(db, { mirrorFile: null }),
-		});
-		bridge.start();
-		process.stderr.write(
-			"ACP stdio bridge ready — awaiting IDE connection on stdin\n",
-		);
-	} catch (e) {
-		console.error(`[AcpBridge] failed to start stdio bridge: ${e}`);
-		throw e;
-	}
-}
-
-================
-File: agents/run/explorer.ts
-================
-import { McpClientAdapter } from "@adapters/mcp-client";
-import { TaskMemory } from "@adapters/task-memory";
-import { EXPLORER_CARD, ExplorerAgent } from "@core/explorer";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { runAgent } from "./serve.ts";
-import { JABR_PORTS } from "@constants/ecosystem";
-
-if (import.meta.main) {
-	const taskStore = new TaskMemory();
-	const mcpClient = new McpClientAdapter();
-	const agent = new ExplorerAgent(taskStore, mcpClient);
-
-	const realtime = createRealtimePort("Explorer");
-
-	const lifecycle = initLifecycle(realtime, "explorer", JABR_PORTS.explorer);
-	lifecycle.announceOnline();
-
-	process.on("SIGTERM", () => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Explorer] uncaught exception:`, e);
-	});
-
-	runAgent({
-		port: JABR_PORTS.explorer,
-		card: EXPLORER_CARD,
-		execute: (taskId, text) => {
-			console.log(`[Run:Explorer] dispatching exploration task ${taskId}`);
-			return agent.execute(taskId, text);
-		},
-		taskStore,
-	});
-}
-
-================
-File: agents/run/fixer.ts
-================
-import { HeadroomAdapter } from "@adapters/headroom";
-import { createLlmAdapter } from "@adapters/llm/factory";
-import { SkillFS } from "@adapters/skill-fs";
-import { TaskMemory } from "@adapters/task-memory";
-import { FIXER_CARD, FixerAgent } from "@core/fixer";
-import { JABR_PORTS } from "@constants/ecosystem";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { extractLastResponse, runAgent } from "./serve.ts";
-
-if (import.meta.main) {
-	const taskStore = new TaskMemory();
-	const budget = new HeadroomAdapter();
-	const llm = createLlmAdapter(budget);
-	const agent = new FixerAgent(taskStore, new SkillFS("skills"), llm);
-
-	const realtime = createRealtimePort("Fixer");
-
-	const lifecycle = initLifecycle(realtime, "fixer", JABR_PORTS.fixer);
-	lifecycle.announceOnline();
-
-	process.on("SIGTERM", () => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Fixer] uncaught exception:`, e);
-	});
-
-	runAgent({
-		port: JABR_PORTS.fixer,
-		card: FIXER_CARD,
-		execute: (taskId, text) =>
-			agent.execute(taskId, text).catch((e) => {
-				console.error(`[Run:Fixer] task ${taskId} execution failed: ${e}`);
-				throw e;
-			}),
-		taskStore,
-		formatResult: (ts, taskId) => {
-			const text = extractLastResponse(ts, taskId);
-			const task = ts.get(taskId);
-			const artifact = task?.artifacts[0];
-			if (artifact) {
-				const artText = artifact.parts.find((p) => p.kind === "text")?.text;
-				return artText
-					? `${text}\n\n**Artifact** (\`${artifact.name}\`):\n\`\`\`\n${artText}\n\`\`\``
-					: text;
-			}
-			return text;
-		},
-	});
-}
-
-================
-File: agents/run/librarian.ts
-================
-import { createLlmAdapter } from "@adapters/llm/factory";
-import { MemPalaceAdapter } from "@adapters/mem-palace";
-import { Search9Router } from "@adapters/search-9router";
-import { SkillFS } from "@adapters/skill-fs";
-import { TaskMemory } from "@adapters/task-memory";
-import { LIBRARIAN_CARD, LibrarianAgent } from "@core/librarian";
-import { JABR_PORTS } from "@constants/ecosystem";
-import type { LlmPort } from "@ports/llm-port";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { runAgent } from "./serve.ts";
-
-function shouldWireLlm(): boolean {
-	return !!(process.env.NINEROUTER_URL || process.env.NINEROUTER_MODEL);
-}
-
-function createLlm(): LlmPort {
-	return createLlmAdapter();
-}
-
-if (import.meta.main) {
-	const taskStore = new TaskMemory();
-	const palace = new MemPalaceAdapter();
-	const agent = new LibrarianAgent(
-		taskStore,
-		new SkillFS("skills"),
-		new Search9Router(),
-		palace,
-	);
-
-	const realtime = createRealtimePort("Librarian");
-
-	const lifecycle = initLifecycle(realtime, "librarian", JABR_PORTS.librarian);
-	lifecycle.announceOnline();
-
-	process.on("SIGTERM", () => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Librarian] uncaught exception:`, e);
-	});
-
-	runAgent({
-		port: JABR_PORTS.librarian,
-		card: LIBRARIAN_CARD,
-		execute: (taskId, text) => {
-			console.log(`[Run:Librarian] dispatching task ${taskId}`);
-			return agent.execute(taskId, text);
-		},
-		taskStore,
-	});
-}
-
-================
-File: agents/run/serve.ts
-================
-import { A2AServer } from "@adapters/http/a2a-server";
-import { TaskMemory } from "@adapters/task-memory";
-import type { AgentCard, TaskStreamingEvent } from "@agents/types";
-import { jabrUrlForPort } from "@config/jabr-config";
-import type { TaskStorePort } from "@ports/task-store";
-import { ApiKeyRegistry } from "@security/api-key-registry";
-
-export function extractLastResponse(
-	taskStore: TaskStorePort,
-	taskId: string,
-): string {
-	const task = taskStore.get(taskId);
-	const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
-	return lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response";
-}
-
-export function runAgent(config: {
-	port: number;
-	card: AgentCard;
-	execute: (taskId: string, text: string) => Promise<void>;
-	taskStore?: TaskStorePort;
-	formatResult?: (taskStore: TaskStorePort, taskId: string) => string;
-	/**
-	 * Optional streaming handler for `tasks/sendSubscribe`. Receives the user
-	 * text, a fresh taskId, and an emit() callback for SSE events. When set,
-	 * the server advertises `capabilities.streaming: true` on its AgentCard.
-	 */
-	onTaskStreaming?: (
-		message: string,
-		taskId: string,
-		emit: (event: TaskStreamingEvent) => void,
-	) => Promise<string>;
-}) {
-	const taskStore = config.taskStore ?? new TaskMemory();
-	const format = config.formatResult ?? extractLastResponse;
-
-	console.log(
-		`[Serve] starting ${config.card.name} server on port ${config.port}`,
-	);
-
-	// --- API key registry (per-key authentication + ACL) ---
-	// Loads keys from JSON env var A2A_API_KEYS. Each entry is:
-	//   { key: string, description: string, allowedAgents: string[], enabled?: boolean }
-	// Empty allowedAgents = wildcard (all agents).
-	let apiKeyRegistry: ApiKeyRegistry | undefined;
-	const keysJson = process.env.A2A_API_KEYS;
-	if (keysJson) {
-		try {
-			const entries = JSON.parse(keysJson);
-			apiKeyRegistry = new ApiKeyRegistry(entries);
-			console.log(
-				`[Serve] ${config.card.name}: loaded ${entries.length} API key(s) from A2A_API_KEYS`,
-			);
-		} catch (e) {
-			console.error(
-				`[Serve] ${config.card.name}: failed to parse A2A_API_KEYS: ${e}`,
-			);
-			process.exit(1);
-		}
-	}
-
-	// Auth is mandatory at the agent boundary. Refuse to start
-	// without a configured registry or legacy token so the endpoint is never
-	// accidentally exposed without authentication.
-	const requireAuth = true;
-	const legacyToken = process.env.A2A_AUTH_TOKEN;
-	if (!apiKeyRegistry && !legacyToken) {
-		console.error(
-			`Fatal: A2A_API_KEYS or A2A_AUTH_TOKEN environment variable is required to start ${config.card.name}`,
-		);
-		process.exit(1);
-	}
-
-	// Legacy single-token mode: build a registry with one wildcard key.
-	if (!apiKeyRegistry && legacyToken) {
-		console.warn(
-			`[Serve] ${config.card.name}: using legacy A2A_AUTH_TOKEN (single shared token, consider migrating to A2A_API_KEYS)`,
-		);
-		apiKeyRegistry = new ApiKeyRegistry([
-			{ key: legacyToken, description: "legacy", allowedAgents: [], enabled: true },
-		]);
-	}
-
-	const server = new A2AServer({
-		port: config.port,
-		card: {
-			...config.card,
-			url: jabrUrlForPort(config.port),
-			capabilities: {
-				...config.card.capabilities,
-				streaming: Boolean(config.onTaskStreaming),
-			},
-		},
-		onTask: async (text: string): Promise<string> => {
-			const taskId = crypto.randomUUID();
-			console.log(`[Serve] received task ${taskId} for ${config.card.name}`);
-			taskStore.create(taskId);
-			await config.execute(taskId, text);
-			return format(taskStore, taskId);
-		},
-		onTaskStreaming: config.onTaskStreaming,
-		requireAuth,
-		apiKeyRegistry,
-	});
-
-	server.start();
-
-	// Wire graceful shutdown for SIGINT/SIGTERM.
-	const onSignal = () => {
-		console.log(
-			`[Serve] received signal, shutting down ${config.card.name}...`,
-		);
-		server.shutdown().then(() => {
-			console.log(`[Serve] ${config.card.name} shut down gracefully`);
-			process.exit(0);
-		});
-	};
-	process.on("SIGINT", onSignal);
-	process.on("SIGTERM", onSignal);
-}
-
-================
-File: mcp-servers/tools.ts
+File: src/protocols/mcp/server/tools.ts
 ================
 import {
 	existsSync,
@@ -798,7 +103,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { registerResources } from "@adapters/mcp-resources";
+import { registerResources } from "@adapters/mcp/mcp-resources";
 import { SubscriptionManager } from "@adapters/subscription-manager";
 import { jabrUrl } from "@config/jabr-config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -812,1051 +117,245 @@ import {
 	safePath,
 	strictObject,
 } from "./validation.js";
-
-const subscriptions = new SubscriptionManager();
-
-const PYTHON_ENV_DIR = join(process.cwd(), ".python_env");
-
-function ensurePythonEnv() {
-	if (!existsSync(PYTHON_ENV_DIR)) {
-		mkdirSync(PYTHON_ENV_DIR, { recursive: true });
-		Bun.spawnSync(["uv", "init", "--lib", PYTHON_ENV_DIR]);
-	}
-}
-
-const server = new McpServer(
-	{ name: "jabr-tools", version: pkg.version },
-	{
-		// Advertise elicitation (form mode) support so clients know this server
-		// can pause tool execution and ask the user for structured input.
-		capabilities: {
-			elicitation: { form: {} },
-			resources: { subscribe: true, listChanged: true },
-		} as ServerCapabilities,
-	},
-);
-
-// ── helpers ──────────────────────────────────────────────────────────
-
-function sanitizeArgs(args: unknown): unknown {
-	if (args === null || typeof args !== "object") return args;
-	const out: Record<string, unknown> = {};
-	for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
-		if (typeof v === "string" && v.length > 200) {
-			out[k] = `${v.slice(0, 200)}… (${v.length} chars)`;
-		} else {
-			out[k] = v;
-		}
-	}
-	return out;
-}
-
-function logOk(name: string, start: number, result: unknown) {
-	const ms = Math.round(performance.now() - start);
-	let size: string | undefined;
-	if (result && typeof result === "object" && "content" in result) {
-		const content = (result as { content?: unknown }).content;
-		if (Array.isArray(content)) {
-			const text = content
-				.map((c) =>
-					c &&
-					typeof c === "object" &&
-					"text" in c &&
-					typeof (c as { text: unknown }).text === "string"
-						? (c as { text: string }).text
-						: "",
-				)
-				.join("");
-			size = `${text.length} chars`;
-		}
-	}
-	console.error(`[MCP tools] ${name} ok in ${ms}ms${size ? ` (${size})` : ""}`);
-}
-
+⋮----
+function ensurePythonEnv()
+⋮----
+function sanitizeArgs(args: unknown): unknown
+⋮----
+function logOk(name: string, start: number, result: unknown)
+⋮----
 function withLogging<Args, R>(
 	name: string,
 	handler: (args: Args) => R,
-): (args: Args) => R {
-	return (args: Args) => {
-		console.error(`[MCP tools] call ${name}`, sanitizeArgs(args));
-		const start = performance.now();
-		try {
-			const result = handler(args);
-			if (result instanceof Promise) {
-				return result.then(
-					(r) => {
-						logOk(name, start, r);
-						return r;
-					},
-					(e) => {
-						console.error(`[MCP tools] ${name} error:`, e);
-						throw e;
-					},
-				) as R;
-			}
-			logOk(name, start, result);
-			return result;
-		} catch (e) {
-			console.error(`[MCP tools] ${name} error:`, e);
-			throw e;
-		}
-	};
-}
-
+): (args: Args) => R
+⋮----
 // ── existing tools ───────────────────────────────────────────────────
-
-server.registerTool(
-	"read_file",
-	{
-		description: "Read a file from the project workspace",
-		inputSchema: strictObject({ path: safePath("Relative file path") }),
-	},
-	withLogging("read_file", ({ path }) => {
-		const full = join(process.cwd(), path);
-		if (!existsSync(full)) throw new Error(`File not found: ${path}`);
-		const content = readFileSync(full, "utf-8");
-		return { content: [{ type: "text", text: `File: ${path}\n\n${content}` }] };
-	}),
-);
-
-server.registerTool(
-	"write_file",
-	{
-		description: "Write content to a file in the project workspace",
-		inputSchema: strictObject({
-			path: safePath("Relative file path"),
-			content: cappedString(10000, "File content"),
-		}),
-	},
-	withLogging("write_file", ({ path, content }) => {
-		const full = join(process.cwd(), path);
-		mkdirSync(dirname(full), { recursive: true });
-		writeFileSync(full, content, "utf-8");
-		return {
-			content: [
-				{ type: "text", text: `Written ${content.length} chars to ${path}` },
-			],
-		};
-	}),
-);
-
-server.registerTool(
-	"install_python_dependency",
-	{
-		description: "Install a Python package into the persistent environment",
-		inputSchema: strictObject({
-			pkgName: cappedString(200, "Package name (e.g. 'requests', 'pandas')"),
-		}),
-	},
-	withLogging("install_python_dependency", ({ pkgName }) => {
-		ensurePythonEnv();
-		const proc = Bun.spawnSync(["uv", "add", pkgName], { cwd: PYTHON_ENV_DIR });
-		if (proc.exitCode !== 0) {
-			const stderr = new TextDecoder().decode(proc.stderr);
-			throw new Error(`Failed to install ${pkgName}: ${stderr}`);
-		}
-		return {
-			content: [
-				{
-					type: "text",
-					text: `Successfully installed ${pkgName} into .python_env`,
-				},
-			],
-		};
-	}),
-);
-
-server.registerTool(
-	"run_python",
-	{
-		description:
-			"Execute a Python snippet via uv in a persistent environment with dependency support",
-		inputSchema: strictObject({
-			code: cappedString(10000, "Python code to run"),
-		}),
-	},
-	withLogging("run_python", ({ code }) => {
-		ensurePythonEnv();
-		const mainPath = join(PYTHON_ENV_DIR, "main.py");
-		writeFileSync(mainPath, code, "utf-8");
-
-		const proc = Bun.spawnSync(
-			["uv", "run", "--project", PYTHON_ENV_DIR, "python", "main.py"],
-			{
-				timeout: 10_000,
-			},
-		);
-
-		const stdout = new TextDecoder().decode(proc.stdout);
-		const stderr = new TextDecoder().decode(proc.stderr);
-		if (proc.exitCode !== 0) throw new Error(stderr || "Python error");
-		return { content: [{ type: "text", text: stdout || "(no output)" }] };
-	}),
-);
-
-// ── elicitation demo tools ────────────────────────────────────────────
-
-/**
- * Elicitation (MCP SEP-2322) lets a server pause mid-tool-call and ask the
- * client to collect structured user input. Two modes:
- *
- *   form  – in-band JSON Schema form rendered by the client (non-sensitive)
- *   url   – out-of-band URL the user visits in a browser (sensitive/OAuth)
- *
- * The SDK's McpServer.server.elicitInput() sends an elicitation/create request.
- * The client's elicitation callback decides how to surface it (CLI prompt,
- * gateway notify, etc.) and returns an ElicitResult.
- */
-
-server.registerTool(
-	"elicit_payment",
-	{
-		description:
-			"Authorize a payment by collecting confirmation from the user via form elicitation",
-		inputSchema: strictObject({
-			amount: boundedNumber(0, 1_000_000, "Amount in USD"),
-			recipient: cappedString(200, "Payee name"),
-		}),
-	},
-	withLogging("elicit_payment", async ({ amount, recipient }) => {
-		// Form-mode elicitation: the client renders a JSON Schema form and collects
-		// the user's response. The schema restricts fields to primitives the spec
-		// admits (string, boolean, enum/oneOf, array of enums).
-		const result = await server.server.elicitInput({
-			mode: "form",
-			message: `Authorize a payment of $${amount.toFixed(2)} to ${recipient}?`,
-			requestedSchema: {
-				type: "object",
-				properties: {
-					approved: {
-						type: "boolean",
-						title: "Approve payment",
-						description: "Confirm you want to send this payment",
-					},
-					note: {
-						type: "string",
-						title: "Memo (optional)",
-						description: "Optional note attached to the payment",
-					},
-				},
-				required: ["approved"],
-			},
-		});
-
-		if (result.action === "accept" && result.content) {
-			const { approved, note } = result.content as {
-				approved: boolean;
-				note?: string;
-			};
-			if (!approved) {
-				return {
-					content: [{ type: "text", text: "Payment declined by user." }],
-					isError: false,
-				};
-			}
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Payment of $${amount.toFixed(2)} to ${recipient} approved${note ? ` (${note})` : ""}.`,
-					},
-				],
-			};
-		}
-		if (result.action === "decline") {
-			return {
-				content: [{ type: "text", text: "Payment request declined by user." }],
-				isError: false,
-			};
-		}
-		// cancel – user/connection timed out
-		return {
-			content: [
-				{
-					type: "text",
-					text: "Payment request cancelled (timeout or disconnect).",
-				},
-			],
-			isError: true,
-		};
-	}),
-);
-
-server.registerTool(
-	"elicit_url_auth",
-	{
-		description:
-			"Trigger a URL-mode elicitation for sensitive out-of-band authentication (OAuth / payment flows)",
-		inputSchema: strictObject({
-			provider: cappedString(100, "Auth provider name (e.g. 'example-oauth')"),
-		}),
-	},
-	withLogging("elicit_url_auth", async ({ provider }) => {
-		// URL-mode elicitation: the server provides a URL the user visits in a browser.
-		// Hermes' Python elicitation handler declines URL mode (not implemented), so this
-		// will return decline. For a full implementation the client must open a browser
-		// and wait for notifications/elicitation/complete.
-		const result = await server.server.elicitInput({
-			mode: "url",
-			message: `Connect your ${provider} account to continue. Open the link to authenticate.`,
-			url: `https://auth.example.com/oauth/authorize?provider=${encodeURIComponent(provider)}`,
-			elicitationId: `url-auth-${provider}-${Date.now()}`,
-		});
-
-		if (result.action === "accept") {
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Authorization flow accepted — please complete authentication at the URL provided.`,
-					},
-				],
-			};
-		}
-		if (result.action === "decline") {
-			return {
-				content: [{ type: "text", text: `Authorization declined by user.` }],
-				isError: false,
-			};
-		}
-		return {
-			content: [
-				{
-					type: "text",
-					text: "Authorization cancelled (timeout or disconnect).",
-				},
-			],
-			isError: true,
-		};
-	}),
-);
-
-// ── parser/calculator tools (unchanged) ───────────────────────────────
-
+⋮----
 type Token =
 	| { kind: "num"; value: number }
 	| { kind: "op"; value: string }
 	| { kind: "lparen" }
 	| { kind: "rparen" };
-
-function tokenize(expression: string): Token[] {
-	const tokens: Token[] = [];
-	let i = 0;
-	while (i < expression.length) {
-		const ch = expression[i]!;
-		if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
-			i++;
-			continue;
-		}
-		if ((ch >= "0" && ch <= "9") || ch === ".") {
-			let num = "";
-			while (
-				i < expression.length &&
-				((expression[i]! >= "0" && expression[i]! <= "9") ||
-					expression[i] === ".")
-			) {
-				num += expression[i];
-				i++;
-			}
-			const value = Number(num);
-			if (!Number.isFinite(value)) throw new Error(`Invalid number: ${num}`);
-			tokens.push({ kind: "num", value });
-			continue;
-		}
-		if (ch === "(") {
-			tokens.push({ kind: "lparen" });
-			i++;
-			continue;
-		}
-		if (ch === ")") {
-			tokens.push({ kind: "rparen" });
-			i++;
-			continue;
-		}
-		if ("+-*/%^".includes(ch)) {
-			tokens.push({ kind: "op", value: ch });
-			i++;
-			continue;
-		}
-		throw new Error(`Unsafe expression: illegal character "${ch}"`);
-	}
-	return tokens;
-}
-
-class Parser {
-	private pos = 0;
-	constructor(private tokens: Token[]) {}
-
-	private peek(): Token | undefined {
-		return this.tokens[this.pos];
-	}
-	private next(): Token | undefined {
-		return this.tokens[this.pos++];
-	}
-
-	parse(): number {
-		if (this.tokens.length === 0) throw new Error("Empty expression");
-		const result = this.parseExpr();
-		if (this.pos < this.tokens.length)
-			throw new Error("Unexpected trailing input");
-		return result;
-	}
-
-	private parseExpr(): number {
-		let left = this.parseTerm();
-		let tok = this.peek();
-		while (
-			tok &&
-			tok.kind === "op" &&
-			(tok.value === "+" || tok.value === "-")
-		) {
-			this.next();
-			const right = this.parseTerm();
-			left = tok.value === "+" ? left + right : left - right;
-			tok = this.peek();
-		}
-		return left;
-	}
-
-	private parseTerm(): number {
-		let left = this.parsePower();
-		let tok = this.peek();
-		while (
-			tok &&
-			tok.kind === "op" &&
-			(tok.value === "*" || tok.value === "/" || tok.value === "%")
-		) {
-			this.next();
-			const right = this.parsePower();
-			if (tok.value === "*") left = left * right;
-			else if (tok.value === "/") {
-				if (right === 0) throw new Error("Division by zero");
-				left = left / right;
-			} else {
-				if (right === 0) throw new Error("Modulo by zero");
-				left = left % right;
-			}
-			tok = this.peek();
-		}
-		return left;
-	}
-
-	private parsePower(): number {
-		const base = this.parseUnary();
-		const tok = this.peek();
-		if (tok && tok.kind === "op" && tok.value === "^") {
-			this.next();
-			const exp = this.parsePower();
-			return Math.pow(base, exp);
-		}
-		return base;
-	}
-
-	private parseUnary(): number {
-		const tok = this.peek();
-		if (tok && tok.kind === "op" && (tok.value === "+" || tok.value === "-")) {
-			this.next();
-			const val = this.parseUnary();
-			return tok.value === "-" ? -val : val;
-		}
-		return this.parsePrimary();
-	}
-
-	private parsePrimary(): number {
-		const tok = this.next();
-		if (!tok) throw new Error("Unexpected end of expression");
-		if (tok.kind === "num") return tok.value;
-		if (tok.kind === "lparen") {
-			const inner = this.parseExpr();
-			const close = this.next();
-			if (!close || close.kind !== "rparen")
-				throw new Error("Missing closing parenthesis");
-			return inner;
-		}
-		throw new Error("Unexpected token in expression");
-	}
-}
-
-function safeCalculate(expression: string): number {
-	if (!/^[\d\s+\-*/.()%^]+$/.test(expression))
-		throw new Error("Unsafe expression");
-	return new Parser(tokenize(expression)).parse();
-}
-
-server.registerTool(
-	"calculate",
-	{
-		description: "Safe arithmetic evaluator",
-		inputSchema: strictObject({
-			expression: cappedString(500, "Math expression"),
-		}),
-	},
-	withLogging("calculate", ({ expression }) => {
-		const result = safeCalculate(expression);
-		return { content: [{ type: "text", text: String(result) }] };
-	}),
-);
-
-server.registerTool(
-	"save_skill",
-	{
-		description: "Persist a Hermes-style skill document to the skill store",
-		inputSchema: strictObject({
-			name: cappedString(100, "Skill name"),
-			description: cappedString(500, "Skill description"),
-			steps: z
-				.array(cappedString(500, "Step instruction"))
-				.max(50, "Too many steps (max 50)"),
-			tags: z
-				.array(cappedString(50, "Tag"))
-				.max(20, "Too many tags (max 20)")
-				.optional()
-				.default([]),
-		}),
-	},
-	withLogging("save_skill", ({ name: skillName, description, steps, tags }) => {
-		const skillDir = join(process.cwd(), "skills");
-		mkdirSync(skillDir, { recursive: true });
-		const slug = skillName.toLowerCase().replace(/\s+/g, "-");
-		const doc = {
-			name: skillName,
-			description,
-			tags,
-			steps,
-			createdAt: new Date().toISOString(),
-			usageCount: 0,
-			successRate: 1.0,
-		};
-		writeFileSync(join(skillDir, `${slug}.json`), JSON.stringify(doc, null, 2));
-		return {
-			content: [
-				{
-					type: "text",
-					text: `Skill "${skillName}" saved → skills/${slug}.json`,
-				},
-			],
-		};
-	}),
-);
-
-server.registerTool(
-	"list_skills",
-	{
-		description: "List all saved skills from the skill store",
-		inputSchema: strictObject({}),
-	},
-	withLogging("list_skills", () => {
-		const skillDir = join(process.cwd(), "skills");
-		if (!existsSync(skillDir))
-			return { content: [{ type: "text", text: "No skills yet." }] };
-		const files = readdirSync(skillDir).filter((f) => f.endsWith(".json"));
-		const skills = files.map((f) => {
-			const doc = JSON.parse(readFileSync(join(skillDir, f), "utf-8"));
-			return `• ${doc.name} — ${doc.description} [${doc.tags.join(", ")}]`;
-		});
-		return {
-			content: [
-				{
-					type: "text",
-					text: skills.length ? skills.join("\n") : "No skills yet.",
-				},
-			],
-		};
-	}),
-);
-
-// ── repomix tools ─────────────────────────────────────────────────────
-
-const REPOMIX_OUTPUT_DIR = join(process.cwd(), ".repomix");
-
-function ensureRepomixDir() {
-	if (!existsSync(REPOMIX_OUTPUT_DIR)) {
-		mkdirSync(REPOMIX_OUTPUT_DIR, { recursive: true });
-	}
-}
-
-function repomixOutputPath(style: string): string {
-	const ext = style === "markdown" ? "md" : style === "json" ? "json" : "xml";
-	return join(REPOMIX_OUTPUT_DIR, `output.${ext}`);
-}
-
-server.registerTool(
-	"pack_repository",
-	{
-		description:
-			"Pack the repository into a single AI-friendly file using Repomix. Returns summary with file count, token count, and output path.",
-		inputSchema: strictObject({
-			include: cappedString(
-				500,
-				"Glob patterns to include (e.g. '**/*.ts,src/**')",
-			).optional(),
-			exclude: cappedString(
-				500,
-				"Glob patterns to exclude (e.g. 'test/**,dist/**')",
-			).optional(),
-			compress: z
-				.boolean()
-				.describe("Use Tree-sitter compression (~70% token reduction)")
-				.optional()
-				.default(false),
-			style: z
-				.enum(["xml", "markdown", "json", "plain"])
-				.describe("Output format")
-				.optional()
-				.default("xml"),
-		}),
-	},
-	withLogging(
-		"pack_repository",
-		({ include, exclude, compress, style }) => {
-			ensureRepomixDir();
-			const outputPath = repomixOutputPath(style);
-
-			const args: string[] = [
-				"repomix",
-				"--output",
-				outputPath,
-				"--style",
-				style,
-			];
-			if (include) args.push("--include", include);
-			if (exclude) args.push("--ignore", exclude);
-			if (compress) args.push("--compress");
-
-			const proc = Bun.spawnSync(args, {
-				timeout: 60_000,
-				cwd: process.cwd(),
-			});
-
-			const stderr = new TextDecoder().decode(proc.stderr);
-			if (proc.exitCode !== 0) {
-				throw new Error(`repomix failed: ${stderr || "unknown error"}`);
-			}
-
-			// Parse summary from stderr (repomix outputs metrics to stderr)
-			const stdout = new TextDecoder().decode(proc.stdout);
-			const summary = stdout || stderr || "Pack complete";
-
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Repository packed → ${outputPath}\n\n${summary}`,
-					},
-				],
-			};
-		},
-	),
-);
-
-server.registerTool(
-	"grep_repomix_output",
-	{
-		description:
-			"Search the packed repository output using regex patterns. Requires pack_repository to have been run first.",
-		inputSchema: strictObject({
-			pattern: cappedString(500, "Regex pattern to search for"),
-			contextLines: boundedNumber(
-				0,
-				50,
-				"Number of context lines before and after each match",
-			).optional(),
-			ignoreCase: z
-				.boolean()
-				.describe("Perform case-insensitive matching")
-				.optional()
-				.default(false),
-		}),
-	},
-	withLogging("grep_repomix_output", ({ pattern, contextLines, ignoreCase }) => {
-		const outputPath = repomixOutputPath("xml");
-		if (!existsSync(outputPath)) {
-			return {
-				content: [
-					{
-						type: "text",
-						text: "No packed repository found. Run pack_repository first.",
-					},
-				],
-			};
-		}
-
-		const content = readFileSync(outputPath, "utf-8");
-		const lines = content.split("\n");
-		const regex = new RegExp(pattern, ignoreCase ? "gi" : "g");
-		const ctx = contextLines ?? 0;
-		const matches: string[] = [];
-
-		for (let i = 0; i < lines.length; i++) {
-			if (regex.test(lines[i]!)) {
-				regex.lastIndex = 0; // reset for next test
-				const start = Math.max(0, i - ctx);
-				const end = Math.min(lines.length - 1, i + ctx);
-				const snippet = lines
-					.slice(start, end + 1)
-					.map((line, idx) => {
-						const lineNum = start + idx + 1;
-						const marker = lineNum === i + 1 ? ">" : " ";
-						return `${marker} ${lineNum}: ${line}`;
-					})
-					.join("\n");
-				matches.push(snippet);
-			}
-		}
-
-		if (matches.length === 0) {
-			return {
-				content: [
-					{
-						type: "text",
-						text: `No matches found for pattern: ${pattern}`,
-					},
-				],
-			};
-		}
-
-		const result = `Found ${matches.length} match(es) for /\`${pattern}\`/\n\n${matches.join("\n\n---\n\n")}`;
-		return { content: [{ type: "text", text: result }] };
-	}),
-);
-
-server.registerTool(
-	"read_repomix_output",
-	{
-		description:
-			"Read the packed repository output file. Supports optional line range for large files.",
-		inputSchema: strictObject({
-			startLine: boundedNumber(
-				1,
-				1_000_000,
-				"Starting line number (1-based, inclusive)",
-			).optional(),
-			endLine: boundedNumber(
-				1,
-				1_000_000,
-				"Ending line number (1-based, inclusive)",
-			).optional(),
-		}),
-	},
-	withLogging("read_repomix_output", ({ startLine, endLine }) => {
-		const outputPath = repomixOutputPath("xml");
-		if (!existsSync(outputPath)) {
-			return {
-				content: [
-					{
-						type: "text",
-						text: "No packed repository found. Run pack_repository first.",
-					},
-				],
-			};
-		}
-
-		const content = readFileSync(outputPath, "utf-8");
-		const lines = content.split("\n");
-
-		const start = (startLine ?? 1) - 1; // convert to 0-based
-		const end = endLine ?? lines.length;
-		const selected = lines.slice(start, end);
-
-		return {
-			content: [
-				{
-					type: "text",
-					text: selected.join("\n"),
-				},
-			],
-		};
-	}),
-);
-
-registerResources(server, {
-	subscriptions,
-	projectRoot: process.cwd(),
-	getWorldState: async (): Promise<any> => {
-		try {
-			const res = await fetch(`${jabrUrl()}/.well-known/world-state`);
-			if (!res.ok) throw new Error(`Orchestrator returned ${res.status}`);
-			return await res.json();
-		} catch (e) {
-			console.error("[MCP tools] getWorldState failed:", e);
-			return {
-				timestamp: new Date().toISOString(),
-				agents: [],
-				error: `Could not fetch world state from Orchestrator: ${String(e)}`,
-			};
-		}
-	},
-	getTask: async (taskId: string) => {
-		const taskPath = join(process.cwd(), "memory", `task-${taskId}.json`);
-		if (!existsSync(taskPath)) {
-			return {
-				id: taskId,
-				status: "not_found",
-				error: `No task found with id "${taskId}"`,
-			};
-		}
-		try {
-			return JSON.parse(readFileSync(taskPath, "utf-8"));
-		} catch (e) {
-			console.error("[MCP tools] getTask failed:", e);
-			return {
-				id: taskId,
-				status: "error",
-				error: "Failed to parse task file",
-			};
-		}
-	},
-});
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error("MCP tool server running on stdio");
+⋮----
+function tokenize(expression: string): Token[]
+⋮----
+class Parser
+⋮----
+constructor(private tokens: Token[])
+⋮----
+private peek(): Token | undefined
+private next(): Token | undefined
+⋮----
+parse(): number
+⋮----
+private parseExpr(): number
+⋮----
+private parseTerm(): number
+⋮----
+private parsePower(): number
+⋮----
+private parseUnary(): number
+⋮----
+private parsePrimary(): number
+⋮----
+function safeCalculate(expression: string): number
+⋮----
+function ensureRepomixDir()
+⋮----
+function repomixOutputPath(style: string): string
 
 ================
-File: agents/run/designer.ts
+File: src/protocols/mcp/server/validation.ts
+================
+import { z } from "zod";
+⋮----
+export function cappedString(
+	maxLength: number,
+	description?: string,
+): z.ZodString
+⋮----
+export function strictObject<T extends z.ZodRawShape>(
+	shape: T,
+): z.ZodObject<T>
+⋮----
+export const safePath = (description?: string): z.ZodString =>
+⋮----
+export function boundedNumber(
+	min: number,
+	max: number,
+	description?: string,
+): z.ZodNumber
+
+================
+File: src/runtime/agents/designer.ts
 ================
 import { PollinationsImageAdapter } from "@adapters/pollinations-image";
 import { TaskMemory } from "@adapters/task-memory";
-import { DESIGNER_CARD, DesignerAgent } from "@core/designer";
+import { DESIGNER_CARD, DesignerAgent } from "../../core/designer.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { runAgent } from "./serve.ts";
-
-if (import.meta.main) {
-	const taskStore = new TaskMemory();
-	const apiKey = process.env.POLLINATIONS_API_KEY ?? "";
-	const imageGen = apiKey
-		? new PollinationsImageAdapter({ apiKey })
-		: undefined;
-	const agent = new DesignerAgent(taskStore, imageGen);
-
-	const realtime = createRealtimePort("Designer");
-
-	const lifecycle = initLifecycle(realtime, "designer", JABR_PORTS.designer);
-	lifecycle.announceOnline();
-
-	process.on("SIGTERM", () => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Designer] uncaught exception:`, e);
-	});
-
-	runAgent({
-		port: JABR_PORTS.designer,
-		card: DESIGNER_CARD,
-		execute: (taskId, text) => {
-			console.log(`[Run:Designer] dispatching design task ${taskId}`);
-			return agent.execute(taskId, text);
-		},
-		taskStore,
-	});
-}
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { runAgent } from "../serve.ts";
 
 ================
-File: agents/run/oracle.ts
+File: src/runtime/agents/explorer.ts
 ================
-import { HeadroomAdapter } from "@adapters/headroom";
+import { McpClientAdapter } from "@adapters/mcp/mcp-client";
+import { TaskMemory } from "@adapters/task-memory";
+import { EXPLORER_CARD, ExplorerAgent } from "../../core/explorer.ts";
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { runAgent } from "../serve.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
+
+================
+File: src/runtime/agents/fixer.ts
+================
+import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { ORACLE_CARD, OracleAgent } from "@core/oracle";
+import { FIXER_CARD, FixerAgent } from "../../core/fixer.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { runAgent } from "./serve.ts";
-
-if (import.meta.main) {
-	const taskStore = new TaskMemory();
-	const budget = new HeadroomAdapter();
-	const llm = createLlmAdapter(budget);
-	const agent = new OracleAgent(taskStore, new SkillFS("skills"), llm);
-
-	// --- Real-time event transport (shared with orchestrator) ---
-	// The orchestrator starts the adapter on port 4008; this runner connects
-	// to it by reading JABR_REALTIME_URL (set by jabr-cli when launching
-	// parallel agents) and using the shared adapter instance pattern is NOT
-	// possible across processes — so each runner starts its own adapter.
-	//
-	// To avoid port conflicts, runners only start the adapter when the env var
-	// is unset and this is the primary orchestrator-like entry point. For
-	// simplicity, we follow the same pattern as the orchestrator: start a
-	// local adapter and emit lifecycle events through it. Dashboards subscribe
-	// to the orchestrator's adapter; agent runners emit via HTTP POST to it.
-	//
-	// The cleanest cross-process approach: start the adapter here too, and let
-	// the orchestrator's adapter be the primary transport. But to keep things
-	// simple and avoid duplicate adapters, we rely on JABR_REALTIME_PORT from
-	// the orchestrator. When set, we skip starting a second adapter and instead
-	// emit via HTTP to the orchestrator's /emit endpoint.
-	const realtime = createRealtimePort("Oracle");
-
-	const lifecycle = initLifecycle(realtime, "oracle", JABR_PORTS.oracle);
-	lifecycle.announceOnline();
-
-	process.on("SIGTERM", () => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Oracle] uncaught exception:`, e);
-	});
-
-	runAgent({
-		port: JABR_PORTS.oracle,
-		card: ORACLE_CARD,
-		execute: (taskId, text) => {
-			console.log(`[Run:Oracle] dispatching task ${taskId}`);
-			return agent.execute(taskId, text);
-		},
-		taskStore,
-	});
-}
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { extractLastResponse, runAgent } from "../serve.ts";
 
 ================
-File: agents/run/scientist.ts
+File: src/runtime/agents/index.ts
 ================
-import { A2AServer } from "@adapters/http/a2a-server";
-import { McpClientAdapter } from "@adapters/mcp-client";
-import { ScientistAgent } from "@core/scientist";
-import { JABR_PORTS } from "@constants/ecosystem";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
 
-const port = JABR_PORTS.scientist;
-const mcpClient = new McpClientAdapter();
-const scientist = new ScientistAgent(mcpClient);
-
-const realtime = createRealtimePort("Scientist");
-
-const lifecycle = initLifecycle(realtime, "scientist", JABR_PORTS.scientist);
-lifecycle.announceOnline();
-
-process.on("SIGTERM", () => {
-	console.log("[Scientist] received SIGTERM, shutting down...");
-	server.shutdown().then(() => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-});
-process.on("SIGINT", () => {
-	console.log("[Scientist] received SIGINT, shutting down...");
-	server.shutdown().then(() => {
-		lifecycle.announceOffline();
-		process.exit(0);
-	});
-});
-process.on("uncaughtException", (e) => {
-	lifecycle.uncaughtHandler(e);
-	console.error(`[Scientist] uncaught exception:`, e);
-});
-
-const authToken = process.env.A2A_AUTH_TOKEN ?? undefined;
-const requireAuth =
-	Boolean(authToken) || process.env.A2A_REQUIRE_AUTH === "true";
-
-const server = new A2AServer({
-	port,
-	card: scientist.card,
-	requireAuth,
-	async onTask(message: string): Promise<string> {
-		const taskId = crypto.randomUUID();
-		console.log(`[Run:Scientist] received task ${taskId}`);
-		const result = await scientist.execute(taskId, message);
-		return result;
-	},
-});
-
-server.start();
 
 ================
-File: agents/run/jarvis.ts
+File: src/runtime/agents/jarvis.ts
 ================
-import { HeadroomAdapter } from "@adapters/headroom";
+import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { A2AServer } from "@adapters/http/a2a-server";
 import { createLlmAdapter } from "@adapters/llm/factory";
-import { McpClientAdapter } from "@adapters/mcp-client";
+import { McpClientAdapter } from "@adapters/mcp/mcp-client";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { Search9Router } from "@adapters/search-9router";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
 import { jabrUrl, jabrUrlForPort } from "@config/jabr-config";
-import { JARVIS_CARD, JarvisAgent } from "@core/jarvis";
+import { JARVIS_CARD, JarvisAgent } from "../../core/jarvis.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
-import { initLifecycle } from "./lifecycle.ts";
-import { createRealtimePort } from "./realtime.ts";
-import { extractLastResponse } from "./serve.ts";
-
-if (import.meta.main) {
-	const port = JABR_PORTS.jarvis;
-	const budget = new HeadroomAdapter();
-	const llm = createLlmAdapter(budget);
-	const search = new Search9Router();
-	const mcp = new McpClientAdapter();
-	const skills = new SkillFS("skills");
-	const palace = new MemPalaceAdapter();
-	const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
-	const taskStore = new TaskMemory();
-
-	const agentEndpoint = jabrUrl();
-
-	const jarvis = new JarvisAgent(
-		taskStore,
-		llm,
-		search,
-		mcp,
-		skills,
-		palace,
-		budget,
-		kanban,
-		agentEndpoint,
-	);
-
-	const realtime = createRealtimePort("Jarvis");
-
-	const lifecycle = initLifecycle(realtime, "jarvis", JABR_PORTS.jarvis);
-	lifecycle.announceOnline();
-	process.on("uncaughtException", (e) => {
-		lifecycle.uncaughtHandler(e);
-		console.error(`[Jarvis] uncaught exception:`, e);
-	});
-
-	const server = new A2AServer({
-		port,
-		card: { ...JARVIS_CARD, url: jabrUrlForPort(port) },
-		async onTask(text: string): Promise<string> {
-			const taskId = crypto.randomUUID();
-			console.log(`[Run:Jarvis] received task ${taskId}`);
-			taskStore.create(taskId);
-			await jarvis.execute(taskId, text);
-			return extractLastResponse(taskStore, taskId);
-		},
-	});
-
-	server.start();
-
-	const shutdown = () => {
-		console.log("[Jarvis] received signal, shutting down...");
-		server.shutdown().then(() => {
-			lifecycle.announceOffline();
-			process.exit(0);
-		});
-	};
-	process.on("SIGINT", shutdown);
-	process.on("SIGTERM", shutdown);
-}
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { extractLastResponse } from "../serve.ts";
+⋮----
+async onTask(text: string): Promise<string>
+⋮----
+const shutdown = () =>
 
 ================
-File: agents/run/orchestrator.ts
+File: src/runtime/agents/librarian.ts
 ================
-import { A2AClient } from "@adapters/a2a-client";
-import { startBunWebSocketAdapter } from "@adapters/bun-websocket-adapter.ts";
-import { HeadroomAdapter } from "@adapters/headroom";
+import { createLlmAdapter } from "@adapters/llm/factory";
+import { MemPalaceAdapter } from "@adapters/mem-palace";
+import { Search9Router } from "@adapters/search-9router";
+import { SkillFS } from "@adapters/skill-fs";
+import { TaskMemory } from "@adapters/task-memory";
+import { LIBRARIAN_CARD, LibrarianAgent } from "../../core/librarian.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
+import type { LlmPort } from "@ports/llm-port";
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { runAgent } from "../serve.ts";
+⋮----
+function shouldWireLlm(): boolean
+⋮----
+function createLlm(): LlmPort
+
+================
+File: src/runtime/agents/oracle.ts
+================
+import { HeadroomAdapter } from "@adapters/headroom/headroom";
+import { createLlmAdapter } from "@adapters/llm/factory";
+import { SkillFS } from "@adapters/skill-fs";
+import { TaskMemory } from "@adapters/task-memory";
+import { ORACLE_CARD, OracleAgent } from "../../core/oracle.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { runAgent } from "../serve.ts";
+
+================
+File: src/runtime/agents/scientist.ts
+================
+import { A2AServer } from "@adapters/http/a2a-server";
+import { McpClientAdapter } from "@adapters/mcp/mcp-client";
+import { ScientistAgent } from "../../core/scientist.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+⋮----
+async onTask(message: string): Promise<string>
+
+================
+File: src/runtime/agents/verification.ts
+================
+import { SkillFS } from "@adapters/skill-fs";
+import { TaskMemory } from "@adapters/task-memory";
+import { VERIFICATION_CARD, VerificationAgent } from "../../core/verification.ts";
+import { JABR_PORTS } from "@constants/ecosystem";
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+import { runAgent } from "../serve.ts";
+
+================
+File: src/runtime/acp-bridge.ts
+================
+import { StdioBridge } from "@adapters/http/stdio-bridge";
+import { openJabrDb } from "@adapters/sqlite-db";
+import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
+import { jabrUrl } from "@config/jabr-config";
+import { join } from "node:path";
+
+================
+File: src/runtime/lifecycle.ts
+================
+import type {
+	AgentCompletePayload,
+	AgentErrorPayload,
+	AgentStartPayload,
+	DomainEventBus,
+} from "@ports/plugin-event-bus.types";
+import type { RealtimePort } from "@ports/realtime-port";
+⋮----
+export function initLifecycle(
+	realtime: RealtimePort,
+	agentName: string,
+	port?: number,
+	bus?: DomainEventBus,
+):
+⋮----
+const announceOnline = () =>
+⋮----
+const announceOffline = () =>
+⋮----
+const uncaughtHandler = (e: unknown) =>
+⋮----
+const onUnhandledRejection = (reason: unknown) =>
+⋮----
+const cleanup = () =>
+⋮----
+function sanitizeError(err: unknown): AgentErrorPayload["error"]
+⋮----
+function isRecoverable(err: unknown): boolean
+⋮----
+export function bridgeRealtimeToPlugin(
+	realtime: RealtimePort,
+	bus: DomainEventBus,
+): void
+
+================
+File: src/runtime/orchestrator.ts
+================
+import { A2AClient } from "@adapters/a2a/client";
+import { startBunWebSocketAdapter } from "@adapters/websocket/bun-websocket-adapter.ts";
+import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { A2AServer } from "@adapters/http/a2a-server";
 import { GitHubWebhookAdapter } from "@adapters/http/github-webhook.ts";
@@ -1871,243 +370,56 @@ import { X402Client } from "@adapters/x402/x402-client";
 import { X402Server } from "@adapters/x402/x402-server";
 import type { ResolvedCaller } from "@agents/types";
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
-import { ORCHESTRATOR_CARD, OrchestratorAgent } from "@core/orchestrator";
-import { type AgentConfig, ToolRouter } from "@core/tool-router";
+import { ORCHESTRATOR_CARD, OrchestratorAgent } from "../core/orchestrator.ts";
+import { type AgentConfig, ToolRouter } from "../core/tool-router.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
-import { ApiKeyRegistry } from "@security/api-key-registry";
+import { ApiKeyRegistry } from "../security/api-key-registry.ts";
 import { bridgeRealtimeToPlugin, initLifecycle } from "./lifecycle.ts";
+import { verbose } from "@utils/logger";
+⋮----
+async onTask(text: string, caller?: ResolvedCaller): Promise<string>
+async onWorldState()
+⋮----
+const shutdown = () =>
 
-if (import.meta.main) {
-	const PORT = JABR_PORTS.orchestrator;
+================
+File: src/runtime/realtime.ts
+================
+import { startBunWebSocketAdapter } from "@adapters/websocket/bun-websocket-adapter";
+import { jabrUrlForPort } from "@config/jabr-config";
+import { JABR_PORTS } from "@constants/ecosystem";
+import type { RealtimePort } from "@ports/realtime-port";
+⋮----
+export function createRealtimePort(
+	name: string,
+	fallbackPort: number = JABR_PORTS.realtime,
+): RealtimePort
 
-	// --- Settlement infrastructure ---
-	if (!process.env.JABR_X402_HMAC_SECRET) {
-		console.error(
-			"Fatal: JABR_X402_HMAC_SECRET environment variable is required",
-		);
-		process.exit(1);
-	}
-
-	const ledger = new SettlementLedger({
-		hmacSecret: process.env.JABR_X402_HMAC_SECRET,
-		chainEndpoint: process.env.JABR_X402_CHAIN_ENDPOINT ?? undefined,
-		defaultAutoRefillThreshold:
-			Number(process.env.JABR_X402_AUTO_REFILL_THRESHOLD) || 0,
-		defaultAutoRefillAmount:
-			Number(process.env.JABR_X402_AUTO_REFILL_AMOUNT) || 0,
-	});
-	const x402Client = new X402Client({
-		ledger,
-		delegatorUrl: jabrUrlForPort(PORT),
-		defaultCurrency: process.env.JABR_X402_CURRENCY ?? undefined,
-	});
-	const x402Server = new X402Server(ledger, jabrUrlForPort(PORT));
-
-	const budget = new HeadroomAdapter();
-	const rateLimiter = new RateLimiter();
-	const registryClient = new A2AClient(budget);
-	const db = openJabrDb(); // memory/jabr.db
-	const taskStore = new SqliteTaskStore(db);
-	const memory = new SqliteMemoryStore(db, { mirrorFile: null }); // sqlite is source of truth; no .md mirror
-	const llmPort = createLlmAdapter(budget);
-
-	// Real-time event transport: native Bun WebSocket server on port 4008.
-	// Clients subscribe to task-scoped rooms (task-{id}) to receive lifecycle
-	// events (task:created, task:progress, task:completed, task:failed).
-	const realtime: RealtimePort = startBunWebSocketAdapter({ port: JABR_PORTS.realtime });
-
-	// --- Plugin event bus ---
-	// Canonical domain event bus (in-process pub/sub). Emits lifecycle payloads
-	// alongside the RealtimePort transport layer.
-	const pluginEventBus = new PluginEventBusImpl({
-		onError: (error, eventName, subscriptionId) => {
-			console.error(
-				`[PluginEventBus] handler for "${eventName}" (${subscriptionId}) threw:`,
-				error,
-			);
-		},
-	});
-
-	// Bridge realtime transport events to plugin bus (wire → plugin projection).
-	bridgeRealtimeToPlugin(realtime, pluginEventBus);
-
-	// Wire orchestrator lifecycle events — agent:online on start, agent:offline
-	// on SIGINT/SIGTERM, agent:error on uncaught exceptions and unhandled rejections.
-	const orchestratorLifecycle = initLifecycle(
-		realtime,
-		"orchestrator",
-		PORT,
-		pluginEventBus,
-	);
-	orchestratorLifecycle.announceOnline();
-	process.on("uncaughtException", (e) => {
-		orchestratorLifecycle.uncaughtHandler(e);
-		console.error(`[Run:Orchestrator] uncaught exception:`, e);
-	});
-
-	// --- Static agent config (replaces DynamicRegistry per YAGNI) ---
-	// The Dispatcher discovers agents at boot by fetching their Agent Cards
-	// from well-known endpoints. The resulting static config is passed to
-	// ToolRouter, which handles all routing, URL resolution, and pricing
-	// without any async discovery protocol or health checks.
-	const seedUrls: Record<string, string> = {
-		jarvis: jabrUrlForPort(JABR_PORTS.jarvis),
-		oracle: jabrUrlForPort(JABR_PORTS.oracle),
-		librarian: jabrUrlForPort(JABR_PORTS.librarian),
-		explorer: jabrUrlForPort(JABR_PORTS.explorer),
-		designer: jabrUrlForPort(JABR_PORTS.designer),
-		fixer: jabrUrlForPort(JABR_PORTS.fixer),
-		scientist: jabrUrlForPort(JABR_PORTS.scientist),
-		verification: jabrUrlForPort(JABR_PORTS.verification),
-	};
-
-	// Fetch agent cards and build static config. The x402Server is wired from
-	// these cards (pricing metadata) — no DynamicRegistry needed.
-	const agentConfigs: AgentConfig[] = [];
-	for (const [name, url] of Object.entries(seedUrls)) {
-		const card = await registryClient.fetchCard(url);
-		if (!card) {
-			console.warn(
-				`[Run:Orchestrator] failed to fetch card for ${name} from ${url}`,
-			);
-			continue;
-		}
-		console.log(`[Run:Orchestrator] loaded card for ${card.name} from ${url}`);
-		agentConfigs.push({ name, url, card });
-
-		// Wire agent card into x402 server so it knows which agents expect payment.
-		if (card.pricing?.settlement !== undefined) {
-			x402Server.updateFromCard(card, card.pricing.settlement);
-		}
-	}
-
-	// Build agent map for ToolRouter.
-	const agentMap: Record<string, AgentConfig> = {};
-	for (const cfg of agentConfigs) {
-		agentMap[cfg.name] = cfg;
-	}
-
-	const palace = new MemPalaceAdapter();
-	const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
-
-	const toolRouter = new ToolRouter({
-		agents: agentMap,
-		registry: registryClient,
-		x402Client,
-		budget,
-		memory,
-		knowledge: palace,
-		kanban,
-		realtime,
-		pluginEventBus,
-	});
-
-	const agent = new OrchestratorAgent(toolRouter, taskStore, memory);
-
-	// --- API key registry (per-key authentication + ACL) ---
-	// Loads keys from JSON env var A2A_API_KEYS. Each entry is:
-	//   { key: string, description: string, allowedAgents: string[], enabled?: boolean }
-	// Empty allowedAgents = wildcard (all agents).
-	let apiKeyRegistry: ApiKeyRegistry | undefined;
-	const keysJson = process.env.A2A_API_KEYS;
-	if (keysJson) {
-		try {
-			const entries = JSON.parse(keysJson);
-			apiKeyRegistry = new ApiKeyRegistry(entries);
-			console.log(
-				`[Run:Orchestrator] loaded ${entries.length} API key(s) from A2A_API_KEYS`,
-			);
-		} catch (e) {
-			console.error(`[Run:Orchestrator] failed to parse A2A_API_KEYS: ${e}`);
-			process.exit(1);
-		}
-	}
-
-	// Auth is mandatory at the orchestrator boundary. Refuse to start
-	// without a configured registry or legacy token so the endpoint is never
-	// accidentally exposed without authentication.
-	const requireAuth = true;
-	const legacyToken = process.env.A2A_AUTH_TOKEN;
-	if (!apiKeyRegistry && !legacyToken) {
-		console.error(
-			"Fatal: A2A_API_KEYS or A2A_AUTH_TOKEN environment variable is required to start the orchestrator",
-		);
-		process.exit(1);
-	}
-
-	// Legacy single-token mode: build a registry with one wildcard key.
-	if (!apiKeyRegistry && legacyToken) {
-		console.warn(
-			"[Run:Orchestrator] using legacy A2A_AUTH_TOKEN (single shared token, consider migrating to A2A_API_KEYS)",
-		);
-		apiKeyRegistry = new ApiKeyRegistry([
-			{
-				key: legacyToken,
-				description: "legacy-shared-token",
-				allowedAgents: [],
-				enabled: true,
-			},
-		]);
-	}
-
-	// GitHub webhook adapter: receives X-Hub-Signature-256-verified events on port
-	// 4007 and delegates them to the orchestrator over A2A. The webhook secret and
-	// a GitHub PAT (for comment / check-run actions) are read from env so the
-	// adapter stays usable in CI without local secrets.
-	const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET ?? "change-me";
-	const ghToken = process.env.GITHUB_TOKEN ?? undefined;
-	const ghDelegate =
-		process.env.GITHUB_WEBHOOK_DELEGATE_URL ?? jabrUrlForPort(PORT);
-	const githubWebhook = new GitHubWebhookAdapter({
-		webhookSecret,
-		token: ghToken,
-		port: JABR_PORTS.githubWebhook,
-		delegateUrl: ghDelegate,
-		defaultRepo: process.env.GITHUB_REPO ?? "omnizya/jabr",
-	});
-	githubWebhook.start();
-
-	const server = new A2AServer(
-		{
-			port: PORT,
-			card: { ...ORCHESTRATOR_CARD, url: jabrUrlForPort(PORT) },
-			apiKeyRegistry,
-			requireAuth,
-			async onTask(text: string, caller?: ResolvedCaller): Promise<string> {
-				const taskId = crypto.randomUUID();
-				console.log(`[Run:Orchestrator] received task ${taskId}`);
-				taskStore.create(taskId);
-				await agent.execute(taskId, text, caller);
-				const task = taskStore.get(taskId);
-				const lastMsg = task?.messages.filter((m) => m.role === "agent").pop();
-				return (
-					lastMsg?.parts.find((p) => p.kind === "text")?.text ?? "No response"
-				);
-			},
-			async onWorldState() {
-				return agent.getWorldState();
-			},
-		},
-		rateLimiter,
-		x402Server,
-		apiKeyRegistry,
-	);
-
-	server.start();
-
-	const shutdown = () => {
-		console.log("[Orchestrator] received signal, shutting down...");
-		server.shutdown().then(() => {
-			orchestratorLifecycle.announceOffline();
-			process.exit(0);
-		});
-	};
-	process.on("SIGINT", shutdown);
-	process.on("SIGTERM", shutdown);
-}
+================
+File: src/runtime/serve.ts
+================
+import { A2AServer } from "@adapters/http/a2a-server";
+import { TaskMemory } from "@adapters/task-memory";
+import type { AgentCard, TaskStreamingEvent } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import type { TaskStorePort } from "@ports/task-store";
+import { ApiKeyRegistry } from "../security/api-key-registry";
+import { verbose } from "@utils/logger";
+⋮----
+export function extractLastResponse(
+	taskStore: TaskStorePort,
+	taskId: string,
+): string
+⋮----
+export function runAgent(config: {
+	port: number;
+	card: AgentCard;
+execute: (taskId: string, text: string)
+⋮----
+const onSignal = () =>
 
 
 

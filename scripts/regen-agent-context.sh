@@ -19,19 +19,19 @@ rm -f "$OUT"/*.txt "$OUT"/INDEX.md
 
 echo "📦 Packing core (domain logic + ports)..."
 "$REPO" --style plain --output-file-path-style target-relative \
-  --include "agents/core/**/*.ts,agents/ports/**/*.ts,agents/types.ts" \
+  --include "src/core/**/*.ts,src/ports/**/*.ts,src/types/**/*.ts" \
   --header-text "$HEADER_PREFIX\nCore Domain Logic — hexagonal ports & adapters. ZERO infrastructure imports in core." \
   --output "$OUT/core.txt" --quiet
 
 echo "📦 Packing adapters (infrastructure implementations)..."
 "$REPO" --style plain --output-file-path-style target-relative \
-  --include "agents/adapters/**/*.ts,agents/security/**/*.ts,agents/data/**/*.ts" \
+  --include "src/adapters/**/*.ts,src/security/**/*.ts" \
   --header-text "$HEADER_PREFIX\nAdapters & Security — concrete port implementations. All I/O lives here." \
   --output "$OUT/adapters.txt" --quiet
 
 echo "📦 Packing composition roots + MCP server..."
 "$REPO" --style plain --output-file-path-style target-relative \
-  --include "agents/run/**/*.ts,mcp-servers/**/*.ts" \
+  --include "src/runtime/**/*.ts,src/protocols/mcp/**/*.ts" \
   --header-text "$HEADER_PREFIX\nComposition Roots & MCP Server — wiring layer. No business logic." \
   --output "$OUT/composition.txt" --quiet
 
@@ -49,7 +49,7 @@ echo "📦 Packing tests..."
 
 echo "📦 Packing config + docs..."
 "$REPO" --style plain --output-file-path-style target-relative \
-  --include "package.json,tsconfig.json,biome.json,bunfig.toml,AGENTS.md,CANONICAL.md,CHANGELOG.md,TODO.md,README.md,docs/**/*.md" \
+  --include "package.json,tsconfig.json,biome.json,bunfig.toml,AGENTS.md,TODO.md,README.md,docs/**/*.md" \
   --header-text "$HEADER_PREFIX\nConfig + Docs — project manifest, architecture, changelog." \
   --output "$OUT/config.txt" --quiet
 
@@ -110,16 +110,18 @@ echo "📝 Building INDEX.md..."
   echo "## Architecture Cheat Sheet"
   echo ""
   echo '```'
-  echo "agents/"
+  echo "src/"
   echo "├── core/          # Domain logic — ZERO infrastructure imports"
   echo "├── ports/         # Interfaces (import type only)"
   echo "├── adapters/      # Concrete implementations"
-  echo "├── types.ts       # Shared types"
+  echo "├── types/         # Shared types"
   echo "├── utils/         # JSON-RPC, CORS helpers"
-  echo "└── run/           # Composition roots (wire ports → core)"
-  echo "mcp-servers/       # MCP tool server (stdio)"
+  echo "├── constants/     # Canonical ports and paths"
+  echo "├── config/        # Env manager"
+  echo "├── security/      # x402, JWT, auth"
+  echo "├── protocols/     # A2A + MCP servers"
+  echo "└── runtime/       # Composition roots (wire ports → core)"
   echo "scripts/           # CLI, build, maintenance"
-  echo "src/               # Shared config + constants"
   echo '```'
 } > "$OUT/INDEX.md"
 

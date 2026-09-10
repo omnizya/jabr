@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { TaskMemory } from "@adapters/task-memory";
 import { decodeHandover, HANDOVER_MARKER } from "@agents/types";
-import { OracleAgent } from "@core/oracle";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
+import { OracleAgent } from "../src/core/oracle";
 
 const stubSkills: SkillStorePort = {
 	save: () => false,

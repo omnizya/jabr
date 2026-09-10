@@ -12,10 +12,10 @@
 import { describe, expect, test } from "bun:test";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { FIXER_CARD, FixerAgent } from "@core/fixer";
 import type { LlmPort, LlmRequest, LlmResponse } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 
 const INPUT = "fix the login flow bug";
 

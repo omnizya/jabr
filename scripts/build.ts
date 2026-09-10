@@ -9,7 +9,8 @@
  *   bun run build -- --list  # list available targets
  *
  * Binary names match the package.json `scripts` keys where applicable so the
- * compiled executables are drop-in replacements for `bun agents/run/<x>.ts`.
+ * compiled executables are drop-in replacements for the `bun ...` scripts in
+ * package.json.
  */
 
 import { mkdir, rename } from "node:fs/promises";
@@ -21,22 +22,22 @@ const OUT_DIR = join(ROOT, "dist", "bin");
 /**
  * name -> entry point (relative to repo root).
  *
- * `agents/run/*.ts` are the A2A/ACP agent composition roots; `mcp` and `cli`
+ * `src/runtime/*.ts` are the A2A/ACP agent composition roots; `mcp` and `cli`
  * are the tooling entry points. `lifecycle.ts` and `serve.ts` are shared
  * modules, not entry points, so they are intentionally excluded.
  */
 const TARGETS: Record<string, string> = {
-	orchestrator: "agents/run/orchestrator.ts",
-	oracle: "agents/run/oracle.ts",
-	librarian: "agents/run/librarian.ts",
-	explorer: "agents/run/explorer.ts",
-	designer: "agents/run/designer.ts",
-	fixer: "agents/run/fixer.ts",
-	jarvis: "agents/run/jarvis.ts",
-	scientist: "agents/run/scientist.ts",
-	verification: "agents/run/verification.ts",
-	"acp-bridge": "agents/run/acp-bridge.ts",
-	mcp: "mcp-servers/tools.ts",
+	orchestrator: "src/runtime/orchestrator.ts",
+	oracle: "src/runtime/agents/oracle.ts",
+	librarian: "src/runtime/agents/librarian.ts",
+	explorer: "src/runtime/agents/explorer.ts",
+	designer: "src/runtime/agents/designer.ts",
+	fixer: "src/runtime/agents/fixer.ts",
+	jarvis: "src/runtime/agents/jarvis.ts",
+	scientist: "src/runtime/agents/scientist.ts",
+	verification: "src/runtime/agents/verification.ts",
+	"acp-bridge": "src/runtime/acp-bridge.ts",
+	mcp: "src/protocols/mcp/server/tools.ts",
 	cli: "scripts/jabr-cli.ts",
 };
 

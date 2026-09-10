@@ -16,7 +16,7 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts`
 
 | Document | Purpose |
 |----------|---------|
-| **[CANONICAL.md](./CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
+| **[CANONICAL.md](./docs/CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
 | **[TODO.md](./TODO.md)** | Task tracker — completed work + future phases |
 | **[R&D Roadmap](./docs/rd-roadmap.md)** | R&D opportunities from the dependency stack + opensrc source exploration |
 | **[AGENTS.md](./AGENTS.md)** | Agent-specific notes (internal) |
@@ -39,7 +39,7 @@ bun run explorer     # 4003
 bun run designer     # 4004
 bun run fixer        # 4005
 bun run jarvis       # 1337
-bun agents/run/scientist.ts # 4006 (no script)
+bun src/runtime/agents/scientist.ts # 4006 (no script)
 
 # Type check
 bun run typecheck
@@ -56,17 +56,17 @@ bun run demo
 ## Architecture
 
 ```
-agents/
+src/
 ├── core/              # Domain logic — zero infrastructure imports
 ├── ports/             # Interfaces (type-only)
 ├── adapters/          # Concrete implementations
-├── run/               # Composition roots (wire ports → core)
-└── types.ts           # A2A v1.0 types
+├── runtime/           # Composition roots (wire ports → core)
+└── types/             # A2A v1.0 types
 
-mcp-servers/tools.ts   # MCP server (world-state, tasks, skills, memory)
+src/protocols/mcp/server/tools.ts   # MCP server (world-state, tasks, skills, memory)
 ```
 
-**Rule:** `core` never imports `adapters`. `adapters` implement `ports`. `run` wires everything.
+**Rule:** `core` never imports `adapters`. `adapters` implement `ports`. `runtime` wires everything.
 
 ---
 
@@ -93,7 +93,7 @@ mcp-servers/tools.ts   # MCP server (world-state, tasks, skills, memory)
 - **A2A** (HTTP JSON-RPC) — Agent ↔ Agent delegation
 - **MCP** (stdio) — Agent ↔ Tool integration
 
-See [CANONICAL.md](./CANONICAL.md) for full protocol details.
+See [CANONICAL.md](./docs/CANONICAL.md) for full protocol details.
 
 ---
 
@@ -119,7 +119,7 @@ See [CANONICAL.md](./CANONICAL.md) for full protocol details.
 ## Supported LLM Providers
 
 The agent system is **provider-agnostic**. LLM adapters are selected through
-`createLlmAdapter()` in `agents/adapters/llm/factory.ts`; the default requires
+`createLlmAdapter()` in `src/adapters/llm/factory.ts`; the default requires
 no billing. Each provider is opt-in via environment variables.
 
 | Provider | Adapter | Select with | Default model | Notes |
@@ -134,7 +134,7 @@ Selection logic (in `createLlmAdapter`):
 3. Otherwise → **9Router (OpenRouter)**.
 
 To add a new provider, implement the `LlmPort` interface
-(`agents/ports/llm-port.ts`) as an adapter under `agents/adapters/llm/`, then
+(`src/ports/llm-port.ts`) as an adapter under `src/adapters/llm/`, then
 extend the selection logic in `factory.ts`.
 
 ---
@@ -147,7 +147,7 @@ extend the selection logic in `factory.ts`.
     "jabr": {
       "type": "custom",
       "command": "bun",
-      "args": ["agents/run/acp-bridge.ts"],
+      "args": ["src/runtime/acp-bridge.ts"],
       "default_mode": "base"
     }
   }
@@ -184,7 +184,7 @@ extend the selection logic in `factory.ts`.
 ## Contributing
 
 **Before contributing:**
-1. Read [CANONICAL.md](./CANONICAL.md)
+1. Read [CANONICAL.md](./docs/CANONICAL.md)
 2. Run `bun run typecheck` — must pass
 3. Run `bun test` — must pass
 4. Follow conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`)

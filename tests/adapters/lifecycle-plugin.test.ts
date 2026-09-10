@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventMap } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
-import { initLifecycle } from "@run/lifecycle";
+import { initLifecycle } from "../../src/runtime/lifecycle";
 
 describe("initLifecycle with plugin bus", () => {
 	let emitted: Array<{
