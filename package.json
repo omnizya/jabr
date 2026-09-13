@@ -27,6 +27,7 @@
 		"demo": "bun run --parallel scripts/demo.ts",
 		"scientist": "bun src/runtime/agents/scientist.ts",
 		"verification": "bun src/runtime/agents/verification.ts",
+		"llm": "bun src/runtime/agents/llm.ts",
 		"dev": "bash scripts/dev.sh",
 		"cli": "bun scripts/jabr-cli.ts",
 		"build": "bun scripts/build.ts",

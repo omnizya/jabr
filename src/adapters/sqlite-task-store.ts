@@ -1,7 +1,8 @@
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { initSchema } from "@adapters/sqlite-db";
 import type { A2AMessage, A2APart } from "@agents/types";
-import type { Task, TaskStorePort } from "@ports/task-store";
+import type { Task, TaskFilter, TaskStorePort } from "@ports/task-store";
+import type { Task as A2ATask } from "../types/a2a-v1.ts";
 
 export class SqliteTaskStore implements TaskStorePort {
 	private readonly db: Database;
@@ -16,6 +17,10 @@ export class SqliteTaskStore implements TaskStorePort {
 	private readonly stmtListByState;
 	private readonly stmtRecordTransition;
 	private readonly stmtGetTransitions;
+	private readonly stmtListTasks;
+
+	// Subscriptions for real-time updates
+	private readonly subscriptions = new Map<string, Set<(task: Task) => void>>();
 
 	constructor(db: Database) {
 		db.exec("PRAGMA foreign_keys = ON");
@@ -53,6 +58,9 @@ export class SqliteTaskStore implements TaskStorePort {
 		);
 		this.stmtGetTransitions = db.query(
 			`SELECT from_state, to_state, timestamp FROM task_transitions WHERE task_id = ? ORDER BY id`,
+		);
+		this.stmtListTasks = db.query(
+			`SELECT id, state, created_at, updated_at FROM tasks ORDER BY created_at`,
 		);
 	}
 
@@ -136,6 +144,12 @@ export class SqliteTaskStore implements TaskStorePort {
 		}
 		const now = new Date().toISOString();
 		this.stmtUpdateState.run(state, now, taskId);
+
+		// Notify subscribers
+		const task = this.reconstruct(taskId);
+		if (task) {
+			this.notifySubscribers(taskId, task);
+		}
 	}
 
 	appendMessage(taskId: string, message: A2AMessage): void {
@@ -154,6 +168,12 @@ export class SqliteTaskStore implements TaskStorePort {
 			now,
 			taskId,
 		);
+
+		// Notify subscribers
+		const task = this.reconstruct(taskId);
+		if (task) {
+			this.notifySubscribers(taskId, task);
+		}
 	}
 
 	appendArtifact(
@@ -168,6 +188,12 @@ export class SqliteTaskStore implements TaskStorePort {
 			now,
 			taskId,
 		);
+
+		// Notify subscribers
+		const task = this.reconstruct(taskId);
+		if (task) {
+			this.notifySubscribers(taskId, task);
+		}
 	}
 
 	listByState(state: Task["state"]): Task[] {
@@ -178,6 +204,79 @@ export class SqliteTaskStore implements TaskStorePort {
 		return rows
 			.map((r) => this.reconstruct(r.id))
 			.filter((t): t is Task => t !== undefined);
+	}
+
+	list(filter?: TaskFilter): Task[] {
+		let query = `SELECT id, state, created_at, updated_at FROM tasks`;
+		const params: SQLQueryBindings[] = [];
+
+		const conditions: string[] = [];
+		if (filter?.status) {
+			conditions.push(`state = ?`);
+			params.push(filter.status);
+		}
+		if (filter?.contextId) {
+			// We don't store contextId in tasks table, so we'd need to join with messages
+			// For now, we'll skip this filter as it's not in the schema
+		}
+
+		if (conditions.length > 0) {
+			query += ` WHERE ` + conditions.join(` AND `);
+		}
+
+		query += ` ORDER BY created_at`;
+
+		if (filter?.pageSize) {
+			query += ` LIMIT ?`;
+			params.push(filter.pageSize);
+		}
+
+		const stmt = this.db.query(query);
+		const rows = stmt.all(...params) as Array<{
+			id: string;
+			state: Task["state"];
+		}>;
+
+		return rows
+			.map((r) => this.reconstruct(r.id))
+			.filter((t): t is Task => t !== undefined);
+	}
+
+	subscribe(taskId: string, cb: (task: Task) => void): () => void {
+		if (!this.subscriptions.has(taskId)) {
+			this.subscriptions.set(taskId, new Set());
+		}
+		this.subscriptions.get(taskId)!.add(cb);
+
+		// Immediately emit current task state
+		const task = this.reconstruct(taskId);
+		if (task) {
+			cb(task);
+		}
+
+		// Return unsubscribe function
+		return () => {
+			const subs = this.subscriptions.get(taskId);
+			if (subs) {
+				subs.delete(cb);
+				if (subs.size === 0) {
+					this.subscriptions.delete(taskId);
+				}
+			}
+		};
+	}
+
+	private notifySubscribers(taskId: string, task: Task): void {
+		const subs = this.subscriptions.get(taskId);
+		if (subs) {
+			for (const cb of subs) {
+				try {
+					cb(task);
+				} catch (e) {
+					console.error(`[SqliteTaskStore] subscriber callback error: ${e}`);
+				}
+			}
+		}
 	}
 
 	getTransitionHistory(

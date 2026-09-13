@@ -91,6 +91,7 @@ function makeOfflineRegistry(): AgentRegistryPort {
 				version: "1.0.0",
 				capabilities: {},
 				skills: SKILLS[name] ?? [],
+				supportedInterfaces: [],
 			};
 		},
 		async delegateTask() {
@@ -179,6 +180,7 @@ describe("DynamicRegistry.discoverWithRetry", () => {
 					version: "1.0.0",
 					capabilities: {},
 					skills: SKILLS[name] ?? [],
+					supportedInterfaces: [],
 				};
 			},
 			async delegateTask() {
@@ -219,6 +221,7 @@ describe("DynamicRegistry.discoverWithRetry", () => {
 					version: "1.0.0",
 					capabilities: {},
 					skills: SKILLS[name] ?? [],
+					supportedInterfaces: [],
 				};
 			},
 			async delegateTask() {

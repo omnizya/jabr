@@ -1,5 +1,6 @@
 import type { A2AMessage, A2APart } from "@agents/types";
-import type { Task, TaskStorePort } from "@ports/task-store";
+import type { Task, TaskFilter, TaskStorePort } from "@ports/task-store";
+import type { Task as A2ATask } from "../types/a2a-v1.ts";
 
 export class TaskMemory implements TaskStorePort {
 	private tasks = new Map<string, Task>();
@@ -7,6 +8,7 @@ export class TaskMemory implements TaskStorePort {
 		string,
 		Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }>
 	>();
+	private subscriptions = new Map<string, Set<(task: Task) => void>>();
 
 	create(taskId: string): Task {
 		const task: Task = {
@@ -32,13 +34,17 @@ export class TaskMemory implements TaskStorePort {
 				this.transitions.get(taskId)?.push({ from, to: state, timestamp: now });
 			}
 			task.state = state;
+			this.notifySubscribers(taskId, task);
 		} else
 			console.error(`[TaskMemory] updateState failed: unknown task ${taskId}`);
 	}
 
 	appendMessage(taskId: string, message: A2AMessage): void {
 		const task = this.tasks.get(taskId);
-		if (task) task.messages.push(message);
+		if (task) {
+			task.messages.push(message);
+			this.notifySubscribers(taskId, task);
+		}
 	}
 
 	appendArtifact(
@@ -46,11 +52,70 @@ export class TaskMemory implements TaskStorePort {
 		artifact: { name: string; parts: A2APart[] },
 	): void {
 		const task = this.tasks.get(taskId);
-		if (task) task.artifacts.push(artifact);
+		if (task) {
+			task.artifacts.push(artifact);
+			this.notifySubscribers(taskId, task);
+		}
 	}
 
 	listByState(state: Task["state"]): Task[] {
 		return [...this.tasks.values()].filter((t) => t.state === state);
+	}
+
+	list(filter?: TaskFilter): Task[] {
+		let tasks = [...this.tasks.values()];
+
+		if (filter?.status) {
+			tasks = tasks.filter((t) => t.state === filter.status);
+		}
+		if (filter?.contextId) {
+			// Filter by contextId in messages
+			tasks = tasks.filter((t) =>
+				t.messages.some((m) => m.contextId === filter.contextId),
+			);
+		}
+		if (filter?.pageSize) {
+			tasks = tasks.slice(0, filter.pageSize);
+		}
+
+		return tasks;
+	}
+
+	subscribe(taskId: string, cb: (task: Task) => void): () => void {
+		if (!this.subscriptions.has(taskId)) {
+			this.subscriptions.set(taskId, new Set());
+		}
+		this.subscriptions.get(taskId)!.add(cb);
+
+		// Immediately emit current task state
+		const task = this.tasks.get(taskId);
+		if (task) {
+			cb(task);
+		}
+
+		// Return unsubscribe function
+		return () => {
+			const subs = this.subscriptions.get(taskId);
+			if (subs) {
+				subs.delete(cb);
+				if (subs.size === 0) {
+					this.subscriptions.delete(taskId);
+				}
+			}
+		};
+	}
+
+	private notifySubscribers(taskId: string, task: Task): void {
+		const subs = this.subscriptions.get(taskId);
+		if (subs) {
+			for (const cb of subs) {
+				try {
+					cb(task);
+				} catch (e) {
+					console.error(`[TaskMemory] subscriber callback error: ${e}`);
+				}
+			}
+		}
 	}
 
 	getTransitionHistory(

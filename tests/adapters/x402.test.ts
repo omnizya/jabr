@@ -5,12 +5,22 @@
  * and the X402Client delegation flow with a mock server.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { SettlementLedger } from "@adapters/x402/settlement-ledger";
 import type { PaymentToken } from "@adapters/x402/types";
 import { X402Client } from "@adapters/x402/x402-client";
 import { X402Server, x402Reject } from "@adapters/x402/x402-server";
 import type { AgentCard } from "@agents/types";
+
+// Bun runs all test files in a single process, so a leaked globalThis.fetch
+// mock corrupts every suite that runs afterwards in the same command (e.g.
+// tests/security/a2a-client-tls.test.ts). Save the real fetch and restore it
+// after each test that installs a mock.
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+	globalThis.fetch = originalFetch;
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,6 +37,7 @@ function makeCard(
 		version: "1.0.0",
 		capabilities: {},
 		skills: [],
+		supportedInterfaces: [],
 		pricing: { costPerTask },
 	};
 	if (opts?.settlement) {
@@ -465,7 +476,10 @@ describe("X402Client", () => {
 		let lastInit: { headers?: unknown } | null = null;
 		globalThis.fetch = function (url: string, init?: RequestInit) {
 			lastInit = (init ?? null) as { headers?: unknown } | null;
-			if (url.endsWith("/.well-known/agent-card.json")) {
+			if (
+				url.endsWith("/.well-known/agent-card.json") ||
+				url.endsWith("/.well-known/agent.json")
+			) {
 				return Response.json(makeCard(5, { settlement: false }));
 			}
 			const body = JSON.parse(init!.body as string);
@@ -496,7 +510,10 @@ describe("X402Client", () => {
 
 		let lastHeader: string | null = null;
 		globalThis.fetch = function (url: string, init?: RequestInit) {
-			if (url.endsWith("/.well-known/agent-card.json")) {
+			if (
+				url.endsWith("/.well-known/agent-card.json") ||
+				url.endsWith("/.well-known/agent.json")
+			) {
 				return Response.json(makeCard(5, { settlement: true }));
 			}
 			// Delegate call — capture the X-Payment-Token header.
@@ -530,7 +547,10 @@ describe("X402Client", () => {
 
 		let txId: string | null = null;
 		globalThis.fetch = function (url: string, init?: RequestInit) {
-			if (url.endsWith("/.well-known/agent-card.json")) {
+			if (
+				url.endsWith("/.well-known/agent-card.json") ||
+				url.endsWith("/.well-known/agent.json")
+			) {
 				return Response.json(makeCard(5, { settlement: true }));
 			}
 			// Capture the txId from the PaymentToken header.

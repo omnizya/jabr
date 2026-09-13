@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { jabrUrl } from "@config/jabr-config";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
 import type {
 	MemoryStorePort,
 	SessionData,
@@ -207,7 +208,7 @@ export class StdioBridge {
 	): Promise<JSONRPCResponse> {
 		try {
 			console.error(
-				`[StdioBridge] → orchestrator tasks/send (${this.orchestratorUrl})`,
+				`[StdioBridge] → orchestrator SendMessage (${this.orchestratorUrl})`,
 			);
 			const started = Date.now();
 			const res = await fetch(`${this.orchestratorUrl}/`, {
@@ -216,8 +217,14 @@ export class StdioBridge {
 				body: JSON.stringify({
 					jsonrpc: "2.0",
 					id: req.id ?? crypto.randomUUID(),
-					method: "tasks/send",
-					params: { message: { parts: [{ kind: "text", text }] } },
+					method: V1_METHOD_SEND_MESSAGE,
+					params: {
+						message: {
+							role: "user",
+							messageId: crypto.randomUUID(),
+							parts: [{ kind: "text", text }],
+						},
+					},
 				}),
 			});
 			console.error(
@@ -226,7 +233,7 @@ export class StdioBridge {
 
 			if (!res.ok) {
 				console.error(
-					`[StdioBridge] orchestrator returned ${res.status} for tasks/send`,
+					`[StdioBridge] orchestrator returned ${res.status} for SendMessage`,
 				);
 				return err(req.id, -32603, `Orchestrator returned ${res.status}`);
 			}
@@ -248,7 +255,7 @@ export class StdioBridge {
 		} catch (e) {
 			const message = e instanceof Error ? e.message : "Unknown fetch error";
 			console.error(
-				`[StdioBridge] tasks/send failed: ${message}`,
+				`[StdioBridge] SendMessage failed: ${message}`,
 				e instanceof Error ? e.stack : e,
 			);
 			return err(
@@ -289,7 +296,7 @@ export class StdioBridge {
 		if (typeof content.unified === "string") {
 			try {
 				console.error(
-					`[StdioBridge] → orchestrator tasks/send (unified diff) (${this.orchestratorUrl})`,
+					`[StdioBridge] → orchestrator SendMessage (unified diff) (${this.orchestratorUrl})`,
 				);
 				const started = Date.now();
 				const res = await fetch(`${this.orchestratorUrl}/`, {
@@ -298,9 +305,11 @@ export class StdioBridge {
 					body: JSON.stringify({
 						jsonrpc: "2.0",
 						id: req.id ?? crypto.randomUUID(),
-						method: "tasks/send",
+						method: V1_METHOD_SEND_MESSAGE,
 						params: {
 							message: {
+								role: "user",
+								messageId: crypto.randomUUID(),
 								parts: [
 									{
 										kind: "text",
@@ -316,7 +325,7 @@ export class StdioBridge {
 				);
 				if (!res.ok) {
 					console.error(
-						`[StdioBridge] orchestrator returned ${res.status} for unified diff tasks/send`,
+						`[StdioBridge] orchestrator returned ${res.status} for unified diff SendMessage`,
 					);
 					this.notifyToolCallUpdate(toolCallId, "failed", {
 						reason: `orchestrator ${res.status}`,
@@ -332,7 +341,7 @@ export class StdioBridge {
 			} catch (e) {
 				const message = e instanceof Error ? e.message : "Unknown fetch error";
 				console.error(
-					`[StdioBridge] unified diff tasks/send failed: ${message}`,
+					`[StdioBridge] unified diff SendMessage failed: ${message}`,
 					e instanceof Error ? e.stack : e,
 				);
 				this.notifyToolCallUpdate(toolCallId, "failed", { reason: message });

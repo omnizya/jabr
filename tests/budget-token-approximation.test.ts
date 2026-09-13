@@ -42,6 +42,8 @@ function makeTaskStore() {
 		appendArtifact: () => {},
 		listByState: () => [],
 		getTransitionHistory: () => [],
+		list: () => [],
+		subscribe: () => () => {},
 	} as TaskStorePort;
 }
 
@@ -60,6 +62,7 @@ function makePricedCard(costPerTask: number, costPerToken?: number): AgentCard {
 		version: "1.0.0",
 		capabilities: {},
 		skills: [],
+		supportedInterfaces: [],
 		pricing: { costPerTask, costPerToken },
 	};
 }
@@ -76,6 +79,7 @@ function makeRegistry(responseText: string): AgentRegistryPort {
 				version: "1.0.0",
 				capabilities: {},
 				skills: [],
+				supportedInterfaces: [],
 				pricing: { costPerTask: 5, costPerToken: 2 },
 			};
 		},

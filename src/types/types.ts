@@ -140,12 +140,10 @@ export interface WebhookToA2ABridgeConfig<T> {
 	onEvent?: (payload: WebhookEvent) => Promise<unknown>;
 }
 
-export type AgentInterfaceType = "http" | "grpc";
+import type { AgentInterface as A2AAgentInterface } from "../types/a2a-v1.ts";
 
-export interface AgentInterface {
-	type: AgentInterfaceType;
-	url: string;
-}
+/** Re-export v1.0 AgentInterface for AgentCard */
+export type AgentInterface = A2AAgentInterface;
 
 /**
  * Pricing declaration for an agent. The orchestrator deducts costPerTask
@@ -328,7 +326,7 @@ export interface AgentCard {
 	version: string;
 	capabilities: AgentCardCapabilities;
 	skills: AgentSkill[];
-	supportedInterfaces?: AgentInterface[];
+	supportedInterfaces: readonly AgentInterface[];
 	successRate?: number;
 	/** Per-task pricing declaration — consumed from the target agent's budget by the orchestrator. */
 	pricing?: AgentPricing;
@@ -577,6 +575,8 @@ export interface ResolvedCaller {
 	allowedAgents: string[];
 }
 
+import type { AgentCard as A2AAgentCard } from "../types/a2a-v1.ts";
+
 export interface A2AServerConfig<R, S> {
 	port: number;
 	card: AgentCard;
@@ -611,6 +611,10 @@ export interface A2AServerConfig<R, S> {
 	taskStore?: S; //TaskStorePort;
 	/** Optional push notification config for async task state callbacks. */
 	pushNotificationConfig?: PushNotificationConfig;
+	/** Optional tenant prefix for multi-tenant routing (e.g. "/tenant1"). When set, strips prefix from REST paths. */
+	tenantPrefix?: string;
+	/** Optional extended agent card returned by GetExtendedAgentCard (JSON-RPC) / GET /extendedAgentCard (REST). */
+	extendedAgentCard?: A2AAgentCard;
 }
 
 export interface RegistryEntry {

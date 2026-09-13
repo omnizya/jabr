@@ -46,6 +46,19 @@ export function formatSSEEvent(eventName: string, payload: unknown): string {
 	return `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
 }
 
+/**
+ * Format an anonymous SSE frame (no `event:` line) for A2A v1.0 streaming.
+ *
+ * Per A2A v1.0, SSE frames are anonymous `data:` lines carrying a
+ * JSON-RPC response whose `result` is a `StreamResponse` oneof.
+ * The payload type is determined by which `StreamResponse` field is present.
+ */
+export function formatAnonymousSSEFrame(
+	jsonRpcResponse: JSONRPCResponse,
+): string {
+	return `data: ${JSON.stringify(jsonRpcResponse)}\n\n`;
+}
+
 export function err(
 	id: SomeId,
 	code: number,

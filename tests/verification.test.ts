@@ -18,6 +18,7 @@ function makeCard(name: string, skills: AgentSkill[] = []): AgentCard {
 		version: "1.0.0",
 		capabilities: {},
 		skills,
+		supportedInterfaces: [],
 	};
 }
 
@@ -57,6 +58,8 @@ function makeTaskStore(): TaskStorePort & { tasks: Record<string, any> } {
 		},
 		appendArtifact: () => {},
 		listByState: () => [],
+		list: () => [],
+		subscribe: () => () => {},
 		getTransitionHistory: () => [],
 		tasks,
 	};

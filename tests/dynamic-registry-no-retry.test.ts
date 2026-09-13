@@ -72,6 +72,7 @@ describe("DynamicRegistry: no repeated retry polling when all agents are down", 
 					version: "1.0.0",
 					capabilities: {},
 					skills: [{ name: "General", description: "", tags: ["general"] }],
+					supportedInterfaces: [],
 				};
 			},
 			async delegateTask() {

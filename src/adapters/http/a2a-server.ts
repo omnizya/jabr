@@ -23,6 +23,7 @@ import type {
 	TaskState,
 	TaskStreamingEvent,
 } from "@agents/types";
+import { A2A_METHODS } from "@constants/ecosystem";
 import type { TaskStorePort } from "@ports/task-store";
 import { verifyWithScopes } from "@security/jwt";
 import { handleOAuthRoutes } from "@security/oauth-server";
@@ -336,6 +337,7 @@ export class A2AServer {
 				if (
 					req.method === "GET" &&
 					(url.pathname === "/.well-known/agent-card.json" ||
+						url.pathname === "/.well-known/agent.json" ||
 						url.pathname === "/.well-known/world-state")
 				) {
 					const origin = req.headers.get("Origin");
@@ -352,7 +354,7 @@ export class A2AServer {
 						const state = await onWorldState();
 						return Response.json(state, { headers });
 					}
-					console.log("[A2AServer] GET /.well-known/agent-card.json");
+					console.log(`[A2AServer] GET ${url.pathname} (agent card)`);
 					return Response.json(card, { headers });
 				}
 
@@ -547,7 +549,7 @@ export class A2AServer {
 					}
 
 					// --- tasks/sendSubscribe — SSE streaming branch ---
-					if (method === "tasks/sendSubscribe") {
+					if (method === A2A_METHODS.tasksSendSubscribe) {
 						console.log(`[A2AServer] ← POST / tasks/sendSubscribe id=${id}`);
 
 						const validationError = validateTasksSendParams(params);
@@ -702,7 +704,7 @@ export class A2AServer {
 					}
 
 					// --- tasks/get — retrieve task state ---
-					if (method === "tasks/get") {
+					if (method === A2A_METHODS.tasksGet) {
 						console.log(`[A2AServer] ← POST / tasks/get id=${id}`);
 						const taskId = (params as { taskId?: string })?.taskId;
 						if (!taskId) {
@@ -744,7 +746,7 @@ export class A2AServer {
 					}
 
 					// --- tasks/cancel — cancel a running task ---
-					if (method === "tasks/cancel") {
+					if (method === A2A_METHODS.tasksCancel) {
 						console.log(`[A2AServer] ← POST / tasks/cancel id=${id}`);
 						const taskId = (params as { taskId?: string })?.taskId;
 						if (!taskId) {
@@ -790,7 +792,7 @@ export class A2AServer {
 					}
 
 					// --- tasks/send — synchronous branch ---
-					if (method !== "tasks/send") {
+					if (method !== A2A_METHODS.tasksSend) {
 						console.error(
 							`[A2AServer] POST / method not found (-32601) id=${id} method=${method}`,
 						);

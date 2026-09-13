@@ -71,6 +71,7 @@ describe("A2AServer SSE streaming", () => {
 				version: "1.0.0",
 				capabilities: { streaming: true },
 				skills: [],
+				supportedInterfaces: [],
 			},
 			onTask: async (text) => `sync:${text}`,
 			onTaskStreaming: async (text, taskId, emit) => {
@@ -142,6 +143,7 @@ describe("A2AServer SSE streaming", () => {
 				version: "1.0.0",
 				capabilities: {},
 				skills: [],
+				supportedInterfaces: [],
 			},
 			onTask: async (text) => `sync-result:${text}`,
 		});
@@ -184,6 +186,7 @@ describe("A2AServer SSE streaming", () => {
 				version: "1.0.0",
 				capabilities: {},
 				skills: [],
+				supportedInterfaces: [],
 			},
 			onTask: async (text) => text,
 		});
@@ -211,6 +214,7 @@ describe("A2AServer SSE streaming", () => {
 				version: "1.0.0",
 				capabilities: {},
 				skills: [],
+				supportedInterfaces: [],
 			},
 			onTask: async () => "ok",
 			onTaskStreaming: async (_text, _taskId, _emit) => {

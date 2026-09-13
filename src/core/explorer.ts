@@ -1,4 +1,10 @@
 import type { AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { McpToolPort } from "@ports/mcp-tool-port";
 import type { TaskStorePort } from "@ports/task-store";
 
@@ -6,7 +12,7 @@ export const EXPLORER_CARD: AgentCard = {
 	name: "BATTUTA",
 	description:
 		"BATTUTA (ابن بطوطة) — Astrolabe Voyager. Explores codebases, finds files and patterns, maps project structure. Fast reconnaissance.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.explorer),
 	version: "1.0.0",
 	capabilities: {
 		streaming: true,
@@ -15,6 +21,13 @@ export const EXPLORER_CARD: AgentCard = {
 	},
 	securitySchemes: {},
 	securityRequirements: [],
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.explorer),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Find files",
@@ -145,7 +158,7 @@ export class ExplorerAgent {
 			lower.includes("overview") ||
 			lower.includes("architecture")
 		) {
-			return `## Project Map\n\nCurrent project: Jabr\n\n\`\`\`\nagents/\n├── core/          # Domain logic (orchestrator, fixer, librarian, oracle, explorer, designer)\n├── ports/         # Interfaces (agent-registry, task-store, memory-store, skill-store)\n├── adapters/      # Implementations (http servers, filesystem stores)\n├── run/           # Composition roots (wire ports → core)\n└── types.ts       # Shared types\nmcp-servers/\n└── tools.ts       # MCP tool server\nscripts/\n└── demo.ts        # Integration tests\nskills/            # Auto-generated skill documents\nmemory/            # Session memory (append-only)\n\`\`\`\n\nKey: 6 agents on ports 4000-4005, each a standalone A2A HTTP server.`;
+			return `## Project Map\n\nCurrent project: Jabr\n\n\`\`\`\nsrc/\n├── core/          # Domain logic — zero infrastructure imports\n├── ports/         # Interfaces (type-only)\n├── adapters/      # Implementations (http servers, websockets, filesystem stores)\n├── runtime/       # Composition roots (wire ports → core)\n├── security/      # JWT/OAuth 2.1, API keys, TLS\n├── protocols/     # MCP server, ACP bridge\n├── config/        # env-manager, jabr-config\n├── constants/     # ecosystem (ports, A2A methods, endpoints)\n└── types/         # A2A v1.0 types\nscripts/\n├── demo.ts        # Integration tests (E2E)\n└── jabr-cli.ts    # CLI (start/stop/status/send)\nskills/            # Auto-generated skill documents\nmemory/            # Session memory (append-only)\n\`\`\`\n\nKey: 11 agents on ports 4000-4009 + 1337, each a standalone A2A HTTP server.`;
 		}
 
 		return `Explorer ready. Ask me to:\n- Find files or patterns in the codebase\n- Map the project structure\n- Pack the codebase for AI analysis (e.g. "pack codebase")\n- Search packed code with regex (e.g. "search for pattern")`;

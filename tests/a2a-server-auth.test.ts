@@ -6,6 +6,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { A2AServer } from "@adapters/http/a2a-server";
+import { RateLimiter } from "@adapters/rate-limit";
 import type { A2AServerConfig } from "@agents/types";
 import { ApiKeyRegistry } from "../src/security/api-key-registry";
 
@@ -267,10 +268,17 @@ describe("A2AServer — X-API-Key auth middleware", () => {
 				enabled: true,
 			},
 		]);
-		// Rate limit: 1 request per 60s
+		// Rate limit: 1 request per 60s. Fixed caller resolver so both requests
+		// share one bucket — the second must trip 429 BEFORE auth runs (proving
+		// rate-limit ordering: 429 preempts what would otherwise be a 401).
+		const rateLimiter = new RateLimiter({
+			maxRequests: 1,
+			windowMs: 60_000,
+			resolveCaller: () => "test-caller",
+		});
 		const server = new A2AServer(
 			makeConfig({ requireAuth: true }),
-			undefined,
+			rateLimiter,
 			undefined,
 			registry,
 		);

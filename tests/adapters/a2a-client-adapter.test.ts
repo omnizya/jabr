@@ -2,10 +2,15 @@
  * a2a-client-adapter.test.ts — Unit tests for A2AClient adapter.
  *
  * Strategy: a smart global fetch mock that responds to agent-card discovery,
- * health checks, and tasks/send JSON-RPC calls without touching the network.
+ * health checks, and SendMessage JSON-RPC calls without touching the network.
  */
 
 import { describe, expect, test } from "bun:test";
+import {
+	V1_METHOD_SEND_MESSAGE,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "../../src/constants/a2a-v1.ts";
 import { JABR_PORTS } from "../../src/constants/ecosystem.ts";
 import { createTestEnv, overrideFetch } from "../../src/utils/test-helpers.ts";
 
@@ -14,7 +19,6 @@ describe("A2AClient", () => {
 	test("sendTask returns the JSON-RPC result", async () => {
 		const { client, restore } = createTestEnv();
 		try {
-			// GET FROM constants
 			const result = await client.sendTask(ENDPOINT, "ping");
 			expect(result).toEqual({ text: "pong" });
 		} finally {
@@ -22,7 +26,7 @@ describe("A2AClient", () => {
 		}
 	});
 
-	test("sendTask sends a valid JSON-RPC 2.0 envelope", async () => {
+	test("sendTask sends a valid JSON-RPC 2.0 envelope with SendMessage", async () => {
 		const { client, fetchCalls, restore } = createTestEnv();
 		try {
 			await client.sendTask(ENDPOINT, "hello", "ctx-123");
@@ -36,15 +40,16 @@ describe("A2AClient", () => {
 				params: {
 					message: {
 						role: string;
-						parts: Array<{ kind: string; text: string }>;
+						messageId: string;
+						parts: Array<{ text: string }>;
 					};
 				};
 			};
 			expect(body.jsonrpc).toBe("2.0");
-			expect(body.method).toBe("tasks/send");
+			expect(body.method).toBe(V1_METHOD_SEND_MESSAGE);
 			expect(body.params.message.role).toBe("user");
-			expect(body.params.message.parts[0]!.kind).toBe("text");
 			expect(body.params.message.parts[0]!.text).toBe("hello");
+			expect(body.params.message.messageId).toBeDefined();
 		} finally {
 			restore();
 		}
@@ -55,8 +60,10 @@ describe("A2AClient", () => {
 		try {
 			await client.sendTask(ENDPOINT, "hi", "ctx-456");
 			const post = fetchCalls.find((c) => c.method === "POST");
-			const body = post!.body as { params: { contextId?: string } };
-			expect(body.params.contextId).toBe("ctx-456");
+			const body = post!.body as {
+				params: { message: { contextId?: string } };
+			};
+			expect(body.params.message.contextId).toBe("ctx-456");
 		} finally {
 			restore();
 		}
@@ -67,8 +74,10 @@ describe("A2AClient", () => {
 		try {
 			await client.sendTask(ENDPOINT, "hi");
 			const post = fetchCalls.find((c) => c.method === "POST");
-			const body = post!.body as { params: { contextId?: string } };
-			expect(body.params.contextId).toBeUndefined();
+			const body = post!.body as {
+				params: { message: { contextId?: string } };
+			};
+			expect(body.params.message.contextId).toBeUndefined();
 		} finally {
 			restore();
 		}
@@ -114,7 +123,9 @@ describe("A2AClient", () => {
 			Response.json({
 				jsonrpc: "2.0",
 				id: 1,
-				result: { id: "task-abc" },
+				result: {
+					task: { taskId: "task-abc", status: { state: "completed" } },
+				},
 			}),
 		);
 		try {
@@ -141,7 +152,7 @@ describe("A2AClient", () => {
 		}
 	});
 
-	test("discover fetches the agent card from /.well-known/agent-card.json", async () => {
+	test("discover fetches the agent card from /.well-known/agent.json (v1.0)", async () => {
 		const { client, fetchCalls, restore } = createTestEnv();
 		try {
 			const card = await client.discover(ENDPOINT);
@@ -151,12 +162,58 @@ describe("A2AClient", () => {
 				capabilities: { taskRouting: true },
 			});
 			const getCall = fetchCalls.find(
-				(c) =>
-					c.method === "GET" && c.url.includes("/.well-known/agent-card.json"),
+				(c) => c.method === "GET" && c.url.includes(WELL_KNOWN_AGENT_JSON),
 			);
 			expect(getCall).toBeDefined();
 		} finally {
 			restore();
+		}
+	});
+
+	test("discover falls back to legacy path when v1.0 path fails", async () => {
+		const originalFetch = globalThis.fetch;
+		const fetchCalls: Array<{ url: string; method: string }> = [];
+
+		globalThis.fetch = (async (
+			url: string | Request | URL,
+			opts?: RequestInit,
+		) => {
+			const u = url.toString();
+			fetchCalls.push({ url: u, method: opts?.method ?? "GET" });
+
+			if (u.includes(WELL_KNOWN_AGENT_JSON)) {
+				return new Response("Not found", { status: 404 });
+			}
+			if (u.includes(WELL_KNOWN_AGENT_CARD_JSON)) {
+				return Response.json({
+					name: "test-agent",
+					version: "1.0.0",
+					capabilities: { taskRouting: true },
+				});
+			}
+			return new Response("Not found", { status: 404 });
+		}) as typeof fetch;
+
+		try {
+			const client = new (
+				await import("@adapters/http/a2a-client-adapter")
+			).A2AClient();
+			const card = await client.discover(ENDPOINT);
+			expect(card).toEqual({
+				name: "test-agent",
+				version: "1.0.0",
+				capabilities: { taskRouting: true },
+			});
+			const v1Call = fetchCalls.find((c) =>
+				c.url.includes(WELL_KNOWN_AGENT_JSON),
+			);
+			const legacyCall = fetchCalls.find((c) =>
+				c.url.includes(WELL_KNOWN_AGENT_CARD_JSON),
+			);
+			expect(v1Call).toBeDefined();
+			expect(legacyCall).toBeDefined();
+		} finally {
+			globalThis.fetch = originalFetch;
 		}
 	});
 

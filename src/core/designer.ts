@@ -1,4 +1,10 @@
 import type { AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { ImageGenPort } from "@ports/image-gen-port";
 import type { TaskStorePort } from "@ports/task-store";
 
@@ -6,7 +12,7 @@ export const DESIGNER_CARD: AgentCard = {
 	name: "FIRNAS",
 	description:
 		"FIRNAS (Abbas ibn Firnas) — Flying Polymath. Designs UI/UX, creates responsive layouts, applies visual polish. Frontend design specialist.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.designer),
 	version: "1.0.0",
 	capabilities: {
 		streaming: true,
@@ -15,6 +21,13 @@ export const DESIGNER_CARD: AgentCard = {
 	},
 	securitySchemes: {},
 	securityRequirements: [],
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.designer),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Layout design",

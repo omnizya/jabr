@@ -74,6 +74,7 @@ function makeRegistry(responses: Record<string, string>): AgentRegistryPort {
 				version: "1.0.0",
 				capabilities: {},
 				skills: [],
+				supportedInterfaces: [],
 			};
 		},
 		async delegateTask(agentUrl: string, _text: string): Promise<string> {
@@ -99,6 +100,7 @@ function makeCard(name: string, tags: string[]): AgentCard {
 				outputModes: ["text"],
 			},
 		],
+		supportedInterfaces: [],
 	};
 }
 

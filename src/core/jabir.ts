@@ -5,6 +5,12 @@ import type {
 	ResolvedCaller,
 } from "@agents/types";
 import { decodeHandover } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { KnowledgePort } from "@ports/knowledge-port";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { TaskStorePort } from "@ports/task-store";
@@ -20,9 +26,16 @@ export const JABIR_CARD: AgentCard = {
 	name: "JABIR",
 	description:
 		"JABIR (جابر) — Alchemical Operator. Hermes-style orchestrator. Discovers agents, routes tasks, persists memory, writes skills.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.orchestrator),
 	version: "1.0.0",
 	capabilities: { streaming: false, pushNotifications: false },
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.orchestrator),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Route task",

@@ -1,4 +1,10 @@
 import type { A2AMessage, AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { KnowledgePort } from "@ports/knowledge-port";
 import type { SearchPort, SearchResult } from "@ports/search-port";
 import type { SkillStorePort } from "@ports/skill-store";
@@ -8,9 +14,16 @@ export const LIBRARIAN_CARD: AgentCard = {
 	name: "FIHRIYA",
 	description:
 		"FIHRIYA (Fatima al-Fihriya) — Keeper of Knowledge. Researches documentation, looks up library APIs, summarizes findings, and manages skills. External knowledge specialist.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.librarian),
 	version: "1.0.0",
 	capabilities: { streaming: true, pushNotifications: false },
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.librarian),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Lookup docs",

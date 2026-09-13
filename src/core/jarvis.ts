@@ -1,5 +1,10 @@
 import type { AgentCard, SkillDocument } from "@agents/types";
-import { jabrUrl } from "@config/jabr-config";
+import { jabrUrl, jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
@@ -13,7 +18,7 @@ export const JARVIS_CARD: AgentCard = {
 	name: "WAZIR",
 	description:
 		"WAZIR — The Steward. Proactive codebase steward — scans for improvements, generates profiles, watches dependencies, identifies AI/automation opportunities.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.jarvis),
 	version: "1.0.0",
 	capabilities: {
 		streaming: true,
@@ -25,6 +30,13 @@ export const JARVIS_CARD: AgentCard = {
 	},
 	securitySchemes: {},
 	securityRequirements: [],
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.jarvis),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Codebase scan",

@@ -43,6 +43,7 @@ function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
 			version: "1.0.0",
 			capabilities: {},
 			skills: [],
+			supportedInterfaces: [],
 		},
 		onTask: async (text) => `result:${text}`,
 		...overrides,
@@ -220,6 +221,7 @@ describe("A2AServer — push notification callback", () => {
 					},
 				},
 				skills: [],
+				supportedInterfaces: [],
 			},
 			onTask: async (text) => `result:${text}`,
 		});

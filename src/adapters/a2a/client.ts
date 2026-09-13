@@ -1,7 +1,23 @@
+import {
+	V1_METHOD_SEND_MESSAGE,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "@constants/a2a-v1";
 import { AGENT_CARD_PATH, KNOWN_AGENTS_NAME } from "@constants/known-agents";
+import {
+	fromWireSendMessageResponse,
+	toWireSendMessageRequest,
+} from "@/adapters/a2a/serialize";
 import type { AgentRegistryPort } from "@/ports/agent-registry";
 import { BudgetExhaustedError, type BudgetPort } from "@/ports/budget-port";
 import { loadTlsConfig } from "@/security/tls-config";
+import type {
+	Message,
+	Part,
+	SendMessageRequest,
+	SendMessageResponse,
+	Task,
+} from "@/types/a2a-v1";
 import type { AgentCard } from "@/types/types";
 import type { JSONRPCRequest, JSONRPCResponse } from "@/utils/rpc";
 
@@ -22,10 +38,27 @@ export class A2AClient implements AgentRegistryPort {
 			return cached;
 		}
 
+		const tlsConfig = await loadTlsConfig();
+		const fetchOpts = tlsConfig ? { tls: { ca: tlsConfig.ca } } : {};
+
+		// Try v1.0 well-known path first
 		try {
-			const tlsConfig = await loadTlsConfig();
+			const res = await fetch(`${baseUrl}/${WELL_KNOWN_AGENT_JSON}`, {
+				...fetchOpts,
+			} as any);
+			if (res.ok) {
+				const card = (await res.json()) as AgentCard;
+				this.cache.set(baseUrl, card);
+				return card;
+			}
+		} catch {
+			// Fall through to legacy path
+		}
+
+		// Fallback to legacy path
+		try {
 			const res = await fetch(`${baseUrl}/${AGENT_CARD_PATH}`, {
-				...(tlsConfig ? { tls: { ca: tlsConfig.ca } } : {}),
+				...fetchOpts,
 			} as any);
 			if (!res.ok) {
 				console.error(
@@ -62,22 +95,28 @@ export class A2AClient implements AgentRegistryPort {
 			console.log(`[A2AClient] budget ok for agent=${name} → ${agentUrl}`);
 		}
 
+		// Build v1.0 SendMessageRequest using serializer (emits camelCase wire format)
+		const message: Message = {
+			role: "user",
+			messageId: crypto.randomUUID(),
+			parts: [{ kind: "text", text }],
+		};
+
+		const request: SendMessageRequest = {
+			message,
+			...(callbackUrl ? { notificationUrl: callbackUrl } : {}),
+		};
+
 		const body: JSONRPCRequest = {
 			jsonrpc: "2.0",
 			id: 1,
-			method: "tasks/send",
-			params: {
-				message: {
-					role: "user",
-					parts: [{ kind: "text", text }],
-				},
-				...(callbackUrl ? { notificationUrl: callbackUrl } : {}),
-			},
+			method: V1_METHOD_SEND_MESSAGE,
+			params: toWireSendMessageRequest(request),
 		};
 
 		try {
 			console.log(
-				`[A2AClient] → tasks/send to ${agentUrl} (agent=${name ?? "unknown"}, textLen=${text.length}, id=${body.id})`,
+				`[A2AClient] → SendMessage to ${agentUrl} (agent=${name ?? "unknown"}, textLen=${text.length}, id=${body.id})`,
 			);
 			const start = performance.now();
 			const tlsConfig = await loadTlsConfig();
@@ -103,34 +142,25 @@ export class A2AClient implements AgentRegistryPort {
 				return msg;
 			}
 
-			const result = data.result as
-				| {
-						text?: string;
-						artifacts?: Array<{ parts?: Array<{ text?: string }> }>;
-						message?: { parts?: Array<{ text?: string }> };
-				  }
-				| undefined;
+			// Parse v1.0 SendMessageResponse using serializer
+			const response = fromWireSendMessageResponse(data.result);
 
-			// The A2A server returns the flat `{ text }` shape (a2a-server.ts:88).
-			if (result?.text) {
-				console.log(
-					`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${result.text.length}`,
-				);
-				return result.text;
+			// Extract text with precedence: task.status.message.parts[0] → message.parts[0] → task.artifacts[0].parts[0]
+			let resultText: string | undefined;
+
+			if (response.task?.status?.message?.parts?.[0]?.kind === "text") {
+				resultText = response.task.status.message.parts[0].text;
+			} else if (response.message?.parts?.[0]?.kind === "text") {
+				resultText = response.message.parts[0].text;
+			} else if (response.task?.artifacts?.[0]?.parts?.[0]?.kind === "text") {
+				resultText = response.task.artifacts[0].parts[0].text;
 			}
-			if (result?.artifacts?.[0]?.parts?.[0]?.text) {
-				const t = result.artifacts[0].parts[0].text;
+
+			if (resultText !== undefined) {
 				console.log(
-					`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${t.length}`,
+					`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${resultText.length}`,
 				);
-				return t;
-			}
-			if (result?.message?.parts?.[0]?.text) {
-				const t = result.message.parts[0].text;
-				console.log(
-					`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${t.length}`,
-				);
-				return t;
+				return resultText;
 			}
 
 			console.log(

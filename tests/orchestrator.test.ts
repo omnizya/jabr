@@ -428,7 +428,7 @@ describe("OrchestratorAgent.executeWithDepth — %%HANDOVER%% chain", () => {
 describe("OrchestratorAgent — no handover when not at max depth", () => {
 	test("completes with result when MAX_HANDOVER_DEPTH reached and handover present", async () => {
 		// Constant verification: MAX_HANDOVER_DEPTH === 3
-		const { MAX_HANDOVER_DEPTH } = await import("../src/core/tool-router");
+		const { MAX_HANDOVER_DEPTH } = await import("../src/constants/app");
 		expect(MAX_HANDOVER_DEPTH).toBe(3);
 	});
 });

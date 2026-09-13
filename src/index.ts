@@ -3,8 +3,8 @@
  *
  * This is not a real entrypoint. Run agents individually:
  *   bun run orchestrator  → port 4000
- *   bun run coder        → port 4001
- *   bun run researcher   → port 4002
+ *   bun run oracle        → port 4001
+ *   bun run librarian     → port 4002
  *
  * Or all at once:
  *   bun run dev

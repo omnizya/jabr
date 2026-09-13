@@ -42,6 +42,7 @@ export const JABR_PORTS = {
 	designer: portFromEnv("DESIGNER_PORT", 4004),
 	fixer: portFromEnv("FIXER_PORT", 4005),
 	scientist: portFromEnv("SCIENTIST_PORT", 4006),
+	llm: portFromEnv("LLM_PORT", 4007),
 	githubWebhook: portFromEnv("GITHUB_WEBHOOK_PORT", 4007),
 	realtime: portFromEnv("JABR_REALTIME_PORT", 4008),
 	verification: portFromEnv("VERIFICATION_PORT", 4009),
@@ -94,18 +95,14 @@ export const JABR_URL_DEFAULT = "http://localhost:4000";
 // ---------------------------------------------------------------------------
 
 /**
- * Dev CORS allowlist used when ALLOWED_ORIGINS is empty. Single source of
- * truth consumed by agents/utils/rpc.ts and bun-websocket-adapter.ts.
+ * Dev CORS allowlist used when ALLOWED_ORIGINS is empty. Derived from
+ * JABR_PORTS so every agent/infra port (4000-4009, 1337) is covered
+ * automatically, plus static dev frontends (Vite 5173, plain HTTP 8080).
+ * Single source of truth consumed by agents/utils/rpc.ts and
+ * bun-websocket-adapter.ts.
  */
-export const DEV_ALLOWED_ORIGINS = [
+export const DEV_ALLOWED_ORIGINS: readonly string[] = [
 	"http://localhost:5173",
 	"http://localhost:8080",
-	"http://localhost:4000",
-	"http://localhost:4001",
-	"http://localhost:4002",
-	"http://localhost:4003",
-	"http://localhost:4004",
-	"http://localhost:4005",
-	"http://localhost:4006",
-	"http://localhost:1337",
-] as const;
+	...Object.values(JABR_PORTS).map((port) => `http://localhost:${port}`),
+];

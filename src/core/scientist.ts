@@ -1,5 +1,9 @@
 import type { AgentCard, AgentSkill } from "@agents/types";
 import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
 import { JABR_PORTS } from "@constants/ecosystem";
 import type { McpToolPort } from "@ports/mcp-tool-port";
 
@@ -17,7 +21,13 @@ export class ScientistAgent {
 		},
 		securitySchemes: {},
 		securityRequirements: [],
-		supportedInterfaces: ["a2a" as any],
+		supportedInterfaces: [
+			{
+				url: jabrUrlForPort(JABR_PORTS.scientist),
+				protocolBinding: PROTOCOL_BINDING_JSONRPC,
+				protocolVersion: SUPPORTED_INTERFACES_VERSION,
+			},
+		],
 		skills: [
 			{
 				name: "Data Analysis",

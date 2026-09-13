@@ -1,21 +1,61 @@
 /**
  * auth-middleware.ts — Per-endpoint scope enforcement for OAuth 2.1.
  *
- * Maps each A2A method to the minimum scope required:
- *   - tasks/send          → a2a:write
- *   - tasks/sendSubscribe → a2a:stream OR a2a:write
- *   - tasks/get           → a2a:read
- *   - tasks/cancel        → a2a:admin
+ * Maps each A2A method to the minimum scope required. The A2A server
+ * dispatches on the JSON-RPC namespaced method strings (tasks/send, ...);
+ * the A2A v1.0 proto wire names (SendMessage, ...) are kept as aliases
+ * since clients may use either convention.
+ *
+ *   - tasks/send / SendMessage                  → a2a:write
+ *   - tasks/sendSubscribe / SendStreamingMessage → a2a:stream OR a2a:write
+ *   - tasks/get / GetTask / ListTasks           → a2a:read
+ *   - tasks/cancel / CancelTask                 → a2a:admin
+ *   - SubscribeToTask                           → a2a:stream OR a2a:read
+ *   - GetExtendedAgentCard                      → a2a:read
+ *   - Push notification config CRUD             → a2a:admin
  */
 
+import {
+	V1_METHOD_CANCEL_TASK,
+	V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_GET_EXTENDED_AGENT_CARD,
+	V1_METHOD_GET_TASK,
+	V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS,
+	V1_METHOD_LIST_TASKS,
+	V1_METHOD_SEND_MESSAGE,
+	V1_METHOD_SEND_STREAMING_MESSAGE,
+	V1_METHOD_SUBSCRIBE_TO_TASK,
+} from "../constants/a2a-v1.ts";
+import { A2A_METHODS } from "../constants/ecosystem.ts";
 import { type OAuthScope, verifyWithScopes } from "./jwt.ts";
 
-/** Minimum scope required per A2A method. */
+const WRITE = ["a2a:write"] as OAuthScope[];
+const STREAM_OR_WRITE = ["a2a:stream", "a2a:write"] as OAuthScope[];
+const READ = ["a2a:read"] as OAuthScope[];
+const STREAM_OR_READ = ["a2a:stream", "a2a:read"] as OAuthScope[];
+const ADMIN = ["a2a:admin"] as OAuthScope[];
+
+/** Minimum scope required per A2A method (dispatch names + proto-name aliases). */
 const METHOD_SCOPES: Record<string, OAuthScope[]> = {
-	"tasks/send": ["a2a:write"],
-	"tasks/sendSubscribe": ["a2a:stream", "a2a:write"], // stream OR write
-	"tasks/get": ["a2a:read"],
-	"tasks/cancel": ["a2a:admin"],
+	// JSON-RPC dispatch names — what the A2AServer actually receives.
+	[A2A_METHODS.tasksSend]: WRITE,
+	[A2A_METHODS.tasksSendSubscribe]: STREAM_OR_WRITE,
+	[A2A_METHODS.tasksGet]: READ,
+	[A2A_METHODS.tasksCancel]: ADMIN,
+	// A2A v1.0 proto wire names (aliases).
+	[V1_METHOD_SEND_MESSAGE]: WRITE,
+	[V1_METHOD_SEND_STREAMING_MESSAGE]: STREAM_OR_WRITE,
+	[V1_METHOD_GET_TASK]: READ,
+	[V1_METHOD_LIST_TASKS]: READ,
+	[V1_METHOD_CANCEL_TASK]: ADMIN,
+	[V1_METHOD_SUBSCRIBE_TO_TASK]: STREAM_OR_READ,
+	[V1_METHOD_GET_EXTENDED_AGENT_CARD]: READ,
+	[V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG]: ADMIN,
+	[V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG]: READ,
+	[V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS]: READ,
+	[V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG]: ADMIN,
 };
 
 /**

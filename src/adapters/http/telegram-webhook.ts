@@ -3,7 +3,7 @@ import {
 	idempotencyConflictResponse,
 } from "@adapters/idempotency-lock";
 import { rateLimitResponse } from "@adapters/rate-limit";
-import { JABR_PORTS } from "@constants/ecosystem";
+import { A2A_METHODS, JABR_PORTS } from "@constants/ecosystem";
 import type {
 	TelegramBotPort,
 	TelegramChatAction,
@@ -17,7 +17,7 @@ const TELEGRAM_API_BASE = "https://api.telegram.org";
 export interface TelegramWebhookAdapterConfig {
 	/** Telegram Bot token from @BotFather. Required. */
 	botToken: string;
-	/** Port for the Bun.serve webhook receiver. Default 4008. */
+	/** Port for the Bun.serve webhook receiver. Defaults to JABR_PORTS.realtime (shared with the realtime agent). */
 	port?: number;
 	/** Which agent URL to delegate incoming Telegram updates to. */
 	delegateUrl?: string;
@@ -436,7 +436,7 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
 		await this.delegateToAgent(fullText);
 	}
 
-	/** Delegate an inbound message to an agent via JSON-RPC tasks/send. */
+	/** Delegate an inbound message to an agent via JSON-RPC SendMessage. */
 	private async delegateToAgent(text: string): Promise<void> {
 		if (!this.delegateUrl) {
 			console.log(`[TelegramWebhookAdapter] no delegateUrl — dropping message`);
@@ -449,10 +449,11 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
-				method: "tasks/send",
+				method: A2A_METHODS.tasksSend,
 				params: {
 					message: {
 						role: "user",
+						messageId: crypto.randomUUID(),
 						parts: [{ kind: "text", text }],
 					},
 				},

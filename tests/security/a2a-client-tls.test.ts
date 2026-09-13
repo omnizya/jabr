@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { execSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { A2AClient } from "@adapters/a2a/client";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
 
 const TEST_DIR = "/tmp/tls-client-test";
 
@@ -57,10 +58,24 @@ describe("A2AClient — mTLS", () => {
 			hostname: "127.0.0.1",
 			async fetch(req) {
 				const body = await req.json();
+				// Verify v1.0 SendMessage method
+				expect(body.method).toBe(V1_METHOD_SEND_MESSAGE);
 				return Response.json({
 					jsonrpc: "2.0",
 					id: body.id,
-					result: { text: "hello from test" },
+					result: {
+						task: {
+							taskId: "task-1",
+							status: {
+								state: "completed",
+								message: {
+									role: "agent",
+									messageId: "msg-1",
+									parts: [{ kind: "text", text: "hello from test" }],
+								},
+							},
+						},
+					},
 				});
 			},
 		});
@@ -89,10 +104,24 @@ describe("A2AClient — mTLS", () => {
 			},
 			async fetch(req) {
 				const body = await req.json();
+				// Verify v1.0 SendMessage method
+				expect(body.method).toBe(V1_METHOD_SEND_MESSAGE);
 				return Response.json({
 					jsonrpc: "2.0",
 					id: body.id,
-					result: { text: "secure hello" },
+					result: {
+						task: {
+							taskId: "task-1",
+							status: {
+								state: "completed",
+								message: {
+									role: "agent",
+									messageId: "msg-1",
+									parts: [{ kind: "text", text: "secure hello" }],
+								},
+							},
+						},
+					},
 				});
 			},
 		});
@@ -130,7 +159,11 @@ describe("A2AClient — mTLS", () => {
 			},
 			fetch(req) {
 				const url = new URL(req.url);
-				if (url.pathname === "/.well-known/agent-card.json") {
+				// Try v1.0 path first, then legacy
+				if (
+					url.pathname === "/.well-known/agent.json" ||
+					url.pathname === "/.well-known/agent-card.json"
+				) {
 					return Response.json(card);
 				}
 				return new Response("Not found", { status: 404 });

@@ -1,4 +1,10 @@
 import type { A2AMessage, AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
@@ -9,7 +15,7 @@ export const VERIFICATION_CARD: AgentCard = {
 	name: "SHURA",
 	description:
 		"SHURA (الشورى) — The Council. Independent verification agent. Cross-checks outputs from multiple agents and applies consensus thresholds for contested results.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.verification),
 	version: "1.0.0",
 	capabilities: {
 		streaming: false,
@@ -18,6 +24,13 @@ export const VERIFICATION_CARD: AgentCard = {
 	},
 	securitySchemes: {},
 	securityRequirements: [],
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.verification),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Cross-check outputs",

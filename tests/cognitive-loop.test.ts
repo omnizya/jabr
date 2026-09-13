@@ -9,6 +9,7 @@ const makeCard = (skills: AgentSkill[] = []): AgentCard => ({
 	version: "1.0.0",
 	capabilities: {},
 	skills,
+	supportedInterfaces: [],
 });
 
 const makeInput = (response: string, card = makeCard()): ConsensusInput => ({

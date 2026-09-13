@@ -1,4 +1,4 @@
-import { JABR_PORTS } from "@constants/ecosystem";
+import { A2A_METHODS, JABR_PORTS } from "@constants/ecosystem";
 import type { GitHubBotPort, GitHubWebhookEvent } from "@ports/github-bot-port";
 import {
 	parseGitHubEvent,
@@ -291,8 +291,14 @@ export class GitHubWebhookAdapter implements GitHubBotPort {
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
-				method: "tasks/send",
-				params: { message: { role: "user", parts: [{ kind: "text", text }] } },
+				method: A2A_METHODS.tasksSend,
+				params: {
+					message: {
+						role: "user",
+						messageId: crypto.randomUUID(),
+						parts: [{ kind: "text", text }],
+					},
+				},
 			}),
 		});
 		if (!res.ok) {

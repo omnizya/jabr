@@ -1,4 +1,5 @@
 import type { A2AMessage, A2APart } from "@agents/types";
+import type { Task as A2ATask } from "../types/a2a-v1.ts";
 
 export interface Task {
 	id: string;
@@ -16,6 +17,12 @@ export interface Task {
 	artifacts: Array<{ name: string; parts: A2APart[] }>;
 }
 
+export interface TaskFilter {
+	status?: A2ATask["status"]["state"];
+	contextId?: string;
+	pageSize?: number;
+}
+
 export interface TaskStorePort {
 	create(taskId: string): Task;
 	get(taskId: string): Task | undefined;
@@ -26,6 +33,8 @@ export interface TaskStorePort {
 		artifact: { name: string; parts: A2APart[] },
 	): void;
 	listByState(state: Task["state"]): Task[];
+	list(filter?: TaskFilter): Task[];
+	subscribe(taskId: string, cb: (task: Task) => void): () => void;
 	getTransitionHistory(
 		taskId: string,
 	): Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }>;

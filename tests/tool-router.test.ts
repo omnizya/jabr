@@ -9,8 +9,9 @@ import type { MemoryStorePort } from "@ports/memory-store";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { RealtimePort } from "@ports/realtime-port";
 import type { TaskStorePort } from "@ports/task-store";
+import { MAX_HANDOVER_DEPTH } from "../src/constants/app";
 import { CognitiveLoop } from "../src/core/cognitive-loop";
-import { MAX_HANDOVER_DEPTH, ToolRouter } from "../src/core/tool-router";
+import { ToolRouter } from "../src/core/tool-router";
 
 // ---- helpers ----
 
@@ -34,6 +35,7 @@ function makeCard(
 				outputModes: ["text"],
 			},
 		],
+		supportedInterfaces: [],
 		pricing,
 	};
 }
@@ -63,6 +65,7 @@ function makeRegistry(responses: Record<string, string>): AgentRegistryPort {
 				version: "1.0.0",
 				capabilities: {},
 				skills: [],
+				supportedInterfaces: [],
 			};
 		},
 		async delegateTask(agentUrl: string) {
@@ -483,6 +486,7 @@ describe("ToolRouter.delegateToMultiple — multi-agent delegation", () => {
 					version: "1.0.0",
 					capabilities: {},
 					skills: [],
+					supportedInterfaces: [],
 				};
 			},
 			async delegateTask(url: string) {
@@ -603,6 +607,7 @@ describe("ToolRouter.executeConsensus — consensus", () => {
 					version: "1.0.0",
 					capabilities: {},
 					skills: [],
+					supportedInterfaces: [],
 				};
 			},
 			async delegateTask() {
@@ -675,13 +680,18 @@ describe("ToolRouter.getWorldState — world state", () => {
 
 	test("reports memory entries based on orchestrator.md existence", async () => {
 		// getWorldState reads memory/orchestrator.md from process.cwd().
-		// In the project dir, this file exists, so totalEntries will be 1.
+		// The markdown mirror exists only when a running orchestrator writes it
+		// (SQLite is the canonical store), so totalEntries may be 0 or 1.
 		// We validate the shape rather than the exact value.
 		const router = new ToolRouter({ agents: {}, memory: noopMemory() });
 		const state = await router.getWorldState();
 		expect(state.memory).toBeDefined();
 		expect(typeof state.memory.totalEntries).toBe("number");
-		expect(typeof state.memory.lastUpdated).toBe("string");
+		if (state.memory.totalEntries > 0) {
+			expect(typeof state.memory.lastUpdated).toBe("string");
+		} else {
+			expect(state.memory.lastUpdated).toBeUndefined();
+		}
 	});
 });
 

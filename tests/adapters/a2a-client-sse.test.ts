@@ -2,7 +2,7 @@
  * a2a-client-sse.test.ts — SSE streaming tests for A2AClient adapter.
  *
  * Verifies:
- *   1. subscribeTask sends a tasks/sendSubscribe JSON-RPC request.
+ *   1. subscribeTask sends a SendStreamingMessage JSON-RPC request.
  *   2. SSE frames (TaskStatusUpdateEvent, TaskArtifactUpdateEvent) are parsed
  *      and forwarded to the onEvent callback.
  *   3. The promise resolves when the stream closes.
@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { A2AClient } from "@adapters/http/a2a-client-adapter";
+import { V1_METHOD_SEND_STREAMING_MESSAGE } from "@constants/a2a-v1";
 import type { A2ASseEvent } from "@ports/a2a-client-port";
 
 const PORT = 4923;
@@ -120,7 +121,7 @@ describe("A2AClient subscribeTask SSE", () => {
 		}
 	});
 
-	test("subscribeTask sends a valid tasks/sendSubscribe JSON-RPC body", async () => {
+	test("subscribeTask sends a valid SendStreamingMessage JSON-RPC body", async () => {
 		const originalFetch = globalThis.fetch;
 		let capturedBody: any = null;
 
@@ -143,9 +144,10 @@ describe("A2AClient subscribeTask SSE", () => {
 			);
 
 			expect(capturedBody.jsonrpc).toBe("2.0");
-			expect(capturedBody.method).toBe("tasks/sendSubscribe");
+			expect(capturedBody.method).toBe(V1_METHOD_SEND_STREAMING_MESSAGE);
 			expect(capturedBody.params.message.parts[0].text).toBe("ping");
-			expect(capturedBody.params.contextId).toBe("ctx-123");
+			expect(capturedBody.params.message.contextId).toBe("ctx-123");
+			expect(capturedBody.params.message.messageId).toBeDefined();
 		} finally {
 			globalThis.fetch = originalFetch;
 		}

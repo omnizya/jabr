@@ -2,10 +2,20 @@
  * a2a-client-adapter.ts — Concrete A2A client adapter speaking JSON-RPC over HTTP.
  *
  * Implements the A2AClientPort interface. Uses Bun's native fetch to send
- * JSON-RPC 2.0 `tasks/send` requests, discover AgentCards via GET
- * /.well-known/agent-card.json, and probe health via GET /health.
+ * JSON-RPC 2.0 `SendMessage` requests, discover AgentCards via GET
+ * /.well-known/agent.json, and probe health via GET /health.
  */
 
+import {
+	V1_METHOD_CANCEL_TASK,
+	V1_METHOD_GET_TASK,
+	V1_METHOD_LIST_TASKS,
+	V1_METHOD_SEND_MESSAGE,
+	V1_METHOD_SEND_STREAMING_MESSAGE,
+	V1_METHOD_SUBSCRIBE_TO_TASK,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "@constants/a2a-v1";
 import type {
 	A2AClientPort,
 	A2ASseEvent,
@@ -17,6 +27,21 @@ import {
 	ok,
 	parseSSEStream,
 } from "@utils/rpc";
+import {
+	fromWireSendMessageResponse,
+	fromWireTask,
+	fromWireTask as parseTask,
+	toWireCancelTaskRequest,
+	toWireGetTaskRequest,
+	toWireSendMessageRequest,
+} from "@/adapters/a2a/serialize";
+import type {
+	Message,
+	Part,
+	SendMessageRequest,
+	SendMessageResponse,
+	Task,
+} from "@/types/a2a-v1";
 
 export class A2AClient implements A2AClientPort {
 	private nextId = 1;
@@ -36,7 +61,7 @@ export class A2AClient implements A2AClientPort {
 	}
 
 	/**
-	 * Send a task synchronously via `tasks/send` and await the full result.
+	 * Send a task synchronously via `SendMessage` and await the full result.
 	 */
 	async sendTask(
 		agentUrl: string,
@@ -44,14 +69,19 @@ export class A2AClient implements A2AClientPort {
 		contextId?: string,
 	): Promise<A2ATaskResult> {
 		const id = this.nextId++;
+		const msg: Message = {
+			role: "user",
+			messageId: crypto.randomUUID(),
+			parts: [{ kind: "text", text: message }],
+			...(contextId ? { contextId } : {}),
+		};
+
+		const request: SendMessageRequest = { message: msg };
 		const body: JSONRPCRequest = {
 			jsonrpc: "2.0",
 			id,
-			method: "tasks/send",
-			params: {
-				message: { role: "user", parts: [{ kind: "text", text: message }] },
-				...(contextId ? { contextId } : {}),
-			},
+			method: V1_METHOD_SEND_MESSAGE,
+			params: toWireSendMessageRequest(request),
 		};
 
 		const res = await fetch(agentUrl, {
@@ -71,11 +101,37 @@ export class A2AClient implements A2AClientPort {
 			);
 		}
 
-		return json.result as A2ATaskResult;
+		// Parse v1.0 SendMessageResponse
+		const response = fromWireSendMessageResponse(json.result);
+
+		// Normalize to A2ATaskResult (legacy port shape)
+		const result: A2ATaskResult = {};
+		if (response.task?.status?.message?.parts?.[0]?.kind === "text") {
+			result.text = response.task.status.message.parts[0].text;
+		} else if (response.message?.parts?.[0]?.kind === "text") {
+			result.text = response.message.parts[0].text;
+		} else if (response.task?.artifacts?.[0]?.parts?.[0]?.kind === "text") {
+			result.text = response.task.artifacts[0].parts[0].text;
+		}
+		if (response.task?.artifacts && response.task.artifacts.length > 0) {
+			result.artifacts = response.task.artifacts.map((a) => ({
+				parts: a.parts.map((p) =>
+					p.kind === "text" ? { text: p.text } : { kind: p.kind },
+				),
+			}));
+		}
+		if (response.message) {
+			result.message = {
+				parts: response.message.parts.map((p) =>
+					p.kind === "text" ? { text: p.text } : { kind: p.kind },
+				),
+			};
+		}
+		return result;
 	}
 
 	/**
-	 * Send a task asynchronously via `tasks/send` and return immediately
+	 * Send a task asynchronously via `SendMessage` and return immediately
 	 * with the assigned task ID. The caller polls or streams separately
 	 * for completion.
 	 */
@@ -85,14 +141,19 @@ export class A2AClient implements A2AClientPort {
 		contextId?: string,
 	): Promise<string> {
 		const id = this.nextId++;
+		const msg: Message = {
+			role: "user",
+			messageId: crypto.randomUUID(),
+			parts: [{ kind: "text", text: message }],
+			...(contextId ? { contextId } : {}),
+		};
+
+		const request: SendMessageRequest = { message: msg };
 		const body: JSONRPCRequest = {
 			jsonrpc: "2.0",
 			id,
-			method: "tasks/send",
-			params: {
-				message: { role: "user", parts: [{ kind: "text", text: message }] },
-				...(contextId ? { contextId } : {}),
-			},
+			method: V1_METHOD_SEND_MESSAGE,
+			params: toWireSendMessageRequest(request),
 		};
 
 		const res = await fetch(agentUrl, {
@@ -114,15 +175,11 @@ export class A2AClient implements A2AClientPort {
 			);
 		}
 
-		// A2A returns a task object in the result; extract the id.
-		const result = json.result as {
-			id?: string;
-			taskId?: string;
-			text?: string;
-		};
-		const taskId = result.id ?? result.taskId;
+		// Parse v1.0 SendMessageResponse and extract taskId
+		const response = fromWireSendMessageResponse(json.result);
+		const taskId = response.task?.taskId;
 		if (!taskId) {
-			// Some agents (e.g. orchestrator) return `{text}` synchronously with no task ID.
+			// Some agents return `{message}` synchronously with no task ID.
 			// Generate a synthetic ID for logging purposes.
 			return `sync-${id}-${Date.now()}`;
 		}
@@ -130,7 +187,7 @@ export class A2AClient implements A2AClientPort {
 	}
 
 	/**
-	 * Retrieve the current state of a task via `tasks/get`.
+	 * Retrieve the current state of a task via `GetTask`.
 	 */
 	async getTask(
 		agentUrl: string,
@@ -140,8 +197,8 @@ export class A2AClient implements A2AClientPort {
 		const body: JSONRPCRequest = {
 			jsonrpc: "2.0",
 			id,
-			method: "tasks/get",
-			params: { taskId },
+			method: V1_METHOD_GET_TASK,
+			params: toWireGetTaskRequest({ id: taskId }),
 		};
 
 		const res = await fetch(agentUrl, {
@@ -161,19 +218,20 @@ export class A2AClient implements A2AClientPort {
 			);
 		}
 
-		return (json.result ?? {}) as Record<string, unknown>;
+		const task = parseTask(json.result);
+		return task as unknown as Record<string, unknown>;
 	}
 
 	/**
-	 * Cancel a running task via `tasks/cancel`.
+	 * Cancel a running task via `CancelTask`.
 	 */
 	async cancelTask(agentUrl: string, taskId: string): Promise<boolean> {
 		const id = this.nextId++;
 		const body: JSONRPCRequest = {
 			jsonrpc: "2.0",
 			id,
-			method: "tasks/cancel",
-			params: { taskId },
+			method: V1_METHOD_CANCEL_TASK,
+			params: toWireCancelTaskRequest({ id: taskId }),
 		};
 
 		const res = await fetch(agentUrl, {
@@ -193,20 +251,24 @@ export class A2AClient implements A2AClientPort {
 			);
 		}
 
-		const result = json.result as { state?: string } | undefined;
-		return result?.state === "canceled";
+		const task = parseTask(json.result);
+		return task.status.state === "canceled";
 	}
 
 	/**
 	 * Discover an agent's capabilities by fetching its AgentCard from
-	 * /.well-known/agent-card.json.
+	 * /.well-known/agent.json (v1.0), falling back to legacy path.
 	 */
 	async discover(agentUrl: string): Promise<Record<string, unknown>> {
-		const res = await fetch(
-			`${agentUrl.replace(/\/$/, "")}/.well-known/agent-card.json`,
-		);
+		const base = agentUrl.replace(/\/$/, "");
+		// Try v1.0 well-known path first
+		let res = await fetch(`${base}/${WELL_KNOWN_AGENT_JSON}`);
 		if (!res.ok) {
-			throw new Error(`A2A discover failed: ${res.status} ${res.statusText}`);
+			// Fallback to legacy path
+			res = await fetch(`${base}/${WELL_KNOWN_AGENT_CARD_JSON}`);
+			if (!res.ok) {
+				throw new Error(`A2A discover failed: ${res.status} ${res.statusText}`);
+			}
 		}
 		return (await res.json()) as Record<string, unknown>;
 	}
@@ -224,7 +286,7 @@ export class A2AClient implements A2AClientPort {
 	/**
 	 * Subscribe to real-time progress events for a task via SSE streaming.
 	 *
-	 * Sends a `tasks/sendSubscribe` JSON-RPC request and consumes the resulting
+	 * Sends a `SendStreamingMessage` JSON-RPC request and consumes the resulting
 	 * text/event-stream. Each parsed SSE frame is forwarded to the `onEvent`
 	 * callback. The promise resolves when the stream closes (task completed,
 	 * failed, or canceled) or rejects on network / parse errors.
@@ -236,14 +298,19 @@ export class A2AClient implements A2AClientPort {
 		contextId?: string,
 	): Promise<void> {
 		const id = this.nextId++;
+		const msg: Message = {
+			role: "user",
+			messageId: crypto.randomUUID(),
+			parts: [{ kind: "text", text: message }],
+			...(contextId ? { contextId } : {}),
+		};
+
+		const request: SendMessageRequest = { message: msg };
 		const body: JSONRPCRequest = {
 			jsonrpc: "2.0",
 			id,
-			method: "tasks/sendSubscribe",
-			params: {
-				message: { role: "user", parts: [{ kind: "text", text: message }] },
-				...(contextId ? { contextId } : {}),
-			},
+			method: V1_METHOD_SEND_STREAMING_MESSAGE,
+			params: toWireSendMessageRequest(request),
 		};
 
 		const res = await fetch(agentUrl, {

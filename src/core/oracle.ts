@@ -1,6 +1,12 @@
 import type { A2AMessage, AgentCard } from "@agents/types";
 import { encodeHandover } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
 import { RESEARCH_TEMPERATURE } from "@constants/app-constants";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
@@ -9,7 +15,7 @@ export const ORACLE_CARD: AgentCard = {
 	name: "RUSHD",
 	description:
 		"RUSHD (ابن رشد) — Rational Sage. Reviews code, simplifies implementations, makes architecture decisions. Senior-level advisor.",
-	url: "",
+	url: jabrUrlForPort(JABR_PORTS.oracle),
 	version: "1.0.0",
 	capabilities: {
 		streaming: true,
@@ -18,6 +24,13 @@ export const ORACLE_CARD: AgentCard = {
 	},
 	securitySchemes: {},
 	securityRequirements: [],
+	supportedInterfaces: [
+		{
+			url: jabrUrlForPort(JABR_PORTS.oracle),
+			protocolBinding: PROTOCOL_BINDING_JSONRPC,
+			protocolVersion: SUPPORTED_INTERFACES_VERSION,
+		},
+	],
 	skills: [
 		{
 			name: "Review code",

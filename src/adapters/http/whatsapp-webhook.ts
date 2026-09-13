@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { JABR_PORTS } from "@constants/ecosystem";
+import { A2A_METHODS, JABR_PORTS } from "@constants/ecosystem";
 import {
 	isAudioMessage,
 	isDocumentMessage,
@@ -52,7 +52,7 @@ export interface WhatsAppWebhookAdapterConfig {
 	 */
 	accessToken?: string;
 
-	/** Bun.serve port. Default 4009. */
+	/** Bun.serve port. Defaults to JABR_PORTS.verification (shared with the verification agent). */
 	port?: number;
 
 	/**
@@ -486,7 +486,7 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
 	}
 
 	/**
-	 * Delegate an inbound message to an agent via JSON-RPC tasks/send.
+	 * Delegate an inbound message to an agent via JSON-RPC SendMessage.
 	 */
 	private async delegateToAgent(from: string, text: string): Promise<void> {
 		if (!this.delegateUrl) {
@@ -502,10 +502,11 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
-				method: "tasks/send",
+				method: A2A_METHODS.tasksSend,
 				params: {
 					message: {
 						role: "user",
+						messageId: crypto.randomUUID(),
 						parts: [
 							{ kind: "text", text: `[WhatsApp] From +${from}:\n${text}` },
 						],

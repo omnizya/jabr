@@ -7,6 +7,21 @@
  */
 
 import type { AgentCard } from "@agents/types";
+import {
+	V1_METHOD_SEND_MESSAGE,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "@constants/a2a-v1";
+import {
+	fromWireSendMessageResponse,
+	toWireSendMessageRequest,
+} from "@/adapters/a2a/serialize";
+import type {
+	Message,
+	SendMessageRequest,
+	SendMessageResponse,
+} from "@/types/a2a-v1";
+import type { JSONRPCResponse } from "@/utils/rpc";
 import { SettlementLedger } from "./settlement-ledger";
 import type { PaymentToken, SettlementPricing } from "./types";
 
@@ -62,10 +77,15 @@ export class X402Client {
 		const cached = this.cache.get(agentUrl);
 		if (cached !== undefined) return cached;
 		try {
-			const res = await fetch(`${agentUrl}/.well-known/agent-card.json`);
+			// Try v1.0 well-known path first
+			let res = await fetch(`${agentUrl}/${WELL_KNOWN_AGENT_JSON}`);
 			if (!res.ok) {
-				this.cache.set(agentUrl, null);
-				return null;
+				// Fallback to legacy path
+				res = await fetch(`${agentUrl}/${WELL_KNOWN_AGENT_CARD_JSON}`);
+				if (!res.ok) {
+					this.cache.set(agentUrl, null);
+					return null;
+				}
 			}
 			const card = (await res.json()) as AgentCard;
 			this.cache.set(agentUrl, card);
@@ -168,16 +188,18 @@ export class X402Client {
 		text: string,
 		token?: PaymentToken,
 	): Promise<string> {
+		const message: Message = {
+			role: "user",
+			messageId: crypto.randomUUID(),
+			parts: [{ kind: "text", text }],
+		};
+
+		const request: SendMessageRequest = { message };
 		const body = JSON.stringify({
 			jsonrpc: "2.0",
 			id: 1,
-			method: "tasks/send",
-			params: {
-				message: {
-					role: "user",
-					parts: [{ kind: "text", text }],
-				},
-			},
+			method: V1_METHOD_SEND_MESSAGE,
+			params: toWireSendMessageRequest(request),
 		});
 
 		const headers: Record<string, string> = {
@@ -202,17 +224,31 @@ export class X402Client {
 			return errMsg;
 		}
 
-		const data = (await res.json()) as {
-			result?: { text?: string };
-			error?: { code: number; message: string };
-		};
+		const data = (await res.json()) as JSONRPCResponse;
 		if (data.error) {
 			const msg = `[X402Client] error code=${data.error.code} msg=${data.error.message}`;
 			console.error(msg);
 			return msg;
 		}
 
-		const textResult = data.result?.text ?? "[X402Client] no text in response";
+		// The A2AServer sync path returns a flat result { text }. Prefer it,
+		// then fall back to structured SendMessageResponse forms.
+		const rawResult = data.result as { text?: unknown } | undefined;
+		let resultText: string | undefined;
+		if (typeof rawResult?.text === "string") {
+			resultText = rawResult.text;
+		} else {
+			const response = fromWireSendMessageResponse(data.result);
+			if (response.task?.status?.message?.parts?.[0]?.kind === "text") {
+				resultText = response.task.status.message.parts[0].text;
+			} else if (response.message?.parts?.[0]?.kind === "text") {
+				resultText = response.message.parts[0].text;
+			} else if (response.task?.artifacts?.[0]?.parts?.[0]?.kind === "text") {
+				resultText = response.task.artifacts[0].parts[0].text;
+			}
+		}
+
+		const textResult = resultText ?? "[X402Client] no text in response";
 		console.log(
 			`[X402Client] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${textResult.length}`,
 		);
