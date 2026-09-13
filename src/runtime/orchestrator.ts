@@ -49,6 +49,7 @@ if (import.meta.main) {
 		ledger,
 		delegatorUrl: jabrUrlForPort(PORT),
 		defaultCurrency: process.env.JABR_X402_CURRENCY ?? undefined,
+		apiKey: process.env.A2A_AUTH_TOKEN ?? undefined,
 	});
 	const x402Server = new X402Server(ledger, jabrUrlForPort(PORT));
 
