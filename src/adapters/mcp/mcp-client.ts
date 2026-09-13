@@ -67,7 +67,7 @@ export class McpClientAdapter implements McpToolPort {
 		// owns its lifecycle (start/close, stderr, pid). We do not spawn it here.
 		const transport = new StdioClientTransport({
 			command: "bun",
-			args: ["mcp-servers/tools.ts"],
+			args: ["src/protocols/mcp/server/tools.ts"],
 			// Pipe stderr so we can forward server logs for debugging without
 			// inheriting the parent's stderr (which would corrupt the TUI).
 			stderr: "pipe",

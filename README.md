@@ -17,6 +17,7 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts`
 | Document | Purpose |
 |----------|---------|
 | **[CANONICAL.md](./docs/CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
+| **[JABR-FRONTEND-PLAN.md](./docs/JABR-FRONTEND-PLAN.md)** | Frontend control-plane architecture, UX, contracts, and delivery phases |
 | **[TODO.md](./TODO.md)** | Task tracker — completed work + future phases |
 | **[R&D Roadmap](./docs/rd-roadmap.md)** | R&D opportunities from the dependency stack + opensrc source exploration |
 | **[AGENTS.md](./AGENTS.md)** | Agent-specific notes (internal) |

@@ -504,6 +504,64 @@ describe("X402Client", () => {
 		expect(paymentHeader).toBeNull();
 	});
 
+	test("attaches X-API-Key header when apiKey is configured", async () => {
+		const ledger = new SettlementLedger({ hmacSecret: "secret" });
+		const client = new X402Client({
+			ledger,
+			delegatorUrl: "http://delegator",
+			apiKey: "test-key-123",
+		});
+
+		let lastInit: { headers?: unknown } | null = null;
+		globalThis.fetch = function (url: string, init?: RequestInit) {
+			lastInit = (init ?? null) as { headers?: unknown } | null;
+			if (
+				url.endsWith("/.well-known/agent-card.json") ||
+				url.endsWith("/.well-known/agent.json")
+			) {
+				return Response.json(makeCard(5, { settlement: false }));
+			}
+			return Response.json({ result: { text: "response text" } });
+		} as unknown as typeof fetch;
+
+		await client.delegateTask("http://worker", "hello", "worker");
+		const headers = (lastInit as { headers?: unknown } | null)?.headers as
+			| Record<string, string>
+			| undefined;
+		expect(headers?.["X-API-Key"]).toBe("test-key-123");
+	});
+
+	test("attaches both X-API-Key and X-Payment-Token when both are configured", async () => {
+		const ledger = new SettlementLedger({ hmacSecret: "secret" });
+		const client = new X402Client({
+			ledger,
+			delegatorUrl: "http://delegator",
+			apiKey: "test-key-456",
+		});
+
+		let lastInit: { headers?: unknown } | null = null;
+		globalThis.fetch = function (url: string, init?: RequestInit) {
+			lastInit = (init ?? null) as { headers?: unknown } | null;
+			if (
+				url.endsWith("/.well-known/agent-card.json") ||
+				url.endsWith("/.well-known/agent.json")
+			) {
+				return Response.json(makeCard(5, { settlement: true }));
+			}
+			return Response.json({ result: { text: "paid response" } });
+		} as unknown as typeof fetch;
+
+		await client.delegateTask("http://worker", "hello", "worker");
+		const headers = (lastInit as { headers?: unknown } | null)?.headers as
+			| Record<string, string>
+			| undefined;
+		expect(headers?.["X-API-Key"]).toBe("test-key-456");
+		expect(headers?.["X-Payment-Token"]).toBeTruthy();
+		const token = JSON.parse(headers!["X-Payment-Token"]!);
+		expect(token.from).toBe("http://delegator");
+		expect(token.to).toBe("http://worker");
+	});
+
 	test("mints and attaches a PaymentToken when agent has settlement pricing", async () => {
 		const ledger = new SettlementLedger({ hmacSecret: "secret" });
 		const client = new X402Client({ ledger, delegatorUrl: "http://delegator" });

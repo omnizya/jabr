@@ -34,6 +34,8 @@ export interface X402ClientConfig {
 	delegatorUrl: string;
 	/** Optional default settlement currency override. */
 	defaultCurrency?: string;
+	/** Optional API key sent as X-API-Key to target agents that require auth. */
+	apiKey?: string;
 }
 
 /**
@@ -67,7 +69,10 @@ export class X402Client {
 		this.ledger = config.ledger;
 		this.delegatorUrl = config.delegatorUrl;
 		this.defaultCurrency = config.defaultCurrency;
+		this.apiKey = config.apiKey;
 	}
+
+	private apiKey?: string;
 
 	/**
 	 * Fetch the agent card for a URL (with in-memory caching).
@@ -205,6 +210,9 @@ export class X402Client {
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
 		};
+		if (this.apiKey) {
+			headers["X-API-Key"] = this.apiKey;
+		}
 		if (token) {
 			headers[X_PAYMENT_TOKEN] = JSON.stringify(token);
 		}

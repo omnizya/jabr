@@ -1,12 +1,14 @@
 /**
  * a2a-server.ts — A2A v1.0 server with SSE streaming support.
  *
- * Transport branches:
- *   - tasks/send (synchronous) — awaits onTask, returns JSON-RPC response.
- *   - tasks/sendSubscribe (streaming) — returns text/event-stream, emits
- *     TaskStatusUpdateEvent and TaskArtifactUpdateEvent frames.
- *   - tasks/get — retrieve task state by ID.
- *   - tasks/cancel — cancel a running task.
+ * Transport branches (A2A v1.0 wire):
+ *   - SendMessage (JSON-RPC, camelCase) — awaits onTask, returns SendMessageResponse.
+ *   - SendStreamingMessage — returns text/event-stream; every frame is an
+ *     anonymous `data:` line wrapping a JSON-RPC response whose result is a
+ *     StreamResponse oneof.
+ *   - GetTask / ListTasks / CancelTask / SubscribeToTask — task-store backed.
+ *   - GetExtendedAgentCard + create/get/list/delete push-notification configs.
+ *   - Legacy tasks/* aliases remain below until Unit 7 retires A2A_METHODS.
  *
  * Authentication:
  *   - X-API-Key header (ApiKeyRegistry) — per-key ACL.
@@ -17,20 +19,41 @@
 import { RateLimiter, rateLimitResponse } from "@adapters/rate-limit";
 import { X402Server, x402Reject } from "@adapters/x402/x402-server";
 import type {
+	A2AMessage,
+	A2APart,
 	A2AServerConfig,
 	PushNotificationConfig,
 	ResolvedCaller,
 	TaskState,
 	TaskStreamingEvent,
 } from "@agents/types";
+import {
+	A2A_VERSION,
+	V1_METHOD_CANCEL_TASK,
+	V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_GET_EXTENDED_AGENT_CARD,
+	V1_METHOD_GET_TASK,
+	V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS,
+	V1_METHOD_LIST_TASKS,
+	V1_METHOD_SEND_MESSAGE,
+	V1_METHOD_SEND_STREAMING_MESSAGE,
+	V1_METHOD_SUBSCRIBE_TO_TASK,
+} from "@constants/a2a-v1";
 import { A2A_METHODS } from "@constants/ecosystem";
-import type { TaskStorePort } from "@ports/task-store";
+import type {
+	Task as StoreTask,
+	TaskFilter,
+	TaskStorePort,
+} from "@ports/task-store";
 import { verifyWithScopes } from "@security/jwt";
 import { handleOAuthRoutes } from "@security/oauth-server";
 import {
 	buildCorsHeaders,
 	buildCorsPreflightHeaders,
 	err,
+	formatAnonymousSSEFrame,
 	formatSSEEvent,
 	type JSONRPCNotification,
 	type JSONRPCRequest,
@@ -38,6 +61,42 @@ import {
 	notification,
 	ok,
 } from "@utils/rpc";
+import {
+	fromWireCancelTaskRequest,
+	fromWireDeleteTaskPushNotificationConfigRequest,
+	fromWireGetExtendedAgentCardRequest,
+	fromWireGetTaskPushNotificationConfigRequest,
+	fromWireGetTaskRequest,
+	fromWireListTaskPushNotificationConfigsRequest,
+	fromWireListTasksRequest,
+	fromWireSendMessageRequest,
+	fromWireSubscribeToTaskRequest,
+	toWireExtendedAgentCard,
+	toWireListTaskPushNotificationConfigsResponse,
+	toWireListTasksResponse,
+	toWireSendMessageResponse,
+	toWireStreamResponse,
+	toWireTask,
+} from "@/adapters/a2a/serialize";
+import type {
+	CancelTaskRequest,
+	DeleteTaskPushNotificationConfigRequest,
+	GetExtendedAgentCardRequest,
+	GetTaskPushNotificationConfigRequest,
+	GetTaskRequest,
+	ListTaskPushNotificationConfigsRequest,
+	ListTasksRequest,
+	Part,
+	SendMessageRequest,
+	StreamResponse,
+	SubscribeToTaskRequest,
+	TaskArtifactUpdateEvent,
+	TaskPushNotificationConfig,
+	TaskStatusUpdateEvent,
+	Message as WireMessage,
+	Task as WireTask,
+	TaskState as WireTaskState,
+} from "@/types/a2a-v1";
 import { ApiKeyRegistry } from "../../security/api-key-registry";
 import { scopesForMethod } from "../../security/auth-middleware";
 import { loadTlsConfigSync } from "../../security/tls-config";
@@ -154,6 +213,132 @@ function buildSSEStream(): {
 	};
 }
 
+// --- A2A v1.0 wire-format helpers (used by the v1 dispatch handlers in start()) ---
+const V1_FINAL_STATES: ReadonlySet<WireTaskState> = new Set([
+	"completed",
+	"failed",
+	"canceled",
+	"rejected",
+	"auth-required",
+]);
+
+function v1State(state: string): WireTaskState {
+	switch (state) {
+		case "submitted":
+		case "working":
+		case "input-required":
+		case "auth-required":
+		case "completed":
+		case "failed":
+		case "canceled":
+		case "rejected":
+			return state;
+		default:
+			return "unspecified";
+	}
+}
+
+function extractText(message: WireMessage | undefined): string {
+	if (!message) return "";
+	let out = "";
+	for (const part of message.parts) {
+		if (part.kind === "text") {
+			out += `${part.text ?? ""}\n`;
+		}
+	}
+	return out;
+}
+
+function v1AgentMessage(
+	contextId: string,
+	taskId: string,
+	text: string,
+): WireMessage {
+	return {
+		role: "agent",
+		messageId: crypto.randomUUID(),
+		contextId,
+		taskId,
+		parts: [{ kind: "text", text }],
+	};
+}
+
+function v1PartFromInternal(part: A2APart): Part {
+	switch (part.kind) {
+		case "text":
+			return { kind: "text", text: part.text };
+		case "file":
+			return {
+				kind: "file",
+				file: {
+					name: part.file.filename ?? "attachment",
+					mimeType: part.file.mimeType ?? "application/octet-stream",
+					bytes: part.file.base64,
+				},
+			};
+		case "data":
+			return { kind: "data", data: part.data };
+	}
+}
+
+function v1PartFromStreaming(part: { kind: string; text?: string }): Part {
+	if (part.kind === "text") {
+		return { kind: "text", text: part.text ?? "" };
+	}
+	return { kind: "data", data: JSON.stringify(part) };
+}
+
+function v1MessageFromInternal(
+	message: A2AMessage,
+	taskId: string,
+): WireMessage {
+	return {
+		role: message.role === "user" ? "user" : "agent",
+		messageId: message.messageId,
+		contextId: message.contextId ?? taskId,
+		taskId: message.taskId ?? taskId,
+		parts: message.parts.map(v1PartFromInternal),
+		...(message.referenceTaskIds && message.referenceTaskIds.length > 0
+			? { referenceTaskIds: message.referenceTaskIds }
+			: {}),
+	};
+}
+
+function storeTaskToV1(task: StoreTask): WireTask {
+	const lastMessage = task.messages[task.messages.length - 1];
+	return {
+		taskId: task.id,
+		contextId: lastMessage?.contextId ?? task.id,
+		status: { state: v1State(task.state) },
+		...(task.messages.length > 0
+			? { history: task.messages.map((m) => v1MessageFromInternal(m, task.id)) }
+			: {}),
+		...(task.artifacts.length > 0
+			? {
+					artifacts: task.artifacts.map((a, i) => ({
+						artifactId: `${task.id}-artifact-${i + 1}`,
+						name: a.name,
+						parts: a.parts.map(v1PartFromInternal),
+					})),
+				}
+			: {}),
+	};
+}
+
+type V1CoreError = {
+	ok: false;
+	code: number;
+	message: string;
+	httpStatus?: number;
+};
+
+/**
+ * Result of a shared v1 protocol core. Binding-agnostic: JSON-RPC and REST
+ * binders render this differently. `httpStatus` is honored by REST always;
+ * the JSON-RPC binder applies it only for 503 (its current error surface).
+ */
+type V1CoreOut = { ok: true; result: unknown } | V1CoreError;
+
 export class A2AServer {
 	private readonly config: A2AServerConfig<ApiKeyRegistry, TaskStorePort>;
 	private readonly rateLimiter: RateLimiter;
@@ -172,6 +357,12 @@ export class A2AServer {
 	// --- task cancellation support ---
 	private readonly taskAbortControllers = new Map<string, AbortController>();
 	private readonly taskStore?: TaskStorePort;
+
+	// --- v1.0 in-memory task push notification configs (per taskId) ---
+	private readonly taskPushNotificationConfigs = new Map<
+		string,
+		TaskPushNotificationConfig[]
+	>();
 
 	constructor(
 		config: A2AServerConfig<ApiKeyRegistry, TaskStorePort>,
@@ -546,6 +737,271 @@ export class A2AServer {
 								},
 							);
 						}
+					}
+
+					// --- A2A v1.0 protocol methods (JSON-RPC) ---
+					const v1Origin = req.headers.get("Origin");
+					const v1CorsHeaders = buildCorsHeaders(v1Origin);
+					const v1JsonHeaders = {
+						...(v1CorsHeaders ?? {}),
+						"Content-Type": "application/json",
+					};
+					// JSON-RPC binder surfaces HTTP status only for 503; all other
+					// v1 errors are 200 today and must stay 200.
+					const renderV1Error = (rpcId: JSONRPCRequest["id"], e: V1CoreError) =>
+						Response.json(err(rpcId, e.code, e.message), {
+							status: e.httpStatus === 503 ? 503 : 200,
+							headers: v1JsonHeaders,
+						});
+
+					if (method === V1_METHOD_SEND_MESSAGE) {
+						let sendReq: SendMessageRequest;
+						try {
+							sendReq = fromWireSendMessageRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] tasks/send invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = await self._v1RunSendMessage(sendReq, caller);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_SEND_STREAMING_MESSAGE) {
+						let sendReq: SendMessageRequest;
+						try {
+							sendReq = fromWireSendMessageRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] tasks/sendStreaming invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const responseHeaders = {
+							...(v1CorsHeaders ?? {}),
+							"Content-Type": "text/event-stream",
+							"Cache-Control": "no-cache, no-transform",
+							Connection: "keep-alive",
+							"X-Accel-Buffering": "no",
+						};
+						const wrapFrame = (frame: StreamResponse) =>
+							formatAnonymousSSEFrame(ok(id, toWireStreamResponse(frame)));
+						const out = await self._v1StreamSend(
+							sendReq,
+							caller,
+							wrapFrame,
+							responseHeaders,
+						);
+						if (out instanceof Response) {
+							return out;
+						}
+						return Response.json(err(id, out.code, out.message), {
+							status: 503,
+							headers: responseHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_GET_TASK) {
+						let getReq: GetTaskRequest;
+						try {
+							getReq = fromWireGetTaskRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] tasks/get invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1GetTask(getReq);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_LIST_TASKS) {
+						let listReq: ListTasksRequest;
+						try {
+							listReq = fromWireListTasksRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] tasks/list invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1ListTasks(listReq);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_CANCEL_TASK) {
+						let cancelReq: CancelTaskRequest;
+						try {
+							cancelReq = fromWireCancelTaskRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] tasks/cancel invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1CancelTask(cancelReq);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_SUBSCRIBE_TO_TASK) {
+						let subReq: SubscribeToTaskRequest;
+						try {
+							subReq = fromWireSubscribeToTaskRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] tasks/subscribeToTask invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const responseHeaders = {
+							...(v1CorsHeaders ?? {}),
+							"Content-Type": "text/event-stream",
+							"Cache-Control": "no-cache, no-transform",
+							Connection: "keep-alive",
+							"X-Accel-Buffering": "no",
+						};
+						const wrapFrame = (frame: StreamResponse) =>
+							formatAnonymousSSEFrame(ok(id, toWireStreamResponse(frame)));
+						const out = self._v1StreamSubscribe(
+							subReq,
+							wrapFrame,
+							responseHeaders,
+						);
+						if (out instanceof Response) {
+							return out;
+						}
+						return Response.json(err(id, out.code, out.message), {
+							status: out.httpStatus === 503 ? 503 : 200,
+							headers: out.httpStatus === 503 ? responseHeaders : v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_GET_EXTENDED_AGENT_CARD) {
+						try {
+							fromWireGetExtendedAgentCardRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] card/get invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1GetExtendedAgentCard();
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG) {
+						const out = self._v1CreatePushConfig(
+							(params ?? {}) as Record<string, unknown>,
+						);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG) {
+						let getReq: GetTaskPushNotificationConfigRequest;
+						try {
+							getReq = fromWireGetTaskPushNotificationConfigRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] push-notification-config/get invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1GetPushConfig(getReq);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS) {
+						let listReq: ListTaskPushNotificationConfigsRequest;
+						try {
+							listReq = fromWireListTaskPushNotificationConfigsRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] push-notification-config/list invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1ListPushConfigs(listReq);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
+					}
+
+					if (method === V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG) {
+						let delReq: DeleteTaskPushNotificationConfigRequest;
+						try {
+							delReq = fromWireDeleteTaskPushNotificationConfigRequest(params);
+						} catch (e) {
+							console.error(
+								`[A2AServer] push-notification-config/delete invalid params (-32602) id=${id}: ${e}`,
+							);
+							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
+								headers: v1JsonHeaders,
+							});
+						}
+						const out = self._v1DeletePushConfig(delReq);
+						if (!out.ok) {
+							return renderV1Error(id, out);
+						}
+						return Response.json(ok(id, out.result), {
+							headers: v1JsonHeaders,
+						});
 					}
 
 					// --- tasks/sendSubscribe — SSE streaming branch ---
@@ -944,6 +1400,458 @@ export class A2AServer {
 					}
 				}
 
+				// --- A2A v1.0 REST binding ---
+				const restBase = (() => {
+					const tp = self.config.tenantPrefix;
+					if (!tp) return url.pathname;
+					return url.pathname.startsWith(`/${tp}`)
+						? url.pathname.slice(tp.length + 1)
+						: url.pathname;
+				})();
+
+				if (
+					restBase.startsWith("/tasks/") ||
+					restBase === "/tasks" ||
+					restBase === "/message:send" ||
+					restBase === "/message:stream" ||
+					restBase === "/extendedAgentCard"
+				) {
+					const restCorsHeaders = buildCorsHeaders(req.headers.get("Origin"));
+					const restJsonHeaders = {
+						...(restCorsHeaders ?? {}),
+						"Content-Type": "application/json",
+					};
+					const restSseHeaders = {
+						...(restCorsHeaders ?? {}),
+						"Content-Type": "text/event-stream",
+						"Cache-Control": "no-cache, no-transform",
+						Connection: "keep-alive",
+						"X-Accel-Buffering": "no",
+					};
+
+					const renderRestError = (
+						code: number,
+						message: string,
+						httpStatus?: number,
+					) =>
+						Response.json(
+							{ ok: false, error: { code, message } },
+							{ status: httpStatus ?? 400, headers: restJsonHeaders },
+						);
+
+					const readRestJsonBody = async (): Promise<
+						| { ok: true; body: Record<string, unknown> }
+						| { ok: false; response: Response }
+					> => {
+						let raw: string;
+						try {
+							raw = await req.text();
+						} catch {
+							return {
+								ok: false,
+								response: renderRestError(
+									-32700,
+									"Parse error: cannot read body",
+									400,
+								),
+							};
+						}
+						if (!raw) return { ok: true, body: {} };
+						try {
+							return {
+								ok: true,
+								body: JSON.parse(raw) as Record<string, unknown>,
+							};
+						} catch {
+							return {
+								ok: false,
+								response: renderRestError(
+									-32700,
+									"Parse error: invalid JSON",
+									400,
+								),
+							};
+						}
+					};
+
+					const wrapRestFrame = (frame: StreamResponse) =>
+						`data: ${JSON.stringify(toWireStreamResponse(frame))}\n\n`;
+
+					const dec = (val: string) => decodeURIComponent(val);
+
+					// --- Authentication (fail-closed) ---
+					let restCaller: ResolvedCaller | undefined;
+					let restBearerToken: string | undefined;
+					if (requireAuth) {
+						if (!registry) {
+							return renderRestError(
+								-32603,
+								"Server misconfigured: auth not configured",
+								500,
+							);
+						}
+						const authHeader = req.headers.get("Authorization");
+						if (authHeader?.startsWith("Bearer ")) {
+							const token = authHeader.slice(7);
+							try {
+								const { verifyToken } = await import("@security/jwt");
+								const verified = await verifyToken(token);
+								restCaller = {
+									description: verified.claims.sub,
+									allowedAgents: verified.claims.allowed_agents ?? [],
+								};
+								restBearerToken = token;
+							} catch (e) {
+								return renderRestError(
+									-32000,
+									`Unauthorized: invalid bearer token (${String(e)})`,
+									401,
+								);
+							}
+						} else {
+							const apiKey = req.headers.get("X-API-Key");
+							const resolved = registry.authenticate(apiKey);
+							if (!resolved) {
+								const status = apiKey ? 403 : 401;
+								const code = status === 401 ? -32000 : -32001;
+								const msg = apiKey
+									? "Forbidden: invalid API key"
+									: "Unauthorized: missing X-API-Key or Bearer token";
+								return renderRestError(code, msg, status);
+							}
+							restCaller = resolved;
+						}
+					}
+
+					// --- x402 payment check ---
+					if (x402) {
+						const check = await x402.check(req);
+						if (!check.paid) {
+							// PAYMENT_REQUIRED_CODE is -32022 (module-private in x402-server.ts — priority 1: gateway-consensus enum).
+							return renderRestError(
+								-32022,
+								`Payment required: ${check.rejectReason ?? "unpaid"}`,
+								402,
+							);
+						}
+					}
+
+					// --- A2A-Version header check ---
+					const a2aVersion = req.headers.get("A2A-Version");
+					if (!a2aVersion) {
+						return renderRestError(-32602, "Missing A2A-Version header", 400);
+					}
+					if (a2aVersion !== A2A_VERSION) {
+						return renderRestError(
+							-32602,
+							`Unsupported A2A version: ${a2aVersion}`,
+							426,
+						);
+					}
+
+					// --- Scope enforcement helper ---
+					const enforceScope = async (
+						v1Method: string,
+					): Promise<Response | null> => {
+						if (restBearerToken && requireAuth) {
+							const requiredScopes = scopesForMethod(v1Method);
+							try {
+								await verifyWithScopes(restBearerToken, requiredScopes);
+							} catch (e) {
+								return renderRestError(
+									-32001,
+									`Forbidden: insufficient scope for ${v1Method} (${String(e)})`,
+									403,
+								);
+							}
+						}
+						return null;
+					};
+
+					// --- Route matching (longest-first) ---
+					const { method: httpMethod } = req;
+
+					// Push notification config item: /tasks/{taskId}/pushNotificationConfigs/{configId}
+					const pushConfigItemMatch = restBase.match(
+						/^\/tasks\/([^/]+)\/pushNotificationConfigs\/([^/]+)$/,
+					);
+					if (pushConfigItemMatch) {
+						const taskId = dec(pushConfigItemMatch[1]!);
+						const configId = dec(pushConfigItemMatch[2]!);
+						if (httpMethod === "GET") {
+							const scopeErr = await enforceScope(
+								V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG,
+							);
+							if (scopeErr) return scopeErr;
+							const out = self._v1GetPushConfig({ taskId, id: configId });
+							if (!out.ok)
+								return renderRestError(out.code, out.message, out.httpStatus);
+							return Response.json(out.result, { headers: restJsonHeaders });
+						}
+						if (httpMethod === "DELETE") {
+							const scopeErr = await enforceScope(
+								V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+							);
+							if (scopeErr) return scopeErr;
+							const out = self._v1DeletePushConfig({ taskId, id: configId });
+							if (!out.ok)
+								return renderRestError(out.code, out.message, out.httpStatus);
+							return Response.json(out.result, { headers: restJsonHeaders });
+						}
+						if (httpMethod === "PATCH") {
+							const scopeErr = await enforceScope(
+								V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+							);
+							if (scopeErr) return scopeErr;
+							const parsed = await readRestJsonBody();
+							if (!parsed.ok) return parsed.response;
+							const out = self._v1UpdatePushConfig({
+								...parsed.body,
+								taskId,
+								id: configId,
+							});
+							if (!out.ok)
+								return renderRestError(out.code, out.message, out.httpStatus);
+							return Response.json(out.result, { headers: restJsonHeaders });
+						}
+						return renderRestError(
+							-32601,
+							`Method ${httpMethod} not allowed for push notification config item`,
+							405,
+						);
+					}
+
+					// Push notification configs: /tasks/{taskId}/pushNotificationConfigs
+					const pushConfigsMatch = restBase.match(
+						/^\/tasks\/([^/]+)\/pushNotificationConfigs$/,
+					);
+					if (pushConfigsMatch) {
+						const taskId = dec(pushConfigsMatch[1]!);
+						if (httpMethod === "GET") {
+							const scopeErr = await enforceScope(
+								V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS,
+							);
+							if (scopeErr) return scopeErr;
+							const out = self._v1ListPushConfigs({
+								taskId,
+								...(url.searchParams.get("pageSize")
+									? { pageSize: Number(url.searchParams.get("pageSize")) }
+									: {}),
+								...(url.searchParams.get("pageToken")
+									? { pageToken: url.searchParams.get("pageToken")! }
+									: {}),
+							});
+							if (!out.ok)
+								return renderRestError(out.code, out.message, out.httpStatus);
+							return Response.json(out.result, { headers: restJsonHeaders });
+						}
+						if (httpMethod === "POST") {
+							const scopeErr = await enforceScope(
+								V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG,
+							);
+							if (scopeErr) return scopeErr;
+							const parsed = await readRestJsonBody();
+							if (!parsed.ok) return parsed.response;
+							const out = self._v1CreatePushConfig({
+								...parsed.body,
+								taskId,
+							});
+							if (!out.ok)
+								return renderRestError(out.code, out.message, out.httpStatus);
+							return Response.json(out.result, { headers: restJsonHeaders });
+						}
+						return renderRestError(
+							-32601,
+							`Method ${httpMethod} not allowed for push notification configs`,
+							405,
+						);
+					}
+
+					// Subscribe: /tasks/{id}:subscribe
+					const subscribeMatch = restBase.match(/^\/tasks\/([^/]+):subscribe$/);
+					if (subscribeMatch) {
+						if (httpMethod !== "GET" && httpMethod !== "POST") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for subscribe`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(V1_METHOD_SUBSCRIBE_TO_TASK);
+						if (scopeErr) return scopeErr;
+						let subReq: SubscribeToTaskRequest;
+						if (httpMethod === "GET") {
+							subReq = { id: dec(subscribeMatch[1]!) };
+						} else {
+							const parsed = await readRestJsonBody();
+							if (!parsed.ok) return parsed.response;
+							subReq = { id: dec(subscribeMatch[1]!), ...parsed.body };
+						}
+						try {
+							const out = self._v1StreamSubscribe(
+								subReq,
+								wrapRestFrame,
+								restSseHeaders,
+							);
+							if (out instanceof Response) return out;
+							return renderRestError(out.code, out.message, out.httpStatus);
+						} catch (e) {
+							return renderRestError(
+								-32603,
+								`Internal error: ${String(e)}`,
+								500,
+							);
+						}
+					}
+
+					// Cancel: /tasks/{id}:cancel
+					const cancelMatch = restBase.match(/^\/tasks\/([^/]+):cancel$/);
+					if (cancelMatch) {
+						if (httpMethod !== "POST") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for cancel`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(V1_METHOD_CANCEL_TASK);
+						if (scopeErr) return scopeErr;
+						const out = self._v1CancelTask({ id: dec(cancelMatch[1]!) });
+						if (!out.ok)
+							return renderRestError(out.code, out.message, out.httpStatus);
+						return Response.json(out.result, { headers: restJsonHeaders });
+					}
+
+					// Get task: /tasks/{id}
+					const taskItemMatch = restBase.match(/^\/tasks\/([^/]+)$/);
+					if (taskItemMatch) {
+						if (httpMethod !== "GET") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for get task`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(V1_METHOD_GET_TASK);
+						if (scopeErr) return scopeErr;
+						const out = self._v1GetTask({
+							id: dec(taskItemMatch[1]!),
+							...(url.searchParams.get("historyLength")
+								? {
+										historyLength: Number(
+											url.searchParams.get("historyLength"),
+										),
+									}
+								: {}),
+						});
+						if (!out.ok)
+							return renderRestError(out.code, out.message, out.httpStatus);
+						return Response.json(out.result, { headers: restJsonHeaders });
+					}
+
+					// Send message: POST /message:send
+					if (restBase === "/message:send") {
+						if (httpMethod !== "POST") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for send message`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(V1_METHOD_SEND_MESSAGE);
+						if (scopeErr) return scopeErr;
+						const parsed = await readRestJsonBody();
+						if (!parsed.ok) return parsed.response;
+						try {
+							const sendReq = fromWireSendMessageRequest(parsed.body);
+							const out = await self._v1RunSendMessage(sendReq, restCaller);
+							if (!out.ok)
+								return renderRestError(out.code, out.message, out.httpStatus);
+							return Response.json(out.result, { headers: restJsonHeaders });
+						} catch (e) {
+							return renderRestError(
+								-32602,
+								`Invalid params: ${String(e)}`,
+								400,
+							);
+						}
+					}
+
+					// Stream send: POST /message:stream
+					if (restBase === "/message:stream") {
+						if (httpMethod !== "POST") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for stream send`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(
+							V1_METHOD_SEND_STREAMING_MESSAGE,
+						);
+						if (scopeErr) return scopeErr;
+						const parsed = await readRestJsonBody();
+						if (!parsed.ok) return parsed.response;
+						try {
+							const sendReq = fromWireSendMessageRequest(parsed.body);
+							const out = await self._v1StreamSend(
+								sendReq,
+								restCaller,
+								wrapRestFrame,
+								restSseHeaders,
+							);
+							if (out instanceof Response) return out;
+							return renderRestError(out.code, out.message, out.httpStatus);
+						} catch (e) {
+							return renderRestError(
+								-32602,
+								`Invalid params: ${String(e)}`,
+								400,
+							);
+						}
+					}
+
+					// List tasks: GET /tasks
+					if (restBase === "/tasks") {
+						if (httpMethod !== "GET") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for list tasks`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(V1_METHOD_LIST_TASKS);
+						if (scopeErr) return scopeErr;
+						const out = self._v1ListTasks(
+							fromWireListTasksRequest(
+								Object.fromEntries(url.searchParams),
+							) as ListTasksRequest,
+						);
+						if (!out.ok)
+							return renderRestError(out.code, out.message, out.httpStatus);
+						return Response.json(out.result, { headers: restJsonHeaders });
+					}
+
+					// Extended agent card: GET /extendedAgentCard
+					if (restBase === "/extendedAgentCard") {
+						if (httpMethod !== "GET") {
+							return renderRestError(
+								-32601,
+								`Method ${httpMethod} not allowed for extended agent card`,
+								405,
+							);
+						}
+						const scopeErr = await enforceScope(
+							V1_METHOD_GET_EXTENDED_AGENT_CARD,
+						);
+						if (scopeErr) return scopeErr;
+						const out = self._v1GetExtendedAgentCard();
+						if (!out.ok)
+							return renderRestError(out.code, out.message, out.httpStatus);
+						return Response.json(out.result, { headers: restJsonHeaders });
+					}
+				}
+
 				console.error(
 					`[A2AServer] ← ${req.method} ${url.pathname} not found (404)`,
 				);
@@ -1010,6 +1918,581 @@ export class A2AServer {
 		this.inflightStream = 0;
 		this.server?.stop();
 		this.server = null;
+	}
+
+	// --- shared v1 protocol cores (binding-agnostic; JSON-RPC + REST binders) ---
+
+	/**
+	 * SendMessage core. Push mode (a notification callback URL is present)
+	 * replies with a submitted task and delivers the outcome via the callback;
+	 * otherwise blocks until the handler returns, producing a completed task.
+	 */
+	private async _v1RunSendMessage(
+		sendReq: SendMessageRequest,
+		caller?: ResolvedCaller,
+	): Promise<V1CoreOut> {
+		const taskId = sendReq.message.taskId ?? crypto.randomUUID();
+		const contextId = sendReq.message.contextId ?? taskId;
+		const text = extractText(sendReq.message);
+		const callbackUrl =
+			sendReq.notificationUrl ??
+			sendReq.sendMessageConfiguration?.taskPushNotificationConfig?.url;
+		console.log(
+			`[A2AServer] tasks/send taskId=${taskId} textLen=${text.length}`,
+		);
+
+		// Push mode: reply immediately with a submitted task and deliver the
+		// outcome (and failures) via the notification callback.
+		if (callbackUrl) {
+			const pushController = new AbortController();
+			this.taskAbortControllers.set(taskId, pushController);
+			(async () => {
+				try {
+					this._postCallback(callbackUrl, taskId, "submitted", {
+						message: "Task accepted for execution",
+					});
+					const result = await this.config.onTask(
+						text,
+						caller,
+						pushController.signal,
+					);
+					this._postCallback(callbackUrl, taskId, "completed", {
+						result,
+					});
+				} catch (e) {
+					this._postCallback(callbackUrl, taskId, "failed", {
+						message: String(e),
+					});
+				} finally {
+					this.taskAbortControllers.delete(taskId);
+				}
+			})();
+			return {
+				ok: true,
+				result: toWireSendMessageResponse({
+					task: {
+						taskId,
+						contextId,
+						status: { state: "submitted" },
+					},
+				}),
+			};
+		}
+
+		// Sync mode: block until the handler returns.
+		if (this.shuttingDown) {
+			return {
+				ok: false,
+				code: -32603,
+				message: "Server is shutting down",
+				httpStatus: 503,
+			};
+		}
+		this.inflightSync++;
+		try {
+			const syncController = new AbortController();
+			this.taskAbortControllers.set(taskId, syncController);
+			const result = await this.config.onTask(
+				text,
+				caller,
+				syncController.signal,
+			);
+			this.taskAbortControllers.delete(taskId);
+			const agentMessage = v1AgentMessage(contextId, taskId, result);
+			const wireTask: WireTask = {
+				taskId,
+				contextId,
+				status: {
+					state: "completed",
+					message: agentMessage,
+					timestamp: new Date().toISOString(),
+				},
+				history: [sendReq.message, agentMessage],
+			};
+			return {
+				ok: true,
+				result: toWireSendMessageResponse({
+					task: wireTask,
+					message: agentMessage,
+				}),
+			};
+		} catch (e) {
+			console.error(`[A2AServer] tasks/send error: ${e}`);
+			return {
+				ok: false,
+				code: -32603,
+				message: `Task execution failed: ${e}`,
+			};
+		} finally {
+			this.inflightSync--;
+			this._resolveDrainWaiters();
+		}
+	}
+
+	/**
+	 * SendStreamingMessage core. Returns an SSE Response opened on the stream;
+	 * a shutdown 503 is returned as a V1CoreError for the binder to render
+	 * (with SSE headers) before any stream is opened.
+	 */
+	private async _v1StreamSend(
+		sendReq: SendMessageRequest,
+		caller: ResolvedCaller | undefined,
+		wrapFrame: (frame: StreamResponse) => string,
+		sseHeaders: Record<string, string>,
+	): Promise<Response | V1CoreError> {
+		const taskId = sendReq.message.taskId ?? crypto.randomUUID();
+		const contextId = sendReq.message.contextId ?? taskId;
+		const text = extractText(sendReq.message);
+
+		const { stream, emit, end } = buildSSEStream();
+		const streamController = new AbortController();
+		this.taskAbortControllers.set(taskId, streamController);
+		const onDone = () => {
+			this.inflightStream--;
+			this._resolveDrainWaiters();
+		};
+		this.inflightStream++;
+		if (this.shuttingDown) {
+			this.taskAbortControllers.delete(taskId);
+			onDone();
+			return {
+				ok: false,
+				code: -32603,
+				message: "Server is shutting down",
+				httpStatus: 503,
+			};
+		}
+
+		const emitFrame = (frame: StreamResponse) => {
+			emit(wrapFrame(frame));
+		};
+
+		console.log(
+			`[A2AServer] tasks/sendStreaming starting taskId=${taskId} textLen=${text.length}`,
+		);
+
+		// Emit the submitted task frame before spawning the handler so the
+		// stream has an immediate first frame.
+		emitFrame({
+			task: {
+				taskId,
+				contextId,
+				status: {
+					state: "submitted",
+					timestamp: new Date().toISOString(),
+				},
+			},
+		});
+
+		(async () => {
+			let pushedFinal = false;
+			let pushedArtifacts = false;
+			const emitEvent = (event: TaskStreamingEvent) => {
+				if (event.type === "status") {
+					const state = v1State(event.state);
+					const final = V1_FINAL_STATES.has(state);
+					if (final) pushedFinal = true;
+					emitFrame({
+						statusUpdate: {
+							taskId,
+							contextId,
+							status: {
+								state,
+								...(event.message
+									? {
+											message: v1AgentMessage(contextId, taskId, event.message),
+										}
+									: {}),
+								timestamp: event.timestamp,
+							},
+							final,
+						},
+					});
+				} else {
+					pushedArtifacts = true;
+					emitFrame({
+						artifactUpdate: {
+							taskId,
+							contextId,
+							artifact: {
+								artifactId: `${taskId}-artifact`,
+								name: event.artifact.name,
+								parts: event.artifact.parts.map(v1PartFromStreaming),
+							},
+							append: true,
+							lastChunk: false,
+						},
+					});
+				}
+			};
+
+			try {
+				let result: string;
+				if (this.config.onTaskStreaming) {
+					result = await this.config.onTaskStreaming(
+						text,
+						taskId,
+						emitEvent,
+						caller,
+						streamController.signal,
+					);
+				} else if (this.config.onTask) {
+					result = await this.config.onTask(
+						text,
+						caller,
+						streamController.signal,
+					);
+				} else {
+					throw new Error("Streaming not supported");
+				}
+
+				// The handler did not report a terminal state: close the
+				// stream with a graceful completed final frame.
+				if (!pushedFinal) {
+					if (pushedArtifacts) {
+						emitFrame({
+							artifactUpdate: {
+								taskId,
+								contextId,
+								artifact: {
+									artifactId: `${taskId}-artifact`,
+									name: "output",
+									parts: [],
+								},
+								append: true,
+								lastChunk: true,
+							},
+						});
+					}
+					emitFrame({
+						statusUpdate: {
+							taskId,
+							contextId,
+							status: {
+								state: "completed",
+								...(result
+									? {
+											message: v1AgentMessage(contextId, taskId, result),
+										}
+									: {}),
+								timestamp: new Date().toISOString(),
+							},
+							final: true,
+						},
+					});
+				}
+			} catch (e) {
+				console.error(`[A2AServer] tasks/sendStreaming error: ${e}`);
+				emitFrame({
+					statusUpdate: {
+						taskId,
+						contextId,
+						status: {
+							state: "failed",
+							message: v1AgentMessage(contextId, taskId, String(e)),
+							timestamp: new Date().toISOString(),
+						},
+						final: true,
+					},
+				});
+			} finally {
+				this.taskAbortControllers.delete(taskId);
+				end();
+				onDone();
+			}
+		})();
+
+		return new Response(stream, { headers: sseHeaders });
+	}
+
+	private _v1GetTask(getReq: GetTaskRequest): V1CoreOut {
+		if (!this.taskStore) {
+			return {
+				ok: false,
+				code: -32603,
+				message: "Task store not configured",
+				httpStatus: 500,
+			};
+		}
+		const task = this.taskStore.get(getReq.id);
+		if (!task) {
+			return {
+				ok: false,
+				code: -32000,
+				message: `Task not found: ${getReq.id}`,
+				httpStatus: 404,
+			};
+		}
+		return { ok: true, result: toWireTask(storeTaskToV1(task)) };
+	}
+
+	private _v1ListTasks(listReq: ListTasksRequest): V1CoreOut {
+		if (!this.taskStore) {
+			return {
+				ok: false,
+				code: -32603,
+				message: "Task store not configured",
+				httpStatus: 500,
+			};
+		}
+		const stateFilter =
+			listReq.status && listReq.status !== "unspecified"
+				? listReq.status
+				: undefined;
+		const tasks = this.taskStore.list({
+			...(listReq.contextId ? { contextId: listReq.contextId } : {}),
+			...(stateFilter ? { status: stateFilter } : {}),
+			...(listReq.pageSize !== undefined ? { pageSize: listReq.pageSize } : {}),
+		});
+		return {
+			ok: true,
+			result: toWireListTasksResponse({
+				tasks: tasks.map(storeTaskToV1),
+				pageSize: listReq.pageSize ?? tasks.length,
+				totalSize: tasks.length,
+			}),
+		};
+	}
+
+	private _v1CancelTask(cancelReq: CancelTaskRequest): V1CoreOut {
+		const controller = this.taskAbortControllers.get(cancelReq.id);
+		if (controller) controller.abort();
+
+		if (this.taskStore) {
+			const task = this.taskStore.get(cancelReq.id);
+			if (!task) {
+				return {
+					ok: false,
+					code: -32000,
+					message: `Task not found: ${cancelReq.id}`,
+					httpStatus: 404,
+				};
+			}
+			if (V1_FINAL_STATES.has(v1State(task.state))) {
+				return {
+					ok: false,
+					code: -32002,
+					message: `Task already in terminal state: ${task.state}`,
+					httpStatus: 409,
+				};
+			}
+			this.taskStore.updateState(cancelReq.id, "canceled");
+			const canceled = this.taskStore.get(cancelReq.id);
+			return {
+				ok: true,
+				result: toWireTask(
+					storeTaskToV1(canceled ?? { ...task, state: "canceled" as const }),
+				),
+			};
+		}
+
+		// No store: fabricate a canceled task so the caller gets a v1-shaped
+		// response.
+		return {
+			ok: true,
+			result: toWireTask({
+				taskId: cancelReq.id,
+				contextId: cancelReq.id,
+				status: {
+					state: "canceled",
+					timestamp: new Date().toISOString(),
+				},
+			}),
+		};
+	}
+
+	private _v1StreamSubscribe(
+		subReq: SubscribeToTaskRequest,
+		wrapFrame: (frame: StreamResponse) => string,
+		sseHeaders: Record<string, string>,
+	): Response | V1CoreError {
+		if (!this.taskStore) {
+			return {
+				ok: false,
+				code: -32603,
+				message: "Task store not configured",
+				httpStatus: 500,
+			};
+		}
+		const task = this.taskStore.get(subReq.id);
+		if (!task) {
+			return {
+				ok: false,
+				code: -32000,
+				message: `Task not found: ${subReq.id}`,
+				httpStatus: 404,
+			};
+		}
+
+		const { stream, emit, end } = buildSSEStream();
+		const onDone = () => {
+			this.inflightStream--;
+			this._resolveDrainWaiters();
+		};
+		this.inflightStream++;
+		if (this.shuttingDown) {
+			onDone();
+			return {
+				ok: false,
+				code: -32603,
+				message: "Server is shutting down",
+				httpStatus: 503,
+			};
+		}
+
+		const emitFrame = (frame: StreamResponse) => {
+			emit(wrapFrame(frame));
+		};
+
+		console.log(`[A2AServer] tasks/subscribeToTask taskId=${subReq.id}`);
+
+		// The store emits the current task synchronously on subscribe, so
+		// the first frame doubles as the snapshot; the stream ends when a
+		// final state arrives.
+		const unsubscribe = this.taskStore.subscribe(subReq.id, (updated) => {
+			emitFrame({ task: storeTaskToV1(updated) });
+			if (V1_FINAL_STATES.has(v1State(updated.state))) {
+				unsubscribe();
+				end();
+				onDone();
+			}
+		});
+
+		return new Response(stream, { headers: sseHeaders });
+	}
+
+	private _v1GetExtendedAgentCard(): V1CoreOut {
+		if (!this.config.extendedAgentCard) {
+			return {
+				ok: false,
+				code: -32603,
+				message: "Extended agent card not configured",
+				httpStatus: 500,
+			};
+		}
+		return {
+			ok: true,
+			result: toWireExtendedAgentCard({
+				agentCard: this.config.extendedAgentCard,
+			}),
+		};
+	}
+
+	private _v1CreatePushConfig(raw: Record<string, unknown>): V1CoreOut {
+		// The create request has no wire serializer: parse defensively inline.
+		const taskId = typeof raw.taskId === "string" ? raw.taskId : undefined;
+		const url = typeof raw.url === "string" ? raw.url : undefined;
+		if (!taskId || !url) {
+			return {
+				ok: false,
+				code: -32602,
+				message: "taskId and url are required",
+				httpStatus: 400,
+			};
+		}
+		const config: TaskPushNotificationConfig = {
+			id:
+				typeof raw.id === "string" && raw.id !== ""
+					? raw.id
+					: crypto.randomUUID(),
+			taskId,
+			url,
+			...(typeof raw.token === "string" ? { token: raw.token } : {}),
+		};
+		const existing = this.taskPushNotificationConfigs.get(taskId) ?? [];
+		this.taskPushNotificationConfigs.set(taskId, [...existing, config]);
+		return { ok: true, result: { config } };
+	}
+
+	private _v1GetPushConfig(
+		getReq: GetTaskPushNotificationConfigRequest,
+	): V1CoreOut {
+		const configs = this.taskPushNotificationConfigs.get(getReq.taskId) ?? [];
+		const config = configs.find((c) => c.id === getReq.id);
+		if (!config) {
+			return {
+				ok: false,
+				code: -32000,
+				message: `Push notification config not found: ${getReq.id}`,
+				httpStatus: 404,
+			};
+		}
+		return { ok: true, result: { config } };
+	}
+
+	private _v1ListPushConfigs(
+		listReq: ListTaskPushNotificationConfigsRequest,
+	): V1CoreOut {
+		const configs = this.taskPushNotificationConfigs.get(listReq.taskId) ?? [];
+		const page =
+			listReq.pageSize !== undefined
+				? configs.slice(0, listReq.pageSize)
+				: configs;
+		return {
+			ok: true,
+			result: toWireListTaskPushNotificationConfigsResponse({
+				configs: page,
+				...(listReq.pageSize !== undefined && configs.length > listReq.pageSize
+					? { nextPageToken: String(listReq.pageSize) }
+					: {}),
+			}),
+		};
+	}
+
+	private _v1DeletePushConfig(
+		delReq: DeleteTaskPushNotificationConfigRequest,
+	): V1CoreOut {
+		const existing = this.taskPushNotificationConfigs.get(delReq.taskId) ?? [];
+		const target = existing.find((c) => c.id === delReq.id);
+		if (!target) {
+			return {
+				ok: false,
+				code: -32000,
+				message: `Push notification config not found: ${delReq.id}`,
+				httpStatus: 404,
+			};
+		}
+		const remaining = existing.filter((c) => c.id !== delReq.id);
+		if (remaining.length === 0) {
+			this.taskPushNotificationConfigs.delete(delReq.taskId);
+		} else {
+			this.taskPushNotificationConfigs.set(delReq.taskId, remaining);
+		}
+		return { ok: true, result: { success: true } };
+	}
+
+	private _v1UpdatePushConfig(raw: Record<string, unknown>): V1CoreOut {
+		// The update (PATCH) request has no wire serializer: parse inline.
+		const taskId = typeof raw.taskId === "string" ? raw.taskId : undefined;
+		const id = typeof raw.id === "string" ? raw.id : undefined;
+		const url = typeof raw.url === "string" ? raw.url : undefined;
+		if (!taskId || !id) {
+			return {
+				ok: false,
+				code: -32602,
+				message: "taskId and id are required",
+				httpStatus: 400,
+			};
+		}
+		const existing = this.taskPushNotificationConfigs.get(taskId) ?? [];
+		const target = existing.find((c) => c.id === id);
+		if (!target) {
+			return {
+				ok: false,
+				code: -32000,
+				message: `Push notification config not found: ${id}`,
+				httpStatus: 404,
+			};
+		}
+		const updated: TaskPushNotificationConfig = {
+			...target,
+			...(url !== undefined ? { url } : {}),
+			...(typeof raw.token === "string" ? { token: raw.token } : {}),
+		};
+		const idx = existing.findIndex((c) => c.id === id);
+		existing[idx] = updated;
+		this.taskPushNotificationConfigs.set(taskId, existing);
+		return { ok: true, result: { config: updated } };
 	}
 
 	// --- drain helpers ---

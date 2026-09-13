@@ -19,6 +19,26 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WorldState } from "@agents/types";
 
+const orchestratorUp = await (async (): Promise<boolean> => {
+	try {
+		const res = await fetch(
+			"http://localhost:4000/.well-known/agent-card.json",
+			{
+				signal: AbortSignal.timeout(1500),
+			},
+		);
+		return res.ok;
+	} catch {
+		return false;
+	}
+})();
+
+if (!orchestratorUp) {
+	console.log(
+		"SKIP: orchestrator not reachable on :4000 — start the ecosystem (bun run dev) to run this live suite",
+	);
+}
+
 // ── Agent registry (seed keys ↔ ports) ────────────────────────────────────────
 interface AgentSpec {
 	key: string;
@@ -127,7 +147,7 @@ class McpStdioClient {
 	private nextId = 0;
 
 	constructor() {
-		this.proc = Bun.spawn(["bun", "mcp-servers/tools.ts"], {
+		this.proc = Bun.spawn(["bun", "src/protocols/mcp/server/tools.ts"], {
 			cwd: process.cwd(),
 			stdout: "pipe",
 			stderr: "pipe",
@@ -213,7 +233,7 @@ class McpStdioClient {
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. PROTOCOL EDGE CASES
 // ═════════════════════════════════════════════════════════════════════════════
-describe("1 · Protocol edge cases", () => {
+describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 	// 1a. Valid tasks/send → 200 + valid envelope, on every agent.
 	for (const a of AGENTS) {
 		const probeText: Record<string, string> = {
@@ -411,7 +431,7 @@ describe("1 · Protocol edge cases", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 2. AGENT COMMAND RESPONSES (each specialist with its known command)
 // ═════════════════════════════════════════════════════════════════════════════
-describe("2 · Agent command responses", () => {
+describe.skipIf(!orchestratorUp)("2 · Agent command responses", () => {
 	const COMMANDS: Array<{
 		key: string;
 		port: number;
@@ -490,7 +510,7 @@ describe("2 · Agent command responses", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 3. ORCHESTRATOR ROUTING (port 4000)
 // ═════════════════════════════════════════════════════════════════════════════
-describe("3 · Orchestrator routing", () => {
+describe.skipIf(!orchestratorUp)("3 · Orchestrator routing", () => {
 	// Rich markers = the response the agent produces ONLY when it actually received
 	// the (non-empty) task text. If delegation passes empty text, the agent returns
 	// its generic fallback, which will NOT match these markers — surfacing the bug.
@@ -561,7 +581,7 @@ describe("3 · Orchestrator routing", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 4. HANDOVER CHAIN (orchestrator → oracle → fixer)
 // ═════════════════════════════════════════════════════════════════════════════
-describe("4 · Handover chain", () => {
+describe.skipIf(!orchestratorUp)("4 · Handover chain", () => {
 	test(`"review this code and fix the bug in it" → final result from fixer (not oracle)`, async () => {
 		const { status, envelope } = await postA2A(
 			4000,
@@ -583,7 +603,7 @@ describe("4 · Handover chain", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 5. WORLD-STATE CORRECTNESS (orchestrator 4000)
 // ═════════════════════════════════════════════════════════════════════════════
-describe("5 · World-state correctness", () => {
+describe.skipIf(!orchestratorUp)("5 · World-state correctness", () => {
 	test("agents contains all 7 seed agents; tasks/skills/timestamp valid", async () => {
 		// Ensure at least one task exists in sqlite before checking counts.
 		await postA2A(4000, "find files", "tasks/send", 15000);
@@ -629,7 +649,7 @@ describe("5 · World-state correctness", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 6. MCP TOOL SERVER (spawn `bun mcp-servers/tools.ts` over stdio)
 // ═════════════════════════════════════════════════════════════════════════════
-describe("6 · MCP tool server (calculate)", () => {
+describe.skipIf(!orchestratorUp)("6 · MCP tool server (calculate)", () => {
 	let client: McpStdioClient | null = null;
 	beforeAll(async () => {
 		try {
@@ -677,7 +697,7 @@ describe("6 · MCP tool server (calculate)", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 7. REGRESSION CHECKS
 // ═════════════════════════════════════════════════════════════════════════════
-describe("7 · Regression checks", () => {
+describe.skipIf(!orchestratorUp)("7 · Regression checks", () => {
 	test("demo.ts A2A contract is clean (no /a2a, message/send, tasks/get, waitForTask)", () => {
 		const src = readFileSync(join(process.cwd(), "scripts/demo.ts"), "utf-8");
 		expect(src).not.toMatch(/\/a2a/);

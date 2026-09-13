@@ -612,6 +612,14 @@ async function cmdSend(args: string[]) {
 
 	const target = args[0]!.trim();
 	const text = args.slice(1).join(" ");
+
+	if (target === "all") {
+		error("Cannot send to 'all' — send targets one agent by name.");
+		error(`Pick a single agent: ${AGENTS.map((a) => a.name).join(", ")}`);
+		error("To fan a task out to every agent, use the orchestrator instead.");
+		process.exit(1);
+	}
+
 	const agent = agentByName(target);
 
 	if (!agent) {
@@ -909,15 +917,17 @@ Examples:
   bun scripts/jabr-cli.ts config                    # show config
 
 Agent topology:
-  orchestrator  :4000  (A2A — JABIR, the orchestrator)
-  oracle        :4001  (A2A — JABIR's LLM routing judge)
-  librarian     :4002  (A2A — skill persistence)
-  explorer      :4003  (A2A — codebase exploration)
-  designer      :4004  (A2A — design tasks)
-  fixer         :4005  (A2A — code fixes, artifacts)
-  scientist     :4006  (A2A — data science via MCP)
-  verification  :4009  (A2A — verification agent)
-  jarvis        :1337  (A2A — proactive codebase steward)
+  orchestrator  :${JABR_PORTS.orchestrator}  (A2A — JABIR, the orchestrator)
+  oracle        :${JABR_PORTS.oracle}  (A2A — JABIR's LLM routing judge)
+  librarian     :${JABR_PORTS.librarian}  (A2A — skill persistence)
+  explorer      :${JABR_PORTS.explorer}  (A2A — codebase exploration)
+  designer      :${JABR_PORTS.designer}  (A2A — design tasks)
+  fixer         :${JABR_PORTS.fixer}  (A2A — code fixes, artifacts)
+  scientist     :${JABR_PORTS.scientist}  (A2A — data science via MCP)
+  github-webhook:${JABR_PORTS.githubWebhook}  (webhook receiver for GitHub events)
+  realtime      :${JABR_PORTS.realtime}  (realtime event broker)
+  verification  :${JABR_PORTS.verification}  (A2A — verification agent)
+  jarvis        :${JABR_PORTS.jarvis}  (A2A — proactive codebase steward)
   mcp           stdio  (MCP tool server — run_python, read/write, etc.)
   acp-bridge    stdio  (ACP bridge to orchestrator)
 `;

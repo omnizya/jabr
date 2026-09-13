@@ -4,6 +4,7 @@
  * Expected: LLM-generated response (NOT canned keyword matcher fallback)
  */
 
+import { expect, test } from "bun:test";
 import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { SkillFS } from "@adapters/skill-fs";
@@ -13,12 +14,25 @@ import type { TaskStorePort } from "@ports/task-store";
 import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 
 // This E2E requires a live 9Router gateway with a real key. The previous
-// hardcoded key fallback was removed (C1), so skip when one is not configured.
-if (!process.env.NINEROUTER_KEY?.startsWith("sk-")) {
+// hardcoded key fallback was removed (C1), so skip when one is not configured
+// or the gateway is unreachable.
+const gatewayUp = await (async (): Promise<boolean> => {
+	try {
+		const baseUrl = process.env.NINEROUTER_URL ?? "http://localhost:20127";
+		const res = await fetch(baseUrl, {
+			signal: AbortSignal.timeout(2000),
+		});
+		return res.status >= 200 && res.status < 600;
+	} catch {
+		return false;
+	}
+})();
+
+const skipEnv = !process.env.NINEROUTER_KEY?.startsWith("sk-") || !gatewayUp;
+if (skipEnv) {
 	console.log(
-		"SKIP: NINEROUTER_KEY not set — cannot run LLM E2E (needs live 9Router gateway)",
+		"SKIP: live 9Router gateway unavailable (key missing or unreachable) — cannot run LLM E2E",
 	);
-	process.exit(0);
 }
 
 const INPUT = "fix the login flow bug";
@@ -139,8 +153,13 @@ async function runTest(): Promise<{ pass: boolean; logs: string[] }> {
 	return { pass, logs };
 }
 
-const result = await runTest();
-for (const line of result.logs) {
-	console.log(line);
-}
-if (!result.pass) process.exit(1);
+test.skipIf(skipEnv)(
+	"fixer login flow E2E — LLM enabled (not canned fallback)",
+	async () => {
+		const result = await runTest();
+		for (const line of result.logs) {
+			console.log(line);
+		}
+		expect(result.pass).toBe(true);
+	},
+);

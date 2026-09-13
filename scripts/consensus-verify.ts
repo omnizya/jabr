@@ -2,6 +2,10 @@ import { openJabrDb } from "../src/adapters/sqlite-db.ts";
 import { SqliteMemoryStore } from "../src/adapters/sqlite-memory-store.ts";
 import { SqliteTaskStore } from "../src/adapters/sqlite-task-store.ts";
 import { jabrUrlForPort } from "../src/config/jabr-config.ts";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "../src/constants/a2a-v1.ts";
 import { JABR_PORTS } from "../src/constants/ecosystem.ts";
 import { ToolRouter } from "../src/core/tool-router.ts";
 import type { AgentRegistryPort } from "../src/ports/agent-registry.ts";
@@ -17,6 +21,13 @@ const LIVE_CARDS: Record<string, { url: string; card: AgentCard }> = {
 			url: jabrUrlForPort(JABR_PORTS.oracle),
 			version: "1.0.0",
 			capabilities: {},
+			supportedInterfaces: [
+				{
+					url: jabrUrlForPort(JABR_PORTS.oracle),
+					protocolBinding: PROTOCOL_BINDING_JSONRPC,
+					protocolVersion: SUPPORTED_INTERFACES_VERSION,
+				},
+			],
 			skills: [
 				{
 					name: "Review code",
@@ -45,6 +56,13 @@ const LIVE_CARDS: Record<string, { url: string; card: AgentCard }> = {
 			url: jabrUrlForPort(JABR_PORTS.librarian),
 			version: "1.0.0",
 			capabilities: {},
+			supportedInterfaces: [
+				{
+					url: jabrUrlForPort(JABR_PORTS.librarian),
+					protocolBinding: PROTOCOL_BINDING_JSONRPC,
+					protocolVersion: SUPPORTED_INTERFACES_VERSION,
+				},
+			],
 			skills: [
 				{
 					name: "Lookup docs",
@@ -68,6 +86,13 @@ const LIVE_CARDS: Record<string, { url: string; card: AgentCard }> = {
 			url: jabrUrlForPort(JABR_PORTS.explorer),
 			version: "1.0.0",
 			capabilities: {},
+			supportedInterfaces: [
+				{
+					url: jabrUrlForPort(JABR_PORTS.explorer),
+					protocolBinding: PROTOCOL_BINDING_JSONRPC,
+					protocolVersion: SUPPORTED_INTERFACES_VERSION,
+				},
+			],
 			skills: [
 				{
 					name: "Scan files",
@@ -86,6 +111,13 @@ const LIVE_CARDS: Record<string, { url: string; card: AgentCard }> = {
 			url: jabrUrlForPort(JABR_PORTS.designer),
 			version: "1.0.0",
 			capabilities: {},
+			supportedInterfaces: [
+				{
+					url: jabrUrlForPort(JABR_PORTS.designer),
+					protocolBinding: PROTOCOL_BINDING_JSONRPC,
+					protocolVersion: SUPPORTED_INTERFACES_VERSION,
+				},
+			],
 			skills: [
 				{
 					name: "UI design",
@@ -113,6 +145,13 @@ const LIVE_CARDS: Record<string, { url: string; card: AgentCard }> = {
 			url: jabrUrlForPort(JABR_PORTS.fixer),
 			version: "1.0.0",
 			capabilities: {},
+			supportedInterfaces: [
+				{
+					url: jabrUrlForPort(JABR_PORTS.fixer),
+					protocolBinding: PROTOCOL_BINDING_JSONRPC,
+					protocolVersion: SUPPORTED_INTERFACES_VERSION,
+				},
+			],
 			skills: [
 				{
 					name: "Implement",

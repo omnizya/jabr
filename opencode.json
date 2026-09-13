@@ -25,5 +25,12 @@
 			"mode": "subagent",
 			"model": "9router/openrouter/minimax/minimax-m3:free"
 		}
+	},
+	"mcp": {
+		"graft": {
+			"type": "local",
+			"command": ["graft", "mcp"],
+			"enabled": true
+		}
 	}
 }

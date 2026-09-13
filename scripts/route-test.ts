@@ -2,6 +2,10 @@ import { DynamicRegistry } from "@adapters/dynamic-registry";
 import type { AgentCard, AgentSkill } from "@agents/types";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import { jabrUrlForPort } from "../src/config/jabr-config.ts";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "../src/constants/a2a-v1.ts";
 import { JABR_PORTS } from "../src/constants/ecosystem.ts";
 
 // Offline registry: returns cards keyed by seed URL. Same shape DynamicRegistry
@@ -88,6 +92,13 @@ const offlineRegistry: AgentRegistryPort = {
 			url,
 			version: "1.0.0",
 			capabilities: {},
+			supportedInterfaces: [
+				{
+					url,
+					protocolBinding: PROTOCOL_BINDING_JSONRPC,
+					protocolVersion: SUPPORTED_INTERFACES_VERSION,
+				},
+			],
 			skills: SKILLS[name] ?? [],
 		};
 	},

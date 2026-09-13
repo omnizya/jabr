@@ -31,7 +31,7 @@ console.error(`[e2e] created task ${TASK_ID} in shared db`);
 
 const transport = new StdioClientTransport({
 	command: "bun",
-	args: ["mcp-servers/tools.ts"],
+	args: ["src/protocols/mcp/server/tools.ts"],
 	stderr: "pipe",
 	cwd: process.cwd(),
 });

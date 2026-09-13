@@ -41,11 +41,11 @@ Jabr has evolved from a simple multi-agent experiment into a production-grade A2
 | **Production** | ✅ Complete | API key auth, circular handoff detection, dead letter queue, OpenTelemetry, rate limiting |
 | **Memory** | ✅ Complete | Hierarchical distillation, shared knowledge graph, TTL/decay, conflict resolution |
 | **x402** | ✅ Complete | Payment middleware, agent pricing, cross-agent settlement |
-| **Webhooks** | 🔄 In Progress | Generic server, GitHub bot, Telegram, WhatsApp |
-| **MCP** | 📋 Planned | Elicitation, sampling, structured output, prompts, roots |
-| **Real-time** | 📋 Planned | Bun WebSocket, live dashboards, event streaming |
-| **IPFS** | 📋 Planned | Artifact storage, immutable logs, content addressing |
-| **Plugin System** | 📋 Planned | PnP architecture, event-driven, Bun bundles |
+| **Webhooks** | ✅ Complete | Generic server + GitHub bot live-wired (port 4007); Telegram + WhatsApp adapters implemented with tests (not booted) |
+| **MCP** | 🔄 In Progress | Server + tools + resources live; elicitation landed with tests; sampling/prompts/roots pending |
+| **Real-time** | ✅ Complete | Bun WebSocket (4008), task-scoped rooms, e2e dashboard test, plugin-bus bridge |
+| **IPFS** | 🔄 In Progress | Artifact adapter + e2e test present; immutable-log pipeline pending |
+| **Plugin System** | 🔄 In Progress | PnP registry + loader landed with tests (34 pass); samples: analytics, notification |
 
 ### Agent Ecosystem
 
@@ -94,9 +94,9 @@ agents/
 
 | Integration | Status | Priority |
 |-------------|--------|----------|
-| **GitHub Bot** | 🔄 In Progress | High |
-| **Telegram Bot** | 🔄 In Progress | High |
-| **WhatsApp Bot** | 📋 Planned | Medium |
+| **GitHub Bot** | ✅ Complete | Live-wired on port 4007 with X-Hub-Signature-256 verification + e2e test |
+| **Telegram Bot** | 🔄 In Progress | Adapter built + tested; not booted in orchestrator |
+| **WhatsApp Bot** | 🔄 In Progress | Adapter built + tested; not booted in orchestrator |
 | **Discord Bot** | 📋 Planned | Low |
 | **Slack Bot** | 📋 Planned | Low |
 
@@ -104,10 +104,10 @@ agents/
 
 | Component | Status | Priority |
 |-----------|--------|----------|
-| **Webhook Server** | 🔄 In Progress | High |
-| **Real-time (WebSocket)** | 📋 Planned | High |
-| **IPFS Artifact Storage** | 📋 Planned | Medium |
-| **GunJS Graph Memory** | 📋 Planned | Experimental |
+| **Webhook Server** | ✅ Complete | Generic server + idempotency + A2A bridge + tests |
+| **Real-time (WebSocket)** | ✅ Complete | Bun WebSocket (4008), task-scoped rooms, e2e test |
+| **IPFS Artifact Storage** | 🔄 In Progress | Adapter + e2e test present; pipeline pending |
+| **GunJS Graph Memory** | 🔄 In Progress | Adapter + multi-node sync test present |
 | **Docker Containerization** | 📋 Planned | Medium |
 | **Monitoring Dashboard** | 📋 Planned | Medium |
 
@@ -115,7 +115,7 @@ agents/
 
 | Feature | Status | Priority |
 |---------|--------|----------|
-| **Plugin System (PnP)** | 📋 Planned | Medium |
+| **Plugin System (PnP)** | 🔄 In Progress | Registry + loader landed (34 tests pass); samples in plugins/ |
 | **Plugin Marketplace** | 📋 Planned | Future |
 | **Plugin SDK** | 📋 Planned | Future |
 | **Plugin Security Model** | 📋 Planned | Medium |

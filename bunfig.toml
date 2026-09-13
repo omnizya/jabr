@@ -1,8 +1,9 @@
 # bunfig.toml — bun configuration for Jabr.
 #
-# `tests/e2e-live.test.ts` is a LIVE diagnostic suite that requires the full
-# agent stack (ports 4000-4006 + jarvis 1337) to be running. It is excluded
-# from the default `bun test` run; run it explicitly with `bun run test:e2e`.
+# `tests/e2e-live.test.ts` requires the live agent stack (ports 4000-4006 +
+# jarvis 1337). It participates in the default `bun test` run but every suite
+# is gated with `describe.skipIf(!orchestratorUp)`, so it skips cleanly (exit
+# 0) when the stack is down and runs for real when it is up. Run it in
+# isolation with `bun run test:e2e`.
 
 [test]
-exclude = ["tests/e2e-live.test.ts"]

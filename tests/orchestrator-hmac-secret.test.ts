@@ -9,7 +9,7 @@ import { spawn as bunSpawn } from "bun";
 // They are isolated: each test uses its own env and cleans up the subprocess.
 // The old public default value ("dev-secret-change-in-prod") is NOT used.
 
-const ORCHESTRATOR_ENTRY = join("agents", "run", "orchestrator.ts");
+const ORCHESTRATOR_ENTRY = join("src", "runtime", "orchestrator.ts");
 
 // process.execPath is the absolute path to the current Bun executable — use it
 // so subprocesses work even if "bun" is not on the subprocess's $PATH.

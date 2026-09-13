@@ -1,8 +1,9 @@
 # TODO: Jabr Roadmap
 
 **Current version:** 0.4.0
-**Last updated:** 2026-08-29
+Date:** 2026-09-09 (consolidated JABR board, 1-at-a-time sequential)
 **See also:** [CANONICAL.md](./CANONICAL.md) for full architecture, gap analysis, and production readiness assessment.
+**Board:** `hermes kanban --board jabr list` (source of truth for active work)
 
 ---
 
@@ -78,6 +79,26 @@
 
 ---
 
+## Active Workstream (JABR board)
+
+Source of truth: `hermes kanban --board jabr list`
+Rule: **strictly 1 task at a time, sequential dependencies enforced via task_links.**
+
+```
+t_b90a793f  Security: OAuth 2.1 / JWT auth on all endpoints           ← READY
+t_b73931a9  Security: mTLS for agent-to-agent communication          ← blocked (after OAuth)
+t_67de84cd  Reliability: circular handoff detection                  ← blocked
+t_8c97707b  Reliability: dead letter queue (DLQ)                     ← blocked
+t_75d4aef1  Quality: SHURA verification in routing loop              ← blocked
+t_28f66deb  Observability: OpenTelemetry tracing + metrics           ← blocked
+t_ad12995c  Memory: context window compression + TTL decay           ← blocked
+t_0c4e01c7  Routing: deterministic tie-break scoring                 ← blocked
+t_7e3caa37  Config: .env setup + startup validation                  ← blocked
+t_c134b0b9  Push notifications: retry + error handling               ← blocked
+```
+
+---
+
 ## Phase 1 — A2A v1.0 Compliance (2-3 weeks)
 
 **Goal:** Pass A2A v1.0 conformance tests.
@@ -92,10 +113,10 @@
 - [x] Add state transition history tracking (audit trail)
 
 ### Streaming & Push
-- [ ] Add SSE streaming to `a2a-server.ts` (for long-running tasks)
-- [ ] Add push notification endpoint (`tasks/sendSubscribe`)
-- [ ] Implement `TaskStatusUpdateEvent` stream
-- [ ] Implement `TaskArtifactUpdateEvent` stream
+- [x] Add SSE streaming to `a2a-server.ts` (for long-running tasks) — done `t_71ad0c40`
+- [x] Add push notification endpoint (`tasks/sendSubscribe`) — done `t_87da6285`
+- [x] Implement `TaskStatusUpdateEvent` stream — done `t_87da6285`
+- [x] Implement `TaskArtifactUpdateEvent` stream — done `t_87da6285`
 
 ### Agent Card
 - [x] Add `capabilities.streaming: true/false` flag
@@ -114,6 +135,11 @@
 - [x] Validate `X-API-Key` header on all agent endpoints
 - [x] Return `401 Unauthorized` for missing/invalid keys
 - [x] Return `403 Forbidden` for insufficient permissions
+- [x] Add OAuth 2.1 JWT bearer tokens (HS256, short-lived, scoped, refreshable)
+- [x] Add client_credentials + refresh_token grants at `/oauth/token`
+- [x] Add token revocation at `/oauth/revoke` (RFC 7009)
+- [x] Add OAuth metadata at `/.well-known/oauth-authorization-server` (RFC 8414)
+- [x] Add per-method scope enforcement (read/write/stream/admin)
 
 ---
 
@@ -123,14 +149,14 @@
 **Priority:** 🔴 Critical
 
 ### Reliability
-- [ ] Circular handoff detection (graph cycle detection)
-- [ ] Dead letter queue for failed tasks
+- [ ] Circular handoff detection (graph cycle detection) — JABR `t_67de84cd` (blocked)
+- [ ] Dead letter queue for failed tasks — JABR `t_8c97707b` (blocked)
 - [ ] Task retry with exponential backoff
 - [ ] Graceful shutdown handling (drain in-flight tasks)
 - [ ] Health check endpoints (`/health`, `/ready`)
 
 ### Observability
-- [ ] Span-level tracing (OpenTelemetry)
+- [ ] Span-level tracing (OpenTelemetry) — JABR `t_28f66deb` (blocked)
 - [ ] Trace context propagation across A2A boundaries
 - [ ] Task duration metrics (p50, p95, p99)
 - [ ] Error rate tracking per agent
@@ -138,7 +164,7 @@
 - [ ] Structured logging (pino or similar)
 
 ### Verification
-- [ ] Independent verification agent (cross-check outputs)
+- [ ] Independent verification agent (cross-check outputs) — JABR `t_75d4aef1` (SHURA)
 - [ ] Consensus threshold for contested results
 - [ ] Audit trail for all agent decisions
 - [ ] Output validation (schema check on artifacts)
@@ -158,8 +184,8 @@
 
 ### Memory Infrastructure
 - [ ] Hierarchical memory distillation (summarize → compress → prune)
-- [ ] Memory compression (context window management)
-- [ ] Memory TTL/decay (auto-stale old entries)
+- [ ] Memory compression (context window management) — JABR `t_ad12995c` (blocked)
+- [ ] Memory TTL/decay (auto-stale old entries) — JABR `t_ad12995c` (blocked)
 - [ ] Cross-agent shared knowledge graph (not just per-agent)
 - [ ] Conflict resolution (consensus for contradictory memories)
 
@@ -217,9 +243,15 @@
 
 ## Open Issues (from v0.4.0 audit)
 
+### Active on JABR board
+- [ ] **Routing tie-break** — tag tie → first in iteration order wins. JABR `t_0c4e01c7` (blocked). Design decision: tag specificity/priority vs first-match-on-tie.
+- [ ] **Config: .env setup + startup validation** — JABR `t_7e3caa37` (blocked).
+- [ ] **Push notifications: retry + error handling** — JABR `t_c134b0b9` (blocked).
+
 ### Needs Decision
-- [ ] **Routing tie-break** — "scan the codebase for improvements" matches jarvis `scan` tag (+2) AND fixer `code` tag (+2) → tie → fixer wins (first in iteration order). Design decision: tag specificity/priority vs first-match-on-tie.
 - [ ] **Handover path not exercised** — §4 handover e2e test passes only because "review this code and fix the bug in it" routes DIRECTLY to fixer (score 4 > oracle 2); oracle `%%HANDOVER%%` chain never triggers through current routing+judge design. Worth design review.
+
+### Resolved
 - [x] **NINEROUTER env inconsistency** — `NINEROUTER_URL`/`NINEROUTER_KEY` set nowhere (no .env, not in shell, not in tmux runner). Add `.env` (+ gitignored, `.env.example`) AND default fallbacks to Search/ImageGen mirroring llm/9router.ts — **FIXED (2026-08-29, `d5f4a0c`):** defaults added to Search9Router + ImageGen9Router, `.env.example` created, typecheck clean.
 
 ### Capability Gap

@@ -6,12 +6,24 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { IpfsArtifactAdapter } from "@adapters/ipfs/ipfs-artifact-adapter";
 import type { ArtifactPort } from "@ports/artifact-port";
+import { KUBO_API } from "@/constants/ipfs";
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-describe("IPFS E2E — artifact store and retrieve", () => {
+const kuboUp = await (async (): Promise<boolean> => {
+	try {
+		const res = await fetch(`${KUBO_API}/version`, {
+			signal: AbortSignal.timeout(1500),
+		});
+		return res.ok;
+	} catch {
+		return false;
+	}
+})();
+
+describe.skipIf(!kuboUp)("IPFS E2E — artifact store and retrieve", () => {
 	let port: ArtifactPort;
 	let adapter: IpfsArtifactAdapter;
 
