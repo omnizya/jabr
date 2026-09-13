@@ -10,6 +10,7 @@ import { TaskMemory } from "@adapters/task-memory";
 import { jabrUrl, jabrUrlForPort } from "@config/jabr-config";
 import { JABR_PORTS } from "@constants/ecosystem";
 import { JARVIS_CARD, JarvisAgent } from "../../core/jarvis.ts";
+import { ApiKeyRegistry } from "../../security/api-key-registry.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { extractLastResponse } from "../serve.ts";
@@ -48,9 +49,50 @@ if (import.meta.main) {
 		console.error(`[Jarvis] uncaught exception:`, e);
 	});
 
+	// Build API key registry from A2A_API_KEYS or legacy A2A_AUTH_TOKEN.
+	let apiKeyRegistry: ApiKeyRegistry | undefined;
+	const keysJson = process.env.A2A_API_KEYS;
+	if (keysJson) {
+		try {
+			const entries = JSON.parse(keysJson);
+			apiKeyRegistry = new ApiKeyRegistry(entries);
+			console.log(
+				`[Run:Jarvis] loaded ${entries.length} API key(s) from A2A_API_KEYS`,
+			);
+		} catch (e) {
+			console.error(`[Run:Jarvis] failed to parse A2A_API_KEYS: ${e}`);
+			process.exit(1);
+		}
+	}
+	// Inject legacy A2A_AUTH_TOKEN into existing registry so orchestrator can authenticate
+	const legacyToken = process.env.A2A_AUTH_TOKEN;
+	if (legacyToken && apiKeyRegistry) {
+		apiKeyRegistry.addKey({
+			key: legacyToken,
+			description: "legacy-shared-token",
+			allowedAgents: [],
+			enabled: true,
+		});
+		console.log(
+			`[Run:Jarvis] injected legacy A2A_AUTH_TOKEN into key registry`,
+		);
+	}
+	if (!apiKeyRegistry && legacyToken) {
+		apiKeyRegistry = new ApiKeyRegistry([
+			{
+				key: legacyToken,
+				description: "legacy-shared-token",
+				allowedAgents: [],
+				enabled: true,
+			},
+		]);
+	}
+
 	const server = new A2AServer({
 		port,
 		card: { ...JARVIS_CARD, url: jabrUrlForPort(port) },
+		apiKeyRegistry,
+		requireAuth: Boolean(apiKeyRegistry),
 		async onTask(text: string): Promise<string> {
 			const taskId = crypto.randomUUID();
 			console.log(`[Run:Jarvis] received task ${taskId}`);

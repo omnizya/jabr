@@ -93,6 +93,21 @@ export function runAgent(config: {
 		]);
 	}
 
+	// Inject legacy A2A_AUTH_TOKEN into existing registry so orchestrator can authenticate.
+	// When A2A_API_KEYS is set, the legacy token was previously ignored, causing 401 from
+	// target agents when the orchestrator sends A2A_AUTH_TOKEN as X-API-Key.
+	if (legacyToken && apiKeyRegistry) {
+		apiKeyRegistry.addKey({
+			key: legacyToken,
+			description: "legacy-shared-token",
+			allowedAgents: [],
+			enabled: true,
+		});
+		verbose(
+			`[Serve] ${config.card.name}: injected legacy A2A_AUTH_TOKEN into key registry`,
+		);
+	}
+
 	const server = new A2AServer({
 		port: config.port,
 		card: {

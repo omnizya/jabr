@@ -23,6 +23,20 @@ export class ApiKeyRegistry {
 	}
 
 	/**
+	 * Add a single key to an existing registry. Used to inject legacy
+	 * A2A_AUTH_TOKEN alongside A2A_API_KEYS so the orchestrator can
+	 * still authenticate when it only has the legacy token.
+	 */
+	addKey(entry: KeyEntry): void {
+		if (!entry.key || entry.key.length === 0) {
+			throw new Error(
+				`ApiKeyRegistry: key entry "${entry.description}" has empty key`,
+			);
+		}
+		this.keys.set(entry.key, { ...entry });
+	}
+
+	/**
 	 * Authenticate an API key and return the caller context, or null if the
 	 * key is unknown or disabled.
 	 */
