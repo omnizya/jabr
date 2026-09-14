@@ -1,196 +1,94 @@
-# Jabr
+# Kasbah — Multi-Agent Orchestration Hub
 
-*Jabr (جبر) — Arabic for "restoration of broken parts," the root of algebra.*
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![A2A Protocol](https://img.shields.io/badge/A2A-v1.0-blue)](https://a2a-protocol.org)
+[![MCP](https://img.shields.io/badge/MCP-compatible-green)](https://modelcontextprotocol.io)
 
-**Version:** 0.4.1
-**Status:** Internal/personal use ready — not for external exposure
-**License:** MIT
+Kasbah is a production-grade, open-source multi-agent orchestration system where each agent is independently deployable. The Kasbah is where agents meet, delegate work, and reach consensus through **SHURA**.
 
-Multi-agent orchestration system — ACP + A2A + MCP, hexagonal architecture (Ports & Adapters).
-
-Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts` directly. Standalone binaries compile via `bun run build`.
-
----
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
-| **[CANONICAL.md](./docs/CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
-| **[JABR-FRONTEND-PLAN.md](./docs/JABR-FRONTEND-PLAN.md)** | Frontend control-plane architecture, UX, contracts, and delivery phases |
-| **[TODO.md](./TODO.md)** | Task tracker — completed work + future phases |
-| **[R&D Roadmap](./docs/rd-roadmap.md)** | R&D opportunities from the dependency stack + opensrc source exploration |
-| **[AGENTS.md](./AGENTS.md)** | Agent-specific notes (internal) |
+Built on open standards:
+- **[A2A Protocol](https://a2a-protocol.org/)** — agent-to-agent communication
+- **[MCP](https://modelcontextprotocol.io/)** — agent-to-tool integration
+- **[ACP](https://agentcommunicationprotocol.dev/)** — IDE-to-agent bridge
 
 ---
 
 ## Quick Start
 
 ```bash
+# Install
 bun install
 
-# All agents in parallel
-bun run dev
+# Start the Kasbah hub
+bun run kasbah
 
-# Or individually
-bun run orchestrator # 4000
-bun run oracle       # 4001
-bun run librarian    # 4002
-bun run explorer     # 4003
-bun run designer     # 4004
-bun run fixer        # 4005
-bun run jarvis       # 1337
-bun src/runtime/agents/scientist.ts # 4006 (no script)
-
-# Type check
-bun run typecheck
-
-# Test
-bun test
-
-# Integration test (agents must be running)
-bun run demo
+# Or run a single agent standalone
+bun run agent --name jabir
 ```
 
----
-
-## Architecture
+## What is Kasbah?
 
 ```
-src/
-├── core/              # Domain logic — zero infrastructure imports
-├── ports/             # Interfaces (type-only)
-├── adapters/          # Concrete implementations
-├── runtime/           # Composition roots (wire ports → core)
-└── types/             # A2A v1.0 types
-
-src/protocols/mcp/server/tools.ts   # MCP server (world-state, tasks, skills, memory)
+┌─────────────────────────────────────────────────┐
+│                  KASBAH (Hub)                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
+│  │  Router   │  │  Auth    │  │  SHURA       │  │
+│  │ (A2A)    │  │ (OIDC)   │  │ (Consensus)  │  │
+│  └────┬─────┘  └──────────┘  └──────┬───────┘  │
+│       └──────────────┬───────────────┘           │
+│              Message Bus (Redis)                  │
+└──────────────────────┬──────────────────────────┘
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+   ┌────┴───┐    ┌────┴───┐    ┌────┴───┐
+   │ JABIR  │    │ RUSHD  │    │ TARIQ  │
+   │(Router)│    │(Review)│    │ (Fix)  │
+   └────────┘    └────────┘    └────────┘
 ```
 
-**Rule:** `core` never imports `adapters`. `adapters` implement `ports`. `runtime` wires everything.
+## Agent Catalog
 
----
+| Agent | Domain | Standalone? |
+|-------|--------|-------------|
+| **JABIR** | Orchestration, routing | ✅ |
+| **RUSHD** | Code review, simplification | ✅ |
+| **FIHRIYA** | Research, documentation | ✅ |
+| **BATTUTA** | Codebase exploration | ✅ |
+| **FIRNAS** | Design, architecture | ✅ |
+| **TARIQ** | Bug fixes, implementation | ✅ |
+| **KHWARIZMI** | Data analysis, science | ✅ |
+| **SHURA** | Verification, consensus | ✅ |
 
-## Agents
+## Deploying Individual Agents
 
-| Agent | Port | Protocol | Role |
-|-------|------|----------|------|
-| Orchestrator | 4000 | A2A | Routes, persists memory, self-improves, consensus |
-| Oracle | 4001 | A2A | Code review, simplification, architecture |
-| Librarian | 4002 | A2A | Web search, docs, skill synthesis |
-| Explorer | 4003 | A2A | Fast codebase recon, file search |
-| Designer | 4004 | A2A | UI/UX, image generation |
-| Fixer | 4005 | A2A | Bug fixes, mechanical implementation |
-| Scientist | 4006 | A2A | Python data analysis via MCP tools |
-| Jarvis | 1337 | A2A | Proactive codebase steward |
-| ACP Bridge | stdio | ACP | IDE ↔ Orchestrator |
-| MCP Tool Server | stdio | MCP | Tools + resources |
+Each agent can run standalone or as part of the Kasbah hub:
 
----
+```bash
+# Standalone mode
+bun run agent --name tariq --port 4005
 
-## Protocol Layers
-
-- **ACP** (stdio nd-JSON) — IDE ↔ Agent bridge
-- **A2A** (HTTP JSON-RPC) — Agent ↔ Agent delegation
-- **MCP** (stdio) — Agent ↔ Tool integration
-
-See [CANONICAL.md](./docs/CANONICAL.md) for full protocol details.
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NINEROUTER_URL` | `http://localhost:20127` | LLM gateway URL |
-|| `NINEROUTER_KEY` | — | LLM API key |
-|| `NINEROUTER_MODEL` | `openrouter/minimax/minimax-m3:free` | Default model |
-|| `JABR_LLM_PROVIDER` | — | LLM provider selector: `vercel` (or set `VERCEL_AI_GATEWAY_KEY`) for Vercel AI Gateway, unset for 9Router |
-|| `VERCEL_AI_GATEWAY_KEY` | — | Vercel AI Gateway API key (also `AI_GATEWAY_API_KEY`) |
-|| `VERCEL_AI_GATEWAY_MODEL` | `minimax/minimax-m3` | Vercel model ID (resilient form survives Sept 6 free-period end) |
-|| `VERCEL_AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/v4/ai` | Vercel AI Gateway base URL (optional override) |
-|| `JABR_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL (any provider exposing `/chat/completions`) |
-|| `JABR_OPENAI_API_KEY` | — | OpenAI-compatible API key |
-|| `JABR_OPENAI_MODEL` | `gpt-4o` | OpenAI-compatible model |
-|| `JABR_URL` | `http://localhost:4000` | **Orchestrator endpoint (required)**. All agents read this. Legacy `ORCHESTRATOR_URL` still accepted. |
-|| `JABR_TOKEN_CAP_<AGENT>` | `100000` | Per-agent token budget |
-
----
-
-## Supported LLM Providers
-
-The agent system is **provider-agnostic**. LLM adapters are selected through
-`createLlmAdapter()` in `src/adapters/llm/factory.ts`; the default requires
-no billing. Each provider is opt-in via environment variables.
-
-| Provider | Adapter | Select with | Default model | Notes |
-|----------|---------|-------------|---------------|-------|
-| **9Router (OpenRouter)** | `NineRouterLlmAdapter` | *(default — no selection needed)* | `openrouter/minimax/minimax-m3:free` | Ongoing free tier via `NINEROUTER_URL`/`NINEROUTER_KEY`/`NINEROUTER_MODEL`. |
-| **OpenAI-compatible** | `OpenAiLlmAdapter` | `JABR_LLM_PROVIDER=openai` | `gpt-4o` | Generic adapter for any provider exposing `/chat/completions` (OpenAI, Together, Groq, local Ollama, etc.). Configure via `JABR_OPENAI_BASE_URL`/`JABR_OPENAI_API_KEY`/`JABR_OPENAI_MODEL`. |
-| **Vercel AI Gateway** | `VercelLlmAdapter` | `JABR_LLM_PROVIDER=vercel` **or** set `VERCEL_AI_GATEWAY_KEY` | `minimax/minimax-m3` | Uses the `ai` SDK (`generateText`/`streamText` + `createGateway`). Requires a Vercel AI Gateway key (billing applies). Resilient model form (`gateway.order=['gmicloud']`) survives free-period ends. |
-
-Selection logic (in `createLlmAdapter`):
-1. If `JABR_LLM_PROVIDER=openai` → **OpenAI-compatible** (`OpenAiLlmAdapter`).
-2. If `JABR_LLM_PROVIDER=vercel` **or** `VERCEL_AI_GATEWAY_KEY` (or `AI_GATEWAY_API_KEY`) is set → **Vercel AI Gateway**.
-3. Otherwise → **9Router (OpenRouter)**.
-
-To add a new provider, implement the `LlmPort` interface
-(`src/ports/llm-port.ts`) as an adapter under `src/adapters/llm/`, then
-extend the selection logic in `factory.ts`.
-
----
-
-## IDE Integration (Zed)
-
-```json
-{
-  "agent_servers": {
-    "jabr": {
-      "type": "custom",
-      "command": "bun",
-      "args": ["src/runtime/acp-bridge.ts"],
-      "default_mode": "base"
-    }
-  }
-}
+# Connected to Kasbah
+bun run agent --name tariq --kasbah http://localhost:4000
 ```
 
----
+## Kasbah Hub Setup
 
-## Scripts
+```bash
+# Full stack with Docker Compose
+docker-compose up
 
-| Script | Purpose |
-|--------|---------|
-| `bun scripts/generate-hmac-secret.ts` | Generate a 256-bit HMAC secret for x402 signing |
-| `bun scripts/generate-hmac-secret.ts --write` | Generate + write to `.env` |
-| `bun scripts/generate-hmac-secret.ts --check` | Validate existing `.env` secret |
-| `bun scripts/task-dlq.ts` | List failed tasks (dead letter queue) |
-| `bun scripts/task-dlq.ts --retry <id>` | Retry a specific failed task |
-| `bun scripts/task-dlq.ts --retry-all` | Retry all failed tasks |
-| `bun scripts/task-dlq.ts --purge` | Delete all failed tasks |
-| `bun scripts/kb-maintenance.ts` | Dedup + TTL cleanup for memory stores |
-| `bun scripts/demo.ts` | End-to-end integration test (all agents) |
-| `bun scripts/build.ts` | Compile standalone binaries |
+# Or manual
+bun run kasbah
+```
 
----
+## Configuration
 
-## Scheduled Tasks
+Environment variables — see `.env.example`.
 
-| Task | Schedule | Purpose |
-|------|----------|---------|
-| `kb-maintenance` | Weekly, Sundays 03:00 | Deduplicates MemPalace entries (SHA-256, oldest wins), removes stale entries >90 days, validates JSON integrity, trims SQLite memory_log with VACUUM. Logs to `memory/cron-kb-maintenance.log`. Wrapper: `scripts/cron-kb-maintenance.sh`. |
+## Production Deployment
 
----
-
-## Contributing
-
-**Before contributing:**
-1. Read [CANONICAL.md](./docs/CANONICAL.md)
-2. Run `bun run typecheck` — must pass
-3. Run `bun test` — must pass
-4. Follow conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`)
-
----
+See `docs/deployment.md` for Docker, Kubernetes, and security hardening.
 
 ## License
 
