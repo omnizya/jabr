@@ -1,13 +1,15 @@
 /**
- * a2a-server-sse.test.ts — SSE streaming tests for A2AServer.
+ * a2a-server-sse.test.ts — SSE streaming tests for A2AServer (A2A v1.0 wire).
  *
  * Verifies:
- *   1. tasks/sendSubscribe returns a text/event-stream response.
- *   2. The stream emits TaskStatusUpdateEvent (submitted → working → completed)
- *      and TaskArtifactUpdateEvent frames.
- *   3. The final event carries the task result.
- *   4. Fallback (no onTaskStreaming) emits synthetic status + artifact events.
- *   5. Invalid params on tasks/sendSubscribe → -32600 (not a stream).
+ *   1. SendStreamingMessage returns a text/event-stream response.
+ *   2. The stream emits anonymous JSON-RPC data frames carrying `task`
+ *      (submitted), `statusUpdate` (working → completed) and
+ *      `artifactUpdate` payloads.
+ *   3. The final statusUpdate carries the task result as an agent message.
+ *   4. Fallback (no onTaskStreaming) emits a completed statusUpdate with the
+ *      sync result; no artifact frames when the handler pushed none.
+ *   5. Invalid params on SendStreamingMessage → -32602 (not a stream).
  */
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
@@ -33,8 +35,24 @@ async function postA2A(
 	});
 }
 
-function parseSSEFrames(raw: string): Array<{ event: string; data: unknown }> {
-	const frames: Array<{ event: string; data: unknown }> = [];
+type StreamFrameData = {
+	result?: {
+		task?: { status: { state: string } };
+		statusUpdate?: {
+			status: {
+				state: string;
+				message?: { parts: Array<{ text: string }> };
+			};
+			final?: boolean;
+		};
+		artifactUpdate?: { artifact?: { parts: Array<{ text: string }> } };
+	};
+};
+
+type StreamFrame = { event: string; data: StreamFrameData };
+
+function parseSSEFrames(raw: string): StreamFrame[] {
+	const frames: StreamFrame[] = [];
 	const blocks = raw.split("\n\n").filter((b) => b.trim().length > 0);
 	for (const block of blocks) {
 		let event = "message";
@@ -46,7 +64,7 @@ function parseSSEFrames(raw: string): Array<{ event: string; data: unknown }> {
 		try {
 			frames.push({ event, data: JSON.parse(data) });
 		} catch {
-			frames.push({ event, data });
+			frames.push({ event, data: {} });
 		}
 	}
 	return frames;
@@ -60,7 +78,7 @@ describe("A2AServer SSE streaming", () => {
 		server = null;
 	});
 
-	test("tasks/sendSubscribe with onTaskStreaming emits status + artifact frames", async () => {
+	test("SendStreamingMessage with onTaskStreaming emits status + artifact frames", async () => {
 		const events: TaskStreamingEvent[] = [];
 		server = new A2AServer({
 			port: PORT,
@@ -95,7 +113,7 @@ describe("A2AServer SSE streaming", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/sendSubscribe", {
+		const res = await postA2A(PORT, "SendStreamingMessage", {
 			message: { parts: [{ kind: "text", text: "hello" }] },
 		});
 
@@ -107,33 +125,47 @@ describe("A2AServer SSE streaming", () => {
 		const raw = await res.text();
 		const frames = parseSSEFrames(raw);
 
-		// Expect at least: submitted, working (custom), artifact, completed.
+		// Expect at least: task (submitted), working (custom), artifact, completed.
 		expect(frames.length).toBeGreaterThanOrEqual(3);
 
+		const taskFrames = frames.filter((f) => f.data.result?.task !== undefined);
 		const statusEvents = frames.filter(
-			(f) => f.event === "TaskStatusUpdateEvent",
+			(f) => f.data.result?.statusUpdate !== undefined,
 		);
 		const artifactEvents = frames.filter(
-			(f) => f.event === "TaskArtifactUpdateEvent",
+			(f) => f.data.result?.artifactUpdate !== undefined,
 		);
 
 		expect(statusEvents.length).toBeGreaterThanOrEqual(2);
 		expect(artifactEvents.length).toBeGreaterThanOrEqual(1);
 
-		// First status: submitted.
-		expect(statusEvents[0].data.state).toBe("submitted");
+		// First frame: the submitted task (not a statusUpdate).
+		expect(taskFrames[0]!.data.result!.task!.status.state).toBe("submitted");
+
+		// Custom working status followed by the completed status.
+		expect(statusEvents[0]!.data.result!.statusUpdate!.status.state).toBe(
+			"working",
+		);
+		expect(
+			statusEvents[0]!.data.result!.statusUpdate!.status.message!.parts[0]!
+				.text,
+		).toBe("custom working");
 
 		// Last status: completed.
-		const lastStatus = statusEvents[statusEvents.length - 1].data;
-		expect(lastStatus.state).toBe("completed");
+		const lastStatus =
+			statusEvents[statusEvents.length - 1]!.data.result!.statusUpdate!;
+		expect(lastStatus.status.state).toBe("completed");
+		expect(lastStatus.status.message!.parts[0]!.text.trim()).toBe(
+			"streamed:hello",
+		);
 
 		// Artifact event has the partial text.
-		expect(artifactEvents[0].data.artifact.parts[0].text).toBe(
-			"partial result",
-		);
+		expect(
+			artifactEvents[0]!.data.result!.artifactUpdate!.artifact!.parts[0]!.text,
+		).toBe("partial result");
 	});
 
-	test("tasks/sendSubscribe without onTaskStreaming falls back to synthetic events", async () => {
+	test("SendStreamingMessage without onTaskStreaming falls back to synthetic events", async () => {
 		server = new A2AServer({
 			port: PORT,
 			card: {
@@ -149,7 +181,7 @@ describe("A2AServer SSE streaming", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/sendSubscribe", {
+		const res = await postA2A(PORT, "SendStreamingMessage", {
 			message: { parts: [{ kind: "text", text: "world" }] },
 		});
 
@@ -157,26 +189,30 @@ describe("A2AServer SSE streaming", () => {
 		const raw = await res.text();
 		const frames = parseSSEFrames(raw);
 
+		const taskFrames = frames.filter((f) => f.data.result?.task !== undefined);
 		const statusEvents = frames.filter(
-			(f) => f.event === "TaskStatusUpdateEvent",
+			(f) => f.data.result?.statusUpdate !== undefined,
 		);
 		const artifactEvents = frames.filter(
-			(f) => f.event === "TaskArtifactUpdateEvent",
+			(f) => f.data.result?.artifactUpdate !== undefined,
 		);
 
-		// submitted → working → completed
-		expect(statusEvents.length).toBeGreaterThanOrEqual(3);
-		expect(statusEvents[0].data.state).toBe("submitted");
-		expect(statusEvents[statusEvents.length - 1].data.state).toBe("completed");
-
-		// One artifact with the sync result.
-		expect(artifactEvents.length).toBe(1);
-		expect(artifactEvents[0].data.artifact.parts[0].text).toBe(
+		// task (submitted) + exactly one completed statusUpdate with the result.
+		expect(taskFrames[0]!.data.result!.task!.status.state).toBe("submitted");
+		expect(statusEvents.length).toBeGreaterThanOrEqual(1);
+		const lastStatus =
+			statusEvents[statusEvents.length - 1]!.data.result!.statusUpdate!;
+		expect(lastStatus.status.state).toBe("completed");
+		expect(lastStatus.final).toBe(true);
+		expect(lastStatus.status.message!.parts[0]!.text.trim()).toBe(
 			"sync-result:world",
 		);
+
+		// No synthetic artifact when the handler pushed none.
+		expect(artifactEvents.length).toBe(0);
 	});
 
-	test("tasks/sendSubscribe with invalid params returns -32600 (not a stream)", async () => {
+	test("SendStreamingMessage with invalid params returns -32602 (not a stream)", async () => {
 		server = new A2AServer({
 			port: PORT,
 			card: {
@@ -192,19 +228,17 @@ describe("A2AServer SSE streaming", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/sendSubscribe", {
-			message: { parts: [] }, // empty parts → invalid
-		});
+		const res = await postA2A(PORT, "SendStreamingMessage", {}); // missing message → invalid
 
 		expect(res.status).toBe(200);
 		expect(
 			res.headers.get("Content-Type")?.startsWith("application/json"),
 		).toBe(true);
 		const body = (await res.json()) as { error: { code: number } };
-		expect(body.error.code).toBe(-32600);
+		expect(body.error.code).toBe(-32602);
 	});
 
-	test("tasks/sendSubscribe handler error emits failed status", async () => {
+	test("SendStreamingMessage handler error emits failed status", async () => {
 		server = new A2AServer({
 			port: PORT,
 			card: {
@@ -223,20 +257,21 @@ describe("A2AServer SSE streaming", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/sendSubscribe", {
+		const res = await postA2A(PORT, "SendStreamingMessage", {
 			message: { parts: [{ kind: "text", text: "x" }] },
 		});
 
 		const raw = await res.text();
 		const frames = parseSSEFrames(raw);
 		const statusEvents = frames.filter(
-			(f) => f.event === "TaskStatusUpdateEvent",
+			(f) => f.data.result?.statusUpdate !== undefined,
 		);
 
-		// submitted → failed
-		expect(statusEvents.length).toBeGreaterThanOrEqual(2);
-		const last = statusEvents[statusEvents.length - 1].data;
-		expect(last.state).toBe("failed");
-		expect(last.message).toContain("boom");
+		// task (submitted) → failed
+		expect(statusEvents.length).toBeGreaterThanOrEqual(1);
+		const last =
+			statusEvents[statusEvents.length - 1]!.data.result!.statusUpdate!;
+		expect(last.status.state).toBe("failed");
+		expect(last.status.message!.parts[0]!.text).toContain("boom");
 	});
 });

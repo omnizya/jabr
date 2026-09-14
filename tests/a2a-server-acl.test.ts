@@ -8,9 +8,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { A2AServer } from "@adapters/http/a2a-server";
 import type { A2AServerConfig, ResolvedCaller } from "@agents/types";
+import type { TaskStorePort } from "../src/ports/task-store";
 import { ApiKeyRegistry } from "../src/security/api-key-registry";
 
-function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
+type TestConfig = A2AServerConfig<ApiKeyRegistry, TaskStorePort>;
+
+function makeConfig(overrides: Partial<TestConfig> = {}): TestConfig {
 	return {
 		port: 0,
 		card: {
@@ -20,6 +23,7 @@ function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
 			version: "0.1.0",
 			capabilities: {},
 			skills: [],
+			supportedInterfaces: [],
 		},
 		onTask: async () => "ok",
 		...overrides,
@@ -29,7 +33,7 @@ function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
 const VALID_BODY = JSON.stringify({
 	jsonrpc: "2.0",
 	id: 1,
-	method: "tasks/send",
+	method: "SendMessage",
 	params: {
 		message: { role: "user", parts: [{ kind: "text", text: "hello" }] },
 	},

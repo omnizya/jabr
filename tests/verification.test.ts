@@ -61,6 +61,14 @@ function makeTaskStore(): TaskStorePort & { tasks: Record<string, any> } {
 		list: () => [],
 		subscribe: () => () => {},
 		getTransitionHistory: () => [],
+		getRetryCount: () => 0,
+		incrementRetryCount: () => {},
+		moveToDLQ: () => {},
+		listDLQ: () => [],
+		getDLQEntry: () => undefined,
+		retryFromDLQ: () => false,
+		purgeDLQ: () => false,
+		purgeAllDLQ: () => 0,
 		tasks,
 	};
 }

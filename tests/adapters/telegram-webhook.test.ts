@@ -331,10 +331,10 @@ describe("TelegramWebhookAdapter", () => {
 			const delegateBody = delegateCalls[0]!.body as {
 				jsonrpc: string;
 				method: string;
-				params: { message: { parts: Array<{ kind: string; text: string }> } };
+				params: { message: { parts: Array<{ text: string }> } };
 			};
 			expect(delegateBody.jsonrpc).toBe("2.0");
-			expect(delegateBody.method).toBe("tasks/send");
+			expect(delegateBody.method).toBe("SendMessage");
 			expect(delegateBody.params.message.parts[0]!.text).toContain(
 				"hello from telegram",
 			);
@@ -372,7 +372,7 @@ describe("TelegramWebhookAdapter", () => {
 			);
 			expect(delegateCalls.length).toBeGreaterThan(0);
 			const text = delegateCalls[0]!.body as {
-				params: { message: { parts: Array<{ kind: string; text: string }> } };
+				params: { message: { parts: Array<{ text: string }> } };
 			};
 			expect(text.params.message.parts[0]!.text).toContain("999");
 
@@ -776,7 +776,7 @@ describe("TelegramWebhookAdapter", () => {
 			expect(delegateCalls.length).toBeGreaterThan(0);
 
 			const text = delegateCalls[0]!.body as {
-				params: { message: { parts: Array<{ kind: string; text: string }> } };
+				params: { message: { parts: Array<{ text: string }> } };
 			};
 			const fullText = text.params.message.parts[0]!.text;
 			expect(fullText).toContain("[Telegram]");

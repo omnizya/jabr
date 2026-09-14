@@ -19,6 +19,8 @@ function makeCard(
 	name: string,
 	tags: string[],
 	pricing?: { costPerTask: number; costPerToken?: number },
+	successRate?: number,
+	responseTime?: number,
 ): AgentCard {
 	return {
 		name,
@@ -37,6 +39,8 @@ function makeCard(
 		],
 		supportedInterfaces: [],
 		pricing,
+		successRate,
+		responseTime,
 	};
 }
 
@@ -214,6 +218,129 @@ describe("ToolRouter.routeTask — keyword-based routing", () => {
 		const result = await router.routeTask("");
 		expect(result).not.toBeNull();
 		expect(result?.agentName).toBe("oracle");
+	});
+});
+
+describe("ToolRouter.routeTask — deterministic tie-break scoring", () => {
+	test("breaks ties by successRate (higher wins)", async () => {
+		const router = new ToolRouter({
+			agents: {
+				// Both have the same tag → equal tag score
+				alpha: {
+					name: "alpha",
+					url: "http://a",
+					card: makeCard("Alpha", ["review"], undefined, 0.7),
+				},
+				beta: {
+					name: "beta",
+					url: "http://b",
+					card: makeCard("Beta", ["review"], undefined, 0.9),
+				},
+			},
+			memory: noopMemory(),
+		});
+
+		const result = await router.routeTask("review this code");
+		expect(result?.agentName).toBe("beta");
+	});
+
+	test("breaks ties by responseTime when successRate is equal (lower wins)", async () => {
+		const router = new ToolRouter({
+			agents: {
+				fast: {
+					name: "fast",
+					url: "http://f",
+					card: makeCard("Fast", ["task"], undefined, 0.8, 200),
+				},
+				slow: {
+					name: "slow",
+					url: "http://s",
+					card: makeCard("Slow", ["task"], undefined, 0.8, 500),
+				},
+			},
+			memory: noopMemory(),
+		});
+
+		const result = await router.routeTask("do the task");
+		expect(result?.agentName).toBe("fast");
+	});
+
+	test("breaks ties by cost when successRate and responseTime are equal (lower wins)", async () => {
+		const router = new ToolRouter({
+			agents: {
+				cheap: {
+					name: "cheap",
+					url: "http://c",
+					card: makeCard("Cheap", ["task"], { costPerTask: 10 }, 0.8, 200),
+				},
+				pricey: {
+					name: "pricey",
+					url: "http://p",
+					card: makeCard("Pricey", ["task"], { costPerTask: 50 }, 0.8, 200),
+				},
+			},
+			memory: noopMemory(),
+		});
+
+		const result = await router.routeTask("do the task");
+		expect(result?.agentName).toBe("cheap");
+	});
+
+	test("uses defaults (0.5 successRate, 2500ms responseTime, 50 cost) when metrics are missing", async () => {
+		const router = new ToolRouter({
+			agents: {
+				// No metrics at all → defaults to 0.5, 2500, 50
+				default_agent: {
+					name: "default_agent",
+					url: "http://d",
+					card: makeCard("Default", ["task"]),
+				},
+				// Explicitly better on successRate
+				better: {
+					name: "better",
+					url: "http://b",
+					card: makeCard("Better", ["task"], undefined, 0.6),
+				},
+			},
+			memory: noopMemory(),
+		});
+
+		const result = await router.routeTask("do the task");
+		expect(result?.agentName).toBe("better");
+	});
+
+	test("tie-break is deterministic: same input always produces same output", async () => {
+		const router = new ToolRouter({
+			agents: {
+				alpha: {
+					name: "alpha",
+					url: "http://a",
+					card: makeCard("Alpha", ["task"], undefined, 0.7, 300),
+				},
+				beta: {
+					name: "beta",
+					url: "http://b",
+					card: makeCard("Beta", ["task"], undefined, 0.8, 500),
+				},
+				gamma: {
+					name: "gamma",
+					url: "http://g",
+					card: makeCard("Gamma", ["task"], undefined, 0.6, 100),
+				},
+			},
+			memory: noopMemory(),
+		});
+
+		// Run 10 times — should always pick the same agent
+		const results: string[] = [];
+		for (let i = 0; i < 10; i++) {
+			const r = await router.routeTask("do the task");
+			results.push(r!.agentName);
+		}
+		const allSame = results.every((n) => n === results[0]);
+		expect(allSame).toBe(true);
+		// beta has highest successRate (0.8) → should win
+		expect(results[0]).toBe("beta");
 	});
 });
 
@@ -722,6 +849,14 @@ describe("ToolRouter.syncToKanban — kanban sync", () => {
 			appendArtifact: () => {},
 			listByState: () => [],
 			getTransitionHistory: () => [],
+			getRetryCount: () => 0,
+			incrementRetryCount: () => {},
+			moveToDLQ: () => {},
+			listDLQ: () => [],
+			getDLQEntry: () => undefined,
+			retryFromDLQ: () => false,
+			purgeDLQ: () => false,
+			purgeAllDLQ: () => 0,
 		};
 
 		const router = new ToolRouter({
@@ -746,6 +881,14 @@ describe("ToolRouter.syncToKanban — kanban sync", () => {
 			appendArtifact: () => {},
 			listByState: () => [],
 			getTransitionHistory: () => [],
+			getRetryCount: () => 0,
+			incrementRetryCount: () => {},
+			moveToDLQ: () => {},
+			listDLQ: () => [],
+			getDLQEntry: () => undefined,
+			retryFromDLQ: () => false,
+			purgeDLQ: () => false,
+			purgeAllDLQ: () => 0,
 		};
 
 		const router = new ToolRouter({
@@ -771,6 +914,14 @@ describe("ToolRouter.syncToKanban — kanban sync", () => {
 			appendArtifact: () => {},
 			listByState: () => [],
 			getTransitionHistory: () => [],
+			getRetryCount: () => 0,
+			incrementRetryCount: () => {},
+			moveToDLQ: () => {},
+			listDLQ: () => [],
+			getDLQEntry: () => undefined,
+			retryFromDLQ: () => false,
+			purgeDLQ: () => false,
+			purgeAllDLQ: () => 0,
 		};
 
 		const router = new ToolRouter({

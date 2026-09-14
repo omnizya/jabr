@@ -68,8 +68,23 @@ const SEED_AGENT_KEYS = [
 interface JsonRpcEnvelope {
 	jsonrpc: string;
 	id: number | string | null;
-	result?: { text?: string };
+	result?: {
+		task?: {
+			id?: string | number;
+			status?: {
+				state?: string;
+				message?: {
+					role?: string;
+					parts?: Array<{ text?: string }>;
+				};
+			};
+		};
+	};
 	error?: { code: number; message: string };
+}
+
+function envelopeText(env: JsonRpcEnvelope | null): string {
+	return env?.result?.task?.status?.message?.parts?.[0]?.text ?? "";
 }
 
 // ── HTTP helpers (with one retry on transient network failure) ────────────────
@@ -93,18 +108,23 @@ async function fetchWithTimeout(
 	throw lastErr;
 }
 
-/** POST a tasks/send (or other method) to an agent's root `/` endpoint. */
+/** POST an A2A v1 method (default SendMessage) to an agent's root `/` endpoint. */
 async function postA2A(
 	port: number,
 	text: string,
-	method = "tasks/send",
+	method = "SendMessage",
 	timeoutMs = 5000,
+	apiKey = "dev-secret-token-for-testing",
 ): Promise<{ status: number; envelope: JsonRpcEnvelope | null; raw: string }> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
+	if (apiKey) headers["X-API-Key"] = apiKey;
 	const res = await fetchWithTimeout(
 		`http://localhost:${port}/`,
 		{
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers,
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
@@ -234,7 +254,7 @@ class McpStdioClient {
 // 1. PROTOCOL EDGE CASES
 // ═════════════════════════════════════════════════════════════════════════════
 describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
-	// 1a. Valid tasks/send → 200 + valid envelope, on every agent.
+	// 1a. Valid SendMessage → 200 + valid envelope, on every agent.
 	for (const a of AGENTS) {
 		const probeText: Record<string, string> = {
 			orchestrator: "find files in the repo",
@@ -253,12 +273,12 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 					? 40000
 					: 15000;
 		test(
-			`[${a.key}] tasks/send → 200 + {jsonrpc,id,result:{text}}`,
+			`[${a.key}] SendMessage → 200 + valid envelope`,
 			async () => {
 				const { status, envelope } = await postA2A(
 					a.port,
 					probeText[a.key]!,
-					"tasks/send",
+					"SendMessage",
 					timeout,
 				);
 				expect(status).toBe(200);
@@ -268,20 +288,20 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 				if (envelope!.error) {
 					expect(typeof envelope!.error.code).toBe("number");
 				} else {
-					expect(typeof envelope!.result?.text).toBe("string");
+					expect(typeof envelopeText(envelope)).toBe("string");
 				}
 			},
 			timeout + 5000,
 		);
 	}
 
-	// 1b. Invalid method → -32601 (orchestrator + fixer).
+	// 1b. Unknown method → -32601 Method Not Found (orchestrator + fixer).
 	for (const a of [
 		{ key: "orchestrator", port: 4000 },
 		{ key: "fixer", port: 4005 },
 	]) {
-		for (const badMethod of ["tasks/get", "message/send", "bogus"]) {
-			test(`[${a.key}] invalid method '${badMethod}' → -32601`, async () => {
+		for (const badMethod of ["bogus", "message/send"]) {
+			test(`[${a.key}] unknown method '${badMethod}' → -32601`, async () => {
 				const { status, envelope } = await postA2A(
 					a.port,
 					"hello",
@@ -292,6 +312,34 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 				expect(envelope?.error?.code).toBe(-32601);
 			}, 12000);
 		}
+	}
+
+	// 1c. Invalid Request → -32600 (e.g. wrong-shape JSON-RPC).
+	for (const a of [
+		{ key: "orchestrator", port: 4000 },
+		{ key: "fixer", port: 4005 },
+	]) {
+		test(`[${a.key}] missing method field → -32600`, async () => {
+			const res = await fetchWithTimeout(
+				`http://localhost:${a.port}/`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-API-Key": "dev-secret-token-for-testing",
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						params: {},
+					}),
+				},
+				8000,
+			);
+			expect(res.status).toBe(200);
+			const env = (await res.json()) as JsonRpcEnvelope;
+			expect(env.error?.code).toBe(-32600);
+		}, 12000);
 	}
 
 	// 1c. Wrong path → 404 (orchestrator + fixer).
@@ -305,11 +353,14 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 					`http://localhost:${a.port}${path}`,
 					{
 						method: "POST",
-						headers: { "Content-Type": "application/json" },
+						headers: {
+							"Content-Type": "application/json",
+							"X-API-Key": "dev-secret-token-for-testing",
+						},
 						body: JSON.stringify({
 							jsonrpc: "2.0",
 							id: 1,
-							method: "tasks/send",
+							method: "SendMessage",
 							params: {},
 						}),
 					},
@@ -330,7 +381,10 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 				`http://localhost:${a.port}/`,
 				{
 					method: "POST",
-					headers: { "Content-Type": "application/json" },
+					headers: {
+						"Content-Type": "application/json",
+						"X-API-Key": "dev-secret-token-for-testing",
+					},
 					body: "this is not json {{{",
 				},
 				8000,
@@ -347,17 +401,17 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 		{ key: "fixer", port: 4005 },
 	]) {
 		const variants: Array<[string, any]> = [
-			["missing params", { jsonrpc: "2.0", id: 1, method: "tasks/send" }],
+			["missing params", { jsonrpc: "2.0", id: 1, method: "SendMessage" }],
 			[
 				"missing message",
-				{ jsonrpc: "2.0", id: 1, method: "tasks/send", params: {} },
+				{ jsonrpc: "2.0", id: 1, method: "SendMessage", params: {} },
 			],
 			[
 				"missing parts",
 				{
 					jsonrpc: "2.0",
 					id: 1,
-					method: "tasks/send",
+					method: "SendMessage",
 					params: { message: {} },
 				},
 			],
@@ -366,7 +420,7 @@ describe.skipIf(!orchestratorUp)("1 · Protocol edge cases", () => {
 				{
 					jsonrpc: "2.0",
 					id: 1,
-					method: "tasks/send",
+					method: "SendMessage",
 					params: { message: { parts: [] } },
 				},
 			],
@@ -493,11 +547,11 @@ describe.skipIf(!orchestratorUp)("2 · Agent command responses", () => {
 					const { status, envelope } = await postA2A(
 						c.port,
 						text,
-						"tasks/send",
+						"SendMessage",
 						c.timeout,
 					);
 					expect(status).toBe(200);
-					const resultText = envelope?.result?.text ?? "";
+					const resultText = envelopeText(envelope);
 					expect(resultText.length).toBeGreaterThan(0);
 					expect(resultText).not.toBe("No response");
 				},
@@ -563,11 +617,11 @@ describe.skipIf(!orchestratorUp)("3 · Orchestrator routing", () => {
 			const { status, envelope } = await postA2A(
 				4000,
 				r.text,
-				"tasks/send",
+				"SendMessage",
 				60000,
 			);
 			expect(status).toBe(200);
-			const resultText = envelope?.result?.text ?? "";
+			const resultText = envelopeText(envelope);
 			expect(resultText.length).toBeGreaterThan(0);
 			expect(resultText).not.toBe("No response");
 			if (!r.expectOracleFallback) {
@@ -586,11 +640,11 @@ describe.skipIf(!orchestratorUp)("4 · Handover chain", () => {
 		const { status, envelope } = await postA2A(
 			4000,
 			"review this code and fix the bug in it",
-			"tasks/send",
+			"SendMessage",
 			60000,
 		);
 		expect(status).toBe(200);
-		const resultText = envelope?.result?.text ?? "";
+		const resultText = envelopeText(envelope);
 		expect(resultText.length).toBeGreaterThan(0);
 		expect(resultText).not.toBe("No response");
 		expect(resultText).not.toMatch(/Oracle analyzed/i);
@@ -606,7 +660,7 @@ describe.skipIf(!orchestratorUp)("4 · Handover chain", () => {
 describe.skipIf(!orchestratorUp)("5 · World-state correctness", () => {
 	test("agents contains all 7 seed agents; tasks/skills/timestamp valid", async () => {
 		// Ensure at least one task exists in sqlite before checking counts.
-		await postA2A(4000, "find files", "tasks/send", 15000);
+		await postA2A(4000, "find files", "SendMessage", 15000);
 
 		const { status, json } = await getJson(
 			"http://localhost:4000/.well-known/world-state",
@@ -710,11 +764,11 @@ describe.skipIf(!orchestratorUp)("7 · Regression checks", () => {
 		const { status, envelope } = await postA2A(
 			1337,
 			"scan",
-			"tasks/send",
+			"SendMessage",
 			90000,
 		);
 		expect(status).toBe(200);
-		const resultText = envelope?.result?.text ?? "";
+		const resultText = envelopeText(envelope);
 		expect(resultText.length).toBeGreaterThan(0);
 		expect(resultText).not.toBe("No response");
 		expect(resultText).toMatch(/\[Jarvis\]/);
@@ -726,11 +780,11 @@ describe.skipIf(!orchestratorUp)("7 · Regression checks", () => {
 		const { status, envelope } = await postA2A(
 			4000,
 			"fix this bug in the code",
-			"tasks/send",
+			"SendMessage",
 			60000,
 		);
 		expect(status).toBe(200);
-		const resultText = envelope?.result?.text ?? "";
+		const resultText = envelopeText(envelope);
 		expect(resultText).toMatch(/fix this bug in the code/);
 	}, 65000);
 });

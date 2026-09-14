@@ -31,7 +31,7 @@ function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
 const VALID_BODY = JSON.stringify({
 	jsonrpc: "2.0",
 	id: 1,
-	method: "tasks/send",
+	method: "SendMessage",
 	params: {
 		message: { role: "user", parts: [{ kind: "text", text: "hello" }] },
 	},

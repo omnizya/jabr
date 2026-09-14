@@ -2,10 +2,10 @@
  * oauth-scope-enforcement.test.ts — Tests for per-method scope enforcement.
  *
  * Verifies that:
- *   - tasks/send requires a2a:write
- *   - tasks/sendSubscribe requires a2a:stream or a2a:write
- *   - tasks/get requires a2a:read
- *   - tasks/cancel requires a2a:admin
+ *   - SendMessage requires a2a:write
+ *   - SendStreamingMessage requires a2a:stream or a2a:write
+ *   - GetTask requires a2a:read
+ *   - CancelTask requires a2a:admin
  *   - X-API-Key callers bypass per-method scope checks (allowlist only)
  */
 
@@ -39,15 +39,15 @@ const VALID_BODY = (method: string) =>
 		id: 1,
 		method,
 		params:
-			method === "tasks/send" || method === "tasks/sendSubscribe"
+			method === "SendMessage" || method === "SendStreamingMessage"
 				? {
 						message: {
 							role: "user",
 							parts: [{ kind: "text", text: "hello" }],
 						},
 					}
-				: method === "tasks/get" || method === "tasks/cancel"
-					? { taskId: "some-task-id" }
+				: method === "GetTask" || method === "CancelTask"
+					? { id: "some-task-id" }
 					: {},
 	});
 
@@ -63,7 +63,7 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 		process.env.JABR_JWT_SECRET = "test-secret-key-at-least-16-chars-long";
 	});
 
-	test("tasks/send with a2a:write scope → 200", async () => {
+	test("SendMessage with a2a:write scope → 200", async () => {
 		const registry = new ApiKeyRegistry([
 			{
 				key: VALID_API_KEY,
@@ -93,12 +93,12 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
-			body: VALID_BODY("tasks/send"),
+			body: VALID_BODY("SendMessage"),
 		});
 		expect(res.status).toBe(200);
 	});
 
-	test("tasks/send with only a2a:read scope → 403 (insufficient)", async () => {
+	test("SendMessage with only a2a:read scope → 403 (insufficient)", async () => {
 		const registry = new ApiKeyRegistry([
 			{
 				key: VALID_API_KEY,
@@ -128,14 +128,14 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
-			body: VALID_BODY("tasks/send"),
+			body: VALID_BODY("SendMessage"),
 		});
 		expect(res.status).toBe(403);
 		const json = await res.json();
 		expect(json.error.message).toContain("insufficient scope");
 	});
 
-	test("tasks/sendSubscribe with a2a:stream scope → 200", async () => {
+	test("SendStreamingMessage with a2a:stream scope → 200", async () => {
 		const registry = new ApiKeyRegistry([
 			{
 				key: VALID_API_KEY,
@@ -178,12 +178,12 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
-			body: VALID_BODY("tasks/sendSubscribe"),
+			body: VALID_BODY("SendStreamingMessage"),
 		});
 		expect(res.status).toBe(200);
 	});
 
-	test("tasks/cancel with a2a:admin scope → 200", async () => {
+	test("CancelTask with a2a:admin scope → 200", async () => {
 		const registry = new ApiKeyRegistry([
 			{
 				key: VALID_API_KEY,
@@ -213,12 +213,12 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
-			body: VALID_BODY("tasks/cancel"),
+			body: VALID_BODY("CancelTask"),
 		});
 		expect(res.status).toBe(200);
 	});
 
-	test("tasks/cancel with a2a:read scope → 403", async () => {
+	test("CancelTask with a2a:read scope → 403", async () => {
 		const registry = new ApiKeyRegistry([
 			{
 				key: VALID_API_KEY,
@@ -248,7 +248,7 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
-			body: VALID_BODY("tasks/cancel"),
+			body: VALID_BODY("CancelTask"),
 		});
 		expect(res.status).toBe(403);
 	});
@@ -278,12 +278,12 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				"X-API-Key": VALID_API_KEY,
 			},
-			body: VALID_BODY("tasks/send"),
+			body: VALID_BODY("SendMessage"),
 		});
 		expect(res.status).toBe(200);
 	});
 
-	test("JWT token with no scopes → 403 on tasks/send (per-method enforcement)", async () => {
+	test("JWT token with no scopes → 403 on SendMessage (per-method enforcement)", async () => {
 		const registry = new ApiKeyRegistry([
 			{
 				key: VALID_API_KEY,
@@ -314,7 +314,7 @@ describe("A2AServer — per-method scope enforcement (JWT)", () => {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
-			body: VALID_BODY("tasks/send"),
+			body: VALID_BODY("SendMessage"),
 		});
 		// Token with no scopes passes initial auth but fails per-method scope check
 		expect(res.status).toBe(403);

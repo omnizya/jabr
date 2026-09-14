@@ -57,6 +57,14 @@ function makeTaskStore(): TaskStorePort & {
 		appendArtifact: () => {},
 		listByState: () => [],
 		getTransitionHistory: () => [],
+		getRetryCount: () => 0,
+		incrementRetryCount: () => {},
+		moveToDLQ: () => {},
+		listDLQ: () => [],
+		getDLQEntry: () => undefined,
+		retryFromDLQ: () => false,
+		purgeDLQ: () => false,
+		purgeAllDLQ: () => 0,
 		tasks,
 	};
 }

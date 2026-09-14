@@ -2,9 +2,9 @@
  * a2a-server-push.test.ts — Tests for push notification callback support.
  *
  * Verifies:
- *   1. tasks/send with notificationUrl POSTs state changes to the callback.
- *   2. tasks/send with callbackUrl (alias) works the same way.
- *   3. tasks/send without callback URL behaves synchronously (backward compat).
+ *   1. SendMessage with notificationUrl POSTs state changes to the callback.
+ *   2. SendMessage with notification_url (snake_case alias) works the same way.
+ *   3. SendMessage without callback URL behaves synchronously (backward compat).
  *   4. Callback receives submitted → working → completed transitions.
  *   5. Callback receives failed state on task error.
  *   6. AgentCard advertises pushNotifications capability.
@@ -94,20 +94,20 @@ describe("A2AServer — push notification callback", () => {
 		throw new Error(`Timed out waiting for state="${state}"`);
 	}
 
-	test("tasks/send with notificationUrl POSTs state changes to callback", async () => {
+	test("SendMessage with notificationUrl POSTs state changes to callback", async () => {
 		const cbPort = await startCallbackServer();
 
 		server = new A2AServer(makeConfig({ port: PORT }));
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/send", {
+		const res = await postA2A(PORT, "SendMessage", {
 			message: { parts: [{ kind: "text", text: "hello" }] },
 			notificationUrl: `http://localhost:${cbPort}/callback`,
 		});
 
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as { result?: { id?: string } };
-		expect(body.result?.id).toBeDefined();
+		const body = (await res.json()) as { result?: { task?: { id?: string } } };
+		expect(body.result?.task?.id).toBeDefined();
 
 		await waitForState("completed");
 
@@ -119,15 +119,15 @@ describe("A2AServer — push notification callback", () => {
 		expect(states).toContain("completed");
 	});
 
-	test("tasks/send with callbackUrl alias works the same", async () => {
+	test("SendMessage with notification_url (snake_case) alias works the same", async () => {
 		const cbPort = await startCallbackServer();
 
 		server = new A2AServer(makeConfig({ port: PORT }));
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/send", {
+		const res = await postA2A(PORT, "SendMessage", {
 			message: { parts: [{ kind: "text", text: "world" }] },
-			callbackUrl: `http://localhost:${cbPort}/hook`,
+			notification_url: `http://localhost:${cbPort}/hook`,
 		});
 
 		expect(res.status).toBe(200);
@@ -142,17 +142,23 @@ describe("A2AServer — push notification callback", () => {
 		expect(states).toContain("completed");
 	});
 
-	test("tasks/send without callback URL still works synchronously", async () => {
+	test("SendMessage without callback URL still works synchronously", async () => {
 		server = new A2AServer(makeConfig({ port: PORT }));
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/send", {
+		const res = await postA2A(PORT, "SendMessage", {
 			message: { parts: [{ kind: "text", text: "sync" }] },
 		});
 
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as { result?: { text?: string } };
-		expect(body.result?.text).toBe("result:sync");
+		const body = (await res.json()) as {
+			result?: {
+				task?: { status?: { state?: string } };
+				message?: { parts?: Array<{ text?: string }> };
+			};
+		};
+		expect(body.result?.task?.status?.state).toBe("completed");
+		expect(body.result?.message?.parts?.[0]?.text?.trim()).toBe("result:sync");
 	});
 
 	test("callback receives submitted then completed states", async () => {
@@ -161,7 +167,7 @@ describe("A2AServer — push notification callback", () => {
 		server = new A2AServer(makeConfig({ port: PORT }));
 		server.start();
 
-		await postA2A(PORT, "tasks/send", {
+		await postA2A(PORT, "SendMessage", {
 			message: { parts: [{ kind: "text", text: "multi" }] },
 			notificationUrl: `http://localhost:${cbPort}/cb`,
 		});
@@ -189,7 +195,7 @@ describe("A2AServer — push notification callback", () => {
 		);
 		server.start();
 
-		await postA2A(PORT, "tasks/send", {
+		await postA2A(PORT, "SendMessage", {
 			message: { parts: [{ kind: "text", text: "fail" }] },
 			notificationUrl: `http://localhost:${cbPort}/cb`,
 		});

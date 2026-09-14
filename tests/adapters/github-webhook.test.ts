@@ -42,9 +42,9 @@ function makeTestAdapter(delegateUrl = "http://localhost:4000"): {
 				body: JSON.stringify({
 					jsonrpc: "2.0",
 					id: 1,
-					method: "tasks/send",
+					method: "SendMessage",
 					params: {
-						message: { role: "user", parts: [{ kind: "text", text }] },
+						message: { role: "user", parts: [{ text }] },
 					},
 				}),
 			});
@@ -63,9 +63,9 @@ function makeTestAdapter(delegateUrl = "http://localhost:4000"): {
 				body: JSON.stringify({
 					jsonrpc: "2.0",
 					id: 1,
-					method: "tasks/send",
+					method: "SendMessage",
 					params: {
-						message: { role: "user", parts: [{ kind: "text", text }] },
+						message: { role: "user", parts: [{ text }] },
 					},
 				}),
 			});
@@ -403,10 +403,10 @@ describe("GitHubWebhookAdapter", () => {
 		const callBody = adapter.fetchCalls[0]!.body as {
 			jsonrpc: string;
 			method: string;
-			params: { message: { parts: Array<{ kind: string; text: string }> } };
+			params: { message: { parts: Array<{ text: string }> } };
 		};
 		expect(callBody.jsonrpc).toBe("2.0");
-		expect(callBody.method).toBe("tasks/send");
+		expect(callBody.method).toBe("SendMessage");
 		expect(callBody.params.message.parts[0]!.text).toContain(
 			"GitHub push to omnizya/jabr on abc",
 		);
@@ -443,7 +443,7 @@ describe("GitHubWebhookAdapter", () => {
 		expect(adapter.fetchCalls.length).toBe(1);
 		const callBody = adapter.fetchCalls[0]!.body as {
 			params: {
-				message: { parts: Array<{ kind: string; text: string }> };
+				message: { parts: Array<{ text: string }> };
 			};
 		};
 		expect(callBody.params.message.parts[0]!.text).toContain(

@@ -668,7 +668,7 @@ function makeReq(paymentHeader: string | null): Request {
 		body: JSON.stringify({
 			jsonrpc: "2.0",
 			id: 1,
-			method: "tasks/send",
+			method: "SendMessage",
 			params: {},
 		}),
 	}) as Request;

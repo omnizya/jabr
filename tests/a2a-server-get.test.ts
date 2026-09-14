@@ -1,5 +1,5 @@
 /**
- * a2a-server-get.test.ts — Tests for tasks/get and tasks/cancel endpoints.
+ * a2a-server-get.test.ts — Tests for GetTask and CancelTask endpoints.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -26,7 +26,7 @@ async function postA2A(
 	});
 }
 
-describe("A2AServer tasks/get", () => {
+describe("A2AServer GetTask", () => {
 	let server: A2AServer | null = null;
 	let taskStore: TaskStorePort;
 
@@ -62,7 +62,7 @@ describe("A2AServer tasks/get", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/get", { taskId: "task-existing-1" });
+		const res = await postA2A(PORT, "GetTask", { id: "task-existing-1" });
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as {
 			result: { id: string; status: { state: string }; history: unknown[] };
@@ -90,7 +90,7 @@ describe("A2AServer tasks/get", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/get", { taskId: "does-not-exist" });
+		const res = await postA2A(PORT, "GetTask", { id: "does-not-exist" });
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as {
 			error: { code: number; message: string };
@@ -99,7 +99,7 @@ describe("A2AServer tasks/get", () => {
 		expect(json.error.message).toContain("Task not found");
 	});
 
-	test("returns -32600 for missing taskId param", async () => {
+	test("returns -32000 for missing id param", async () => {
 		taskStore = new TaskMemory();
 		server = new A2AServer({
 			port: PORT,
@@ -117,14 +117,14 @@ describe("A2AServer tasks/get", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/get", {});
+		const res = await postA2A(PORT, "GetTask", {});
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as { error: { code: number } };
-		expect(json.error.code).toBe(-32600);
+		expect(json.error.code).toBe(-32000);
 	});
 });
 
-describe("A2AServer tasks/cancel", () => {
+describe("A2AServer CancelTask", () => {
 	let server: A2AServer | null = null;
 	let taskStore: TaskStorePort;
 
@@ -155,15 +155,15 @@ describe("A2AServer tasks/cancel", () => {
 
 		// We need to register the abort controller for the task manually
 		// since tasks/cancel expects it to exist
-		const res = await postA2A(PORT, "tasks/cancel", {
-			taskId: "task-to-cancel",
+		const res = await postA2A(PORT, "CancelTask", {
+			id: "task-to-cancel",
 		});
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as {
-			result: { id: string; state: string };
+			result: { id: string; status: { state: string } };
 		};
 		expect(json.result.id).toBe("task-to-cancel");
-		expect(json.result.state).toBe("canceled");
+		expect(json.result.status.state).toBe("canceled");
 	});
 
 	test("cancel succeeds even without abort controller (task store only)", async () => {
@@ -185,15 +185,17 @@ describe("A2AServer tasks/cancel", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/cancel", {
-			taskId: "task-no-controller",
+		const res = await postA2A(PORT, "CancelTask", {
+			id: "task-no-controller",
 		});
 		expect(res.status).toBe(200);
-		const json = (await res.json()) as { result: { state: string } };
-		expect(json.result.state).toBe("canceled");
+		const json = (await res.json()) as {
+			result: { status: { state: string } };
+		};
+		expect(json.result.status.state).toBe("canceled");
 	});
 
-	test("returns -32600 for missing taskId param", async () => {
+	test("returns -32000 for missing id param", async () => {
 		taskStore = new TaskMemory();
 		server = new A2AServer({
 			port: PORT,
@@ -211,9 +213,9 @@ describe("A2AServer tasks/cancel", () => {
 		});
 		server.start();
 
-		const res = await postA2A(PORT, "tasks/cancel", {});
+		const res = await postA2A(PORT, "CancelTask", {});
 		expect(res.status).toBe(200);
 		const json = (await res.json()) as { error: { code: number } };
-		expect(json.error.code).toBe(-32600);
+		expect(json.error.code).toBe(-32000);
 	});
 });

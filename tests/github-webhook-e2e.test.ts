@@ -149,10 +149,10 @@ describe("6 · GitHub PR → Oracle review → comment (integration)", () => {
 		const envelope = lastCall.body as {
 			jsonrpc?: string;
 			method?: string;
-			params?: { message?: { parts?: Array<{ kind: string; text: string }> } };
+			params?: { message?: { parts?: Array<{ text: string }> } };
 		};
 		expect(envelope.jsonrpc).toBe("2.0");
-		expect(envelope.method).toBe("tasks/send");
+		expect(envelope.method).toBe("SendMessage");
 		const text = envelope?.params?.message?.parts?.[0]?.text ?? "";
 		expect(text).toContain(
 			"GitHub PR #42 opened on omnizya/jabr: Add e2e webhook test",

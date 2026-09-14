@@ -33,7 +33,7 @@ function makeConfig(overrides: Partial<A2AServerConfig> = {}): A2AServerConfig {
 const VALID_BODY = JSON.stringify({
 	jsonrpc: "2.0",
 	id: 1,
-	method: "tasks/send",
+	method: "SendMessage",
 	params: {
 		message: { role: "user", parts: [{ kind: "text", text: "hello" }] },
 	},
@@ -42,7 +42,7 @@ const VALID_BODY = JSON.stringify({
 const VALID_STREAM_BODY = JSON.stringify({
 	jsonrpc: "2.0",
 	id: 2,
-	method: "tasks/sendSubscribe",
+	method: "SendStreamingMessage",
 	params: {
 		message: { role: "user", parts: [{ kind: "text", text: "hello" }] },
 	},
@@ -169,7 +169,7 @@ describe("A2AServer — /health and /ready", () => {
 		await shutdownPromise;
 	});
 
-	test("POST /tasks/send during shutdown receives 503", async () => {
+	test("POST SendMessage during shutdown receives 503", async () => {
 		const port = 4355;
 		let taskStarted = false;
 		let taskDone = false;
@@ -334,7 +334,7 @@ describe("A2AServer — graceful shutdown drain", () => {
 			chunks.push(new TextDecoder().decode(value));
 		}
 		const streamText = chunks.join("");
-		expect(streamText).toContain("TaskStatusUpdateEvent");
+		expect(streamText).toContain("statusUpdate");
 		expect(streamText).toContain("working");
 		expect(streamText).toContain("completed");
 

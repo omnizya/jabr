@@ -291,7 +291,7 @@ describe("WhatsAppWebhookAdapter delegation", () => {
 		adapter?.clearFetchCalls();
 	});
 
-	test("routes a text message → delegateUrl with tasks/send", async () => {
+	test("routes a text message → delegateUrl with SendMessage", async () => {
 		const event = parseWhatsAppEvent(textMessagePayload);
 		await adapter.route(event);
 		expect(adapter.fetchCalls.length).toBe(1);
@@ -300,10 +300,10 @@ describe("WhatsAppWebhookAdapter delegation", () => {
 		const body = call.body as {
 			jsonrpc: string;
 			method: string;
-			params: { message: { parts: Array<{ kind: string; text: string }> } };
+			params: { message: { parts: Array<{ text: string }> } };
 		};
 		expect(body.jsonrpc).toBe("2.0");
-		expect(body.method).toBe("tasks/send");
+		expect(body.method).toBe("SendMessage");
 		expect(body.params.message.parts[0]!.text).toContain(
 			"[WhatsApp] From ++212612345678:",
 		);
@@ -315,7 +315,7 @@ describe("WhatsAppWebhookAdapter delegation", () => {
 		await adapter.route(event);
 		expect(adapter.fetchCalls.length).toBe(1);
 		const body = adapter.fetchCalls[0]!.body as {
-			params: { message: { parts: Array<{ kind: string; text: string }> } };
+			params: { message: { parts: Array<{ text: string }> } };
 		};
 		const text = body.params.message.parts[0]!.text;
 		expect(text).toContain("fix this bug in the parser");
@@ -560,10 +560,10 @@ describe("WhatsAppWebhookAdapter signature verification", () => {
 			const body = delegateCall.body as {
 				jsonrpc: string;
 				method: string;
-				params: { message: { parts: Array<{ kind: string; text: string }> } };
+				params: { message: { parts: Array<{ text: string }> } };
 			};
 			expect(body.jsonrpc).toBe("2.0");
-			expect(body.method).toBe("tasks/send");
+			expect(body.method).toBe("SendMessage");
 			expect(body.params.message.parts[0]!.text).toMatch(/\[WhatsApp\] From/);
 		}
 
