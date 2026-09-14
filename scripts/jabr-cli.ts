@@ -32,6 +32,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { A2AClient } from "@adapters/http/a2a-client-adapter";
 import { jabrUrlForPort } from "@config/jabr-config";
 import {
 	JABR_PORTS,
@@ -639,40 +640,19 @@ async function cmdSend(args: string[]) {
 	log(`  Task: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`);
 
 	try {
-		const res = await fetch(`${jabrUrlForPort(agent.port)}/`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				jsonrpc: "2.0",
-				id: 1,
-				method: "tasks/send",
-				params: {
-					message: {
-						parts: [{ kind: "text", text }],
-					},
-				},
-			}),
-			signal: AbortSignal.timeout(30000),
-		});
-
-		const body = (await res.json()) as {
-			result?: { text?: string } | unknown;
-			error?: { code?: number | string; message?: string };
-		};
-		if (res.ok && body.result) {
-			const resultText =
-				(body.result as any).text ?? JSON.stringify(body.result);
-			log(`\nResponse from ${agent.name}:`);
-			log("─".repeat(60));
-			log(resultText);
-			log("─".repeat(60));
-		} else if (body.error) {
-			const errCode = body.error.code;
-			const errMsg = body.error.message;
-			error(`Agent returned error ${errCode}: ${errMsg}`);
-		} else {
-			error(`Unexpected response: ${JSON.stringify(body)}`);
-		}
+		const client = new A2AClient(process.env.A2A_AUTH_TOKEN);
+		const url = jabrUrlForPort(agent.port);
+		const result = await Promise.race([
+			client.sendTask(url, text),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error("timed out after 30s")), 30000),
+			),
+		]);
+		const resultText = result.text ?? JSON.stringify(result);
+		log(`\nResponse from ${agent.name}:`);
+		log("─".repeat(60));
+		log(resultText);
+		log("─".repeat(60));
 	} catch (e) {
 		error(`Failed to send task: ${e}`);
 		error(

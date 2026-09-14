@@ -16,15 +16,19 @@
  *   bun scripts/demo.ts
  *
  * Protocol note: the A2A server is synchronous. It accepts POST to the root
- * `/` with JSON-RPC method `tasks/send` and params
- * `{ message: { parts: [{ kind: "text", text }] } }`, and returns
- * `{ jsonrpc: "2.0", id, result: { text: string } }` inline — no polling.
+ * `/` with JSON-RPC method `SendMessage` and params
+ * `{ message: { role, messageId, parts: [{ kind: "text", text }] } }`, and
+ * returns a v1.0 `SendMessageResponse` (`{ task, message }`) inline — no
+ * polling. Requests go through the shared `A2AClient` adapter (see
+ * `src/adapters/http/a2a-client-adapter.ts`), which normalizes the envelope
+ * to `A2ATaskResult`.
  */
 
 import { Database } from "bun:sqlite";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { A2AClient } from "@adapters/http/a2a-client-adapter";
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
 import { JABR_PORTS } from "@constants/ecosystem";
 
@@ -58,36 +62,20 @@ async function check(label: string, fn: () => Promise<void>) {
 	}
 }
 
+/** Shared A2A client — dev token matches the agents' `A2A_AUTH_TOKEN`. */
+const a2aClient = new A2AClient("dev-secret-token-for-testing");
+
 /**
- * POST a task to an A2A agent's root `/` endpoint using the `tasks/send`
- * method. The server is synchronous: it awaits the handler and returns the
- * result inline as `{ result: { text } }`.
+ * Send a task to an A2A agent's root `/` endpoint via the v1.0 `SendMessage`
+ * method, using the shared `A2AClient` adapter. The server is synchronous:
+ * it awaits the handler and returns the result inline.
  */
 async function postA2A(agentUrl: string, text: string): Promise<string> {
-	const res = await fetch(`${agentUrl}/`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			"X-API-Key": "dev-secret-token-for-testing",
-		},
-		body: JSON.stringify({
-			jsonrpc: "2.0",
-			id: crypto.randomUUID(),
-			method: "tasks/send",
-			params: { message: { parts: [{ kind: "text", text }] } },
-		}),
-	});
-	const data = (await res.json()) as {
-		result?: { text: string };
-		error?: { code: number; message: string };
-	};
-	if (data.error) {
-		throw new Error(`RPC ${data.error.code}: ${data.error.message}`);
-	}
-	if (!data.result || typeof data.result.text !== "string") {
+	const result = await a2aClient.sendTask(agentUrl, text);
+	if (!result.text) {
 		throw new Error("Malformed response: missing result.text");
 	}
-	return data.result.text;
+	return result.text;
 }
 
 // ── 1. A2A agent card discovery ───────────────────────────────────────────────

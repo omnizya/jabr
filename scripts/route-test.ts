@@ -9,7 +9,7 @@ import {
 import { JABR_PORTS } from "../src/constants/ecosystem.ts";
 
 // Offline registry: returns cards keyed by seed URL. Same shape DynamicRegistry
-// would see from A2AClient.fetchCard against a running agent — keeps routing
+// would see from A2AClient.discover against a running agent — keeps routing
 // test on the real matchAgent algorithm without needing live agents.
 const SKILLS: Record<string, AgentSkill[]> = {
 	oracle: [

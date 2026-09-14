@@ -71,7 +71,7 @@ CODENAME_TO_SLUG = {
 OPERATIONAL: dict[str, dict] = {
     "jabir": {
         "role": "Orchestrator — routes tasks, persists memory, self-improves, consensus engine",
-        "protocol": "A2A HTTP JSON-RPC + SSE (streaming planned). POST to `/` (root path ONLY) with method `tasks/send`. Synchronous: server awaits handler and returns result in response.",
+        "protocol": "A2A v1.0 HTTP JSON-RPC + SSE. POST to `/` (root path ONLY) with method `SendMessage` (or `SendStreamingMessage` over SSE). Synchronous: server awaits handler and returns result in response. Agent card served at `/.well-known/agent-card.json`.",
         "handoff": (
             "- Honors `%%HANDOVER%%` from oracle via `forcedAgentName` (bypasses registry)\n"
             "- `MAX_HANDOVER_DEPTH = 3` — after 3 hops, completes with available result\n"
