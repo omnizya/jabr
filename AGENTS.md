@@ -49,7 +49,7 @@ Jabr uses a strict **Hexagonal Architecture (Ports & Adapters)**:
 ## Protocol Quick Reference
 
 ### A2A Server (`src/adapters/http/a2a-server.ts`)
-- POST to `/` (root path ONLY) with JSON-RPC method `tasks/send`.
+- POST to `/` (root path ONLY) with JSON-RPC method `SendMessage`.
 - Synchronous design: server awaits handlers and returns results inline.
 - Authentication supported via `X-API-Key` headers (via `ApiKeyRegistry`) and OAuth 2.1 JWT Bearer tokens.
 

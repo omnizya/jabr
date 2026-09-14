@@ -53,7 +53,7 @@ Notes:
 ================================================================
 User Provided Header
 ================================================================
-Jabr — regenerated 2026-09-09T23:01:01Z. Do NOT edit by hand.\nAdapters & Security — concrete port implementations. All I/O lives here.
+Jabr — regenerated 2026-09-14T08:16:30Z. Do NOT edit by hand.\nAdapters & Security — concrete port implementations. All I/O lives here.
 
 ================================================================
 Directory Structure
@@ -62,6 +62,7 @@ src/
   adapters/
     a2a/
       client.ts
+      serialize.ts
     gunjs/
       gunjs-memory-adapter.ts
     headroom/
@@ -100,6 +101,7 @@ src/
     image-gen-9router.ts
     mem-palace.ts
     memory-fs.ts
+    plugin-loader.ts
     pollinations-image.ts
     rate-limit.ts
     search-9router.ts
@@ -125,12 +127,28 @@ Files
 ================
 File: src/adapters/a2a/client.ts
 ================
+import {
+	V1_METHOD_SEND_MESSAGE,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "@constants/a2a-v1";
+import { AGENT_CARD_PATH, KNOWN_AGENTS_NAME } from "@constants/known-agents";
+import {
+	fromWireSendMessageResponse,
+	toWireSendMessageRequest,
+} from "@/adapters/a2a/serialize";
 import type { AgentRegistryPort } from "@/ports/agent-registry";
-import { type BudgetPort, BudgetExhaustedError } from "@/ports/budget-port";
-import  { loadTlsConfig } from "@/security/tls-config";
+import { BudgetExhaustedError, type BudgetPort } from "@/ports/budget-port";
+import { loadTlsConfig } from "@/security/tls-config";
+import type {
+	Message,
+	Part,
+	SendMessageRequest,
+	SendMessageResponse,
+	Task,
+} from "@/types/a2a-v1";
 import type { AgentCard } from "@/types/types";
 import type { JSONRPCRequest, JSONRPCResponse } from "@/utils/rpc";
-import {AGENT_CARD_PATH, KNOWN_AGENTS_NAME} from "@constants/known-agents"
 ⋮----
 export class A2AClient implements AgentRegistryPort
 ⋮----
@@ -148,11 +166,370 @@ async delegateTask(
 ): Promise<string>
 
 ================
+File: src/adapters/a2a/serialize.ts
+================
+import type {
+	AgentCapabilities,
+	AgentCard,
+	AgentCardSignature,
+	AgentExtension,
+	AgentInterface,
+	AgentProvider,
+	AgentSkill,
+	APIKeySecurityScheme,
+	Artifact,
+	AuthorizationCodeOAuthFlow,
+	CancelTaskRequest,
+	ClientCredentialsOAuthFlow,
+	DataPart,
+	DeleteTaskPushNotificationConfigRequest,
+	DeviceCodeOAuthFlow,
+	ExtendedAgentCard,
+	FilePart,
+	FunctionCallPart,
+	FunctionResponsePart,
+	GetExtendedAgentCardRequest,
+	GetTaskPushNotificationConfigRequest,
+	GetTaskRequest,
+	HTTPAuthSecurityScheme,
+	ImplicitOAuthFlow,
+	ListTaskPushNotificationConfigsRequest,
+	ListTaskPushNotificationConfigsResponse,
+	ListTasksRequest,
+	ListTasksResponse,
+	Message,
+	MutualTlsSecurityScheme,
+	OAuth2SecurityScheme,
+	OAuthFlows,
+	OpenIdConnectSecurityScheme,
+	Part,
+	PasswordOAuthFlow,
+	RawPart,
+	Role,
+	SecurityRequirement,
+	SecurityScheme,
+	SendMessageConfiguration,
+	SendMessageRequest,
+	SendMessageResponse,
+	StreamResponse,
+	SubscribeToTaskRequest,
+	Task,
+	TaskArtifactUpdateEvent,
+	TaskPushNotificationConfig,
+	TaskState,
+	TaskStatus,
+	TaskStatusUpdateEvent,
+	TextPart,
+} from "../../types/a2a-v1.ts";
+⋮----
+function isPlainObject(value: unknown): value is Record<string, unknown>
+⋮----
+function getKey(
+	obj: Record<string, unknown>,
+	camel: string,
+	snake: string,
+): unknown
+⋮----
+function getKeyArray(
+	obj: Record<string, unknown>,
+	camel: string,
+	snake: string,
+): readonly unknown[]
+⋮----
+function getKeyString(
+	obj: Record<string, unknown>,
+	camel: string,
+	snake: string,
+): string | undefined
+⋮----
+function getKeyNumber(
+	obj: Record<string, unknown>,
+	camel: string,
+	snake: string,
+): number | undefined
+⋮----
+function getKeyBoolean(
+	obj: Record<string, unknown>,
+	camel: string,
+	snake: string,
+): boolean | undefined
+⋮----
+function getKeyObject(
+	obj: Record<string, unknown>,
+	camel: string,
+	snake: string,
+): Record<string, unknown> | undefined
+⋮----
+function parsePart(raw: unknown): Part
+⋮----
+// Legacy kind-based parsing
+⋮----
+/** Serialize a Part to wire format (strict camelCase) */
+function serializePart(part: Part): Record<string, unknown>
+⋮----
+export function fromWireMessage(raw: unknown): Message
+⋮----
+export function toWireMessage(msg: Message): Record<string, unknown>
+⋮----
+function parseTaskStatus(raw: unknown): TaskStatus
+⋮----
+function serializeTaskStatus(status: TaskStatus): Record<string, unknown>
+⋮----
+function parseArtifact(raw: unknown): Artifact
+⋮----
+function serializeArtifact(artifact: Artifact): Record<string, unknown>
+⋮----
+export function fromWireTask(raw: unknown): Task
+⋮----
+export function toWireTask(task: Task): Record<string, unknown>
+⋮----
+function parseSendMessageConfiguration(
+	raw: unknown,
+): SendMessageConfiguration | undefined
+⋮----
+function serializeSendMessageConfiguration(
+	config: SendMessageConfiguration,
+): Record<string, unknown>
+⋮----
+function parseTaskPushNotificationConfig(
+	raw: unknown,
+): TaskPushNotificationConfig
+⋮----
+function serializeTaskPushNotificationConfig(
+	config: TaskPushNotificationConfig,
+): Record<string, unknown>
+⋮----
+export function fromWireSendMessageRequest(raw: unknown): SendMessageRequest
+⋮----
+export function toWireSendMessageRequest(
+	req: SendMessageRequest,
+): Record<string, unknown>
+⋮----
+export function fromWireSendMessageResponse(raw: unknown): SendMessageResponse
+⋮----
+export function toWireSendMessageResponse(
+	resp: SendMessageResponse,
+): Record<string, unknown>
+⋮----
+export function fromWireTaskStatusUpdateEvent(
+	raw: unknown,
+): TaskStatusUpdateEvent
+⋮----
+export function toWireTaskStatusUpdateEvent(
+	event: TaskStatusUpdateEvent,
+): Record<string, unknown>
+⋮----
+export function fromWireTaskArtifactUpdateEvent(
+	raw: unknown,
+): TaskArtifactUpdateEvent
+⋮----
+export function toWireTaskArtifactUpdateEvent(
+	event: TaskArtifactUpdateEvent,
+): Record<string, unknown>
+⋮----
+export function fromWireStreamResponse(raw: unknown): StreamResponse
+⋮----
+export function toWireStreamResponse(
+	resp: StreamResponse,
+): Record<string, unknown>
+⋮----
+export function fromWireListTasksRequest(raw: unknown): ListTasksRequest
+⋮----
+export function toWireListTasksRequest(
+	req: ListTasksRequest,
+): Record<string, unknown>
+⋮----
+export function fromWireListTasksResponse(raw: unknown): ListTasksResponse
+⋮----
+export function toWireListTasksResponse(
+	resp: ListTasksResponse,
+): Record<string, unknown>
+⋮----
+export function fromWireGetTaskRequest(raw: unknown): GetTaskRequest
+⋮----
+export function toWireGetTaskRequest(
+	req: GetTaskRequest,
+): Record<string, unknown>
+⋮----
+export function fromWireCancelTaskRequest(raw: unknown): CancelTaskRequest
+⋮----
+export function toWireCancelTaskRequest(
+	req: CancelTaskRequest,
+): Record<string, unknown>
+⋮----
+export function fromWireGetTaskPushNotificationConfigRequest(
+	raw: unknown,
+): GetTaskPushNotificationConfigRequest
+⋮----
+/** Serialize GetTaskPushNotificationConfigRequest */
+export function toWireGetTaskPushNotificationConfigRequest(
+	req: GetTaskPushNotificationConfigRequest,
+): Record<string, unknown>
+⋮----
+/** Parse DeleteTaskPushNotificationConfigRequest */
+export function fromWireDeleteTaskPushNotificationConfigRequest(
+	raw: unknown,
+): DeleteTaskPushNotificationConfigRequest
+⋮----
+/** Serialize DeleteTaskPushNotificationConfigRequest */
+export function toWireDeleteTaskPushNotificationConfigRequest(
+	req: DeleteTaskPushNotificationConfigRequest,
+): Record<string, unknown>
+⋮----
+/** Parse ListTaskPushNotificationConfigsRequest */
+export function fromWireListTaskPushNotificationConfigsRequest(
+	raw: unknown,
+): ListTaskPushNotificationConfigsRequest
+⋮----
+export function toWireListTaskPushNotificationConfigsRequest(
+	req: ListTaskPushNotificationConfigsRequest,
+): Record<string, unknown>
+⋮----
+export function fromWireListTaskPushNotificationConfigsResponse(
+	raw: unknown,
+): ListTaskPushNotificationConfigsResponse
+⋮----
+export function toWireListTaskPushNotificationConfigsResponse(
+	resp: ListTaskPushNotificationConfigsResponse,
+): Record<string, unknown>
+⋮----
+export function fromWireSubscribeToTaskRequest(
+	raw: unknown,
+): SubscribeToTaskRequest
+⋮----
+/** Serialize SubscribeToTaskRequest */
+export function toWireSubscribeToTaskRequest(
+	req: SubscribeToTaskRequest,
+): Record<string, unknown>
+⋮----
+/** Parse GetExtendedAgentCardRequest */
+export function fromWireGetExtendedAgentCardRequest(
+	raw: unknown,
+): GetExtendedAgentCardRequest
+⋮----
+export function toWireGetExtendedAgentCardRequest(
+	req: GetExtendedAgentCardRequest,
+): Record<string, unknown>
+⋮----
+function parseAgentInterface(raw: unknown): AgentInterface
+⋮----
+function serializeAgentInterface(
+	iface: AgentInterface,
+): Record<string, unknown>
+⋮----
+function parseAgentProvider(raw: unknown): AgentProvider | undefined
+⋮----
+/** Serialize AgentProvider */
+function serializeAgentProvider(
+	provider: AgentProvider,
+): Record<string, unknown>
+⋮----
+/** Parse AgentCapabilities */
+function parseAgentCapabilities(raw: unknown): AgentCapabilities | undefined
+⋮----
+function serializeAgentCapabilities(
+	caps: AgentCapabilities,
+): Record<string, unknown>
+⋮----
+function parseAgentExtension(raw: unknown): AgentExtension
+⋮----
+function serializeAgentExtension(ext: AgentExtension): Record<string, unknown>
+⋮----
+function parseAgentSkill(raw: unknown): AgentSkill
+⋮----
+function serializeAgentSkill(skill: AgentSkill): Record<string, unknown>
+⋮----
+function parseSecurityRequirement(raw: unknown): SecurityRequirement
+⋮----
+function serializeSecurityRequirement(
+	req: SecurityRequirement,
+): Record<string, unknown>
+⋮----
+function parseSecurityScheme(raw: unknown): SecurityScheme | undefined
+⋮----
+function serializeSecurityScheme(
+	scheme: SecurityScheme,
+): Record<string, unknown>
+⋮----
+function parseOAuthFlows(raw: unknown): OAuthFlows | undefined
+⋮----
+function serializeOAuthFlows(flows: OAuthFlows): Record<string, unknown>
+⋮----
+function parseAuthorizationCodeOAuthFlow(
+	raw: unknown,
+): AuthorizationCodeOAuthFlow
+⋮----
+function serializeAuthorizationCodeOAuthFlow(
+	flow: AuthorizationCodeOAuthFlow,
+): Record<string, unknown>
+⋮----
+function parseClientCredentialsOAuthFlow(
+	raw: unknown,
+): ClientCredentialsOAuthFlow
+⋮----
+function serializeClientCredentialsOAuthFlow(
+	flow: ClientCredentialsOAuthFlow,
+): Record<string, unknown>
+⋮----
+function parseImplicitOAuthFlow(raw: unknown): ImplicitOAuthFlow
+⋮----
+function serializeImplicitOAuthFlow(
+	flow: ImplicitOAuthFlow,
+): Record<string, unknown>
+⋮----
+function parsePasswordOAuthFlow(raw: unknown): PasswordOAuthFlow
+⋮----
+function serializePasswordOAuthFlow(
+	flow: PasswordOAuthFlow,
+): Record<string, unknown>
+⋮----
+function parseDeviceCodeOAuthFlow(raw: unknown): DeviceCodeOAuthFlow
+⋮----
+function serializeDeviceCodeOAuthFlow(
+	flow: DeviceCodeOAuthFlow,
+): Record<string, unknown>
+⋮----
+export function fromWireAgentCard(raw: unknown): AgentCard
+⋮----
+export function toWireAgentCard(card: AgentCard): Record<string, unknown>
+⋮----
+function parseAgentCardSignature(raw: unknown): AgentCardSignature
+⋮----
+function serializeAgentCardSignature(
+	sig: AgentCardSignature,
+): Record<string, unknown>
+⋮----
+export function fromWireExtendedAgentCard(raw: unknown): ExtendedAgentCard
+⋮----
+export function toWireExtendedAgentCard(
+	card: ExtendedAgentCard,
+): Record<string, unknown>
+⋮----
+export function fromWirePart(raw: unknown): Part
+⋮----
+export function toWirePart(part: Part): Record<string, unknown>
+
+================
 File: src/adapters/gunjs/gunjs-memory-adapter.ts
 ================
-import type { GraphMemoryPort, GraphMemoryStats, GraphNode, GraphPath, GraphQueryOptions, GraphQueryResult, GraphSubscribeCallback } from "@/ports/graph-memory-port";
-import type { GunAck, GunConstructor, GunInstance, GunNode, GunPeerUrl } from "@/types/gun";
 import GunModule from "gun";
+⋮----
+import type {
+	GraphMemoryPort,
+	GraphMemoryStats,
+	GraphNode,
+	GraphPath,
+	GraphQueryOptions,
+	GraphQueryResult,
+	GraphSubscribeCallback,
+} from "@/ports/graph-memory-port";
+import type {
+	GunAck,
+	GunConstructor,
+	GunInstance,
+	GunNode,
+	GunPeerUrl,
+} from "@/types/types";
 ⋮----
 export class GunJsMemoryAdapter implements GraphMemoryPort
 ⋮----
@@ -338,8 +715,42 @@ function buildPayload(
 ================
 File: src/adapters/http/a2a-client-adapter.ts
 ================
-import type { A2AClientPort, A2ATaskResult, A2ASseEvent } from "@ports/a2a-client-port";
-import { type JSONRPCRequest, type JSONRPCResponse, ok, parseSSEStream } from "@utils/rpc";
+import {
+	V1_METHOD_CANCEL_TASK,
+	V1_METHOD_GET_TASK,
+	V1_METHOD_LIST_TASKS,
+	V1_METHOD_SEND_MESSAGE,
+	V1_METHOD_SEND_STREAMING_MESSAGE,
+	V1_METHOD_SUBSCRIBE_TO_TASK,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "@constants/a2a-v1";
+import type {
+	A2AClientPort,
+	A2ASseEvent,
+	A2ATaskResult,
+} from "@ports/a2a-client-port";
+import {
+	type JSONRPCRequest,
+	type JSONRPCResponse,
+	ok,
+	parseSSEStream,
+} from "@utils/rpc";
+import {
+	fromWireSendMessageResponse,
+	fromWireTask,
+	fromWireTask as parseTask,
+	toWireCancelTaskRequest,
+	toWireGetTaskRequest,
+	toWireSendMessageRequest,
+} from "@/adapters/a2a/serialize";
+import type {
+	Message,
+	Part,
+	SendMessageRequest,
+	SendMessageResponse,
+	Task,
+} from "@/types/a2a-v1";
 ⋮----
 export class A2AClient implements A2AClientPort
 ⋮----
@@ -368,8 +779,23 @@ async cancelTask(agentUrl: string, taskId: string): Promise<boolean>
 ⋮----
 async discover(agentUrl: string): Promise<Record<string, unknown>>
 ⋮----
+// Try v1.0 well-known path first
+⋮----
+// Fallback to legacy path
+⋮----
+/**
+	 * Check whether an agent is reachable and healthy via a GET /health probe.
+	 */
 async healthCheck(agentUrl: string): Promise<boolean>
 ⋮----
+/**
+	 * Subscribe to real-time progress events for a task via SSE streaming.
+	 *
+	 * Sends a `SendStreamingMessage` JSON-RPC request and consumes the resulting
+	 * text/event-stream. Each parsed SSE frame is forwarded to the `onEvent`
+	 * callback. The promise resolves when the stream closes (task completed,
+	 * failed, or canceled) or rejects on network / parse errors.
+	 */
 async subscribeTask(
 		agentUrl: string,
 		message: string,
@@ -389,31 +815,81 @@ File: src/adapters/http/a2a-server.ts
 import { RateLimiter, rateLimitResponse } from "@adapters/rate-limit";
 import { X402Server, x402Reject } from "@adapters/x402/x402-server";
 import type {
-  A2AServerConfig,
-  PushNotificationConfig,
-  ResolvedCaller,
-  TaskState,
-  TaskStreamingEvent,
+	A2AMessage,
+	A2APart,
+	A2AServerConfig,
+	PushNotificationConfig,
+	ResolvedCaller,
+	TaskState,
+	TaskStreamingEvent,
 } from "@agents/types";
-import type { TaskStorePort } from "@ports/task-store";
-import { ApiKeyRegistry } from "../../security/api-key-registry";
-import { scopesForMethod } from "../../security/auth-middleware";
+import {
+	A2A_VERSION,
+	V1_METHOD_CANCEL_TASK,
+	V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_GET_EXTENDED_AGENT_CARD,
+	V1_METHOD_GET_TASK,
+	V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS,
+	V1_METHOD_LIST_TASKS,
+	V1_METHOD_SEND_MESSAGE,
+	V1_METHOD_SEND_STREAMING_MESSAGE,
+	V1_METHOD_SUBSCRIBE_TO_TASK,
+} from "@constants/a2a-v1";
+import type {
+	Task as StoreTask,
+	TaskFilter,
+	TaskStorePort,
+} from "@ports/task-store";
 import { verifyWithScopes } from "@security/jwt";
 import { handleOAuthRoutes } from "@security/oauth-server";
-import { loadTlsConfigSync } from "../../security/tls-config";
 import {
-  buildCorsHeaders,
-  buildCorsPreflightHeaders,
-  err,
-  formatSSEEvent,
-  type JSONRPCNotification,
-  type JSONRPCRequest,
-  type JSONRPCResponse,
-  notification,
-  ok,
+	buildCorsHeaders,
+	buildCorsPreflightHeaders,
+	err,
+	formatAnonymousSSEFrame,
+	type JSONRPCRequest,
+	type JSONRPCResponse,
+	ok,
 } from "@utils/rpc";
-⋮----
-export function validateTasksSendParams(params: unknown): string | null
+import {
+	fromWireCancelTaskRequest,
+	fromWireDeleteTaskPushNotificationConfigRequest,
+	fromWireGetExtendedAgentCardRequest,
+	fromWireGetTaskPushNotificationConfigRequest,
+	fromWireGetTaskRequest,
+	fromWireListTaskPushNotificationConfigsRequest,
+	fromWireListTasksRequest,
+	fromWireSendMessageRequest,
+	fromWireSubscribeToTaskRequest,
+	toWireExtendedAgentCard,
+	toWireListTaskPushNotificationConfigsResponse,
+	toWireListTasksResponse,
+	toWireSendMessageResponse,
+	toWireStreamResponse,
+	toWireTask,
+} from "@/adapters/a2a/serialize";
+import type {
+	CancelTaskRequest,
+	DeleteTaskPushNotificationConfigRequest,
+	GetExtendedAgentCardRequest,
+	GetTaskPushNotificationConfigRequest,
+	GetTaskRequest,
+	ListTaskPushNotificationConfigsRequest,
+	ListTasksRequest,
+	Part,
+	SendMessageRequest,
+	StreamResponse,
+	SubscribeToTaskRequest,
+	TaskPushNotificationConfig,
+	Message as WireMessage,
+	Task as WireTask,
+	TaskState as WireTaskState,
+} from "@/types/a2a-v1";
+import { ApiKeyRegistry } from "../../security/api-key-registry";
+import { scopesForMethod } from "../../security/auth-middleware";
+import { loadTlsConfigSync } from "../../security/tls-config";
 ⋮----
 function buildSSEStream():
 ⋮----
@@ -426,11 +902,44 @@ cancel()
 emit(chunk: string)
 end()
 ⋮----
+function v1State(state: string): WireTaskState
+⋮----
+function extractText(message: WireMessage | undefined): string
+⋮----
+function v1AgentMessage(
+	contextId: string,
+	taskId: string,
+	text: string,
+): WireMessage
+⋮----
+function v1PartFromInternal(part: A2APart): Part
+⋮----
+function v1PartFromStreaming(part:
+⋮----
+function v1MessageFromInternal(
+	message: A2AMessage,
+	taskId: string,
+): WireMessage
+⋮----
+function storeTaskToV1(task: StoreTask): WireTask
+⋮----
+type V1CoreError = {
+	ok: false;
+	code: number;
+	message: string;
+	httpStatus?: number;
+};
+⋮----
+type V1CoreOut = { ok: true; result: unknown } | V1CoreError;
+⋮----
 export class A2AServer
 ⋮----
 constructor(
-    config: A2AServerConfig & {
-onWorldState?: ()
+		config: A2AServerConfig<ApiKeyRegistry, TaskStorePort>,
+		rateLimiter?: RateLimiter,
+		x402?: X402Server,
+		apiKeyRegistry?: ApiKeyRegistry,
+)
 ⋮----
 get inFlightCount(): number
 ⋮----
@@ -440,36 +949,101 @@ start(): void
 ⋮----
 async fetch(req)
 ⋮----
-const emitEvent = (event: TaskStreamingEvent) =>
+const renderV1Error = (rpcId: JSONRPCRequest["id"], e: V1CoreError)
 ⋮----
-const onDone = () =>
+const wrapFrame = (frame: StreamResponse)
 ⋮----
-// Track in-flight sync request for graceful shutdown.
+const renderRestError = (
+						code: number,
+						message: string,
+						httpStatus?: number,
+)
 ⋮----
-// --- Push notification mode: run task async, return task ID immediately ---
+const readRestJsonBody = async (): Promise<
+						| { ok: true; body: Record<string, unknown> }
+						| { ok: false; response: Response }
+					> => {
+						let raw: string;
+						try {
+							raw = await req.text();
 ⋮----
-// Fire-and-forget: run task and POST state changes to callback.
+const wrapRestFrame = (frame: StreamResponse)
+⋮----
+const dec = (val: string)
+⋮----
+const enforceScope = async (
+						v1Method: string,
+): Promise<Response | null> =>
 ⋮----
 async shutdown(): Promise<void>
 ⋮----
 stop(): void
+⋮----
+private async _v1RunSendMessage(
+		sendReq: SendMessageRequest,
+		caller?: ResolvedCaller,
+): Promise<V1CoreOut>
+⋮----
+private async _v1StreamSend(
+		sendReq: SendMessageRequest,
+		caller: ResolvedCaller | undefined,
+		wrapFrame: (frame: StreamResponse) => string,
+		sseHeaders: Record<string, string>,
+): Promise<Response | V1CoreError>
+⋮----
+const onDone = () =>
+⋮----
+const emitFrame = (frame: StreamResponse) =>
+⋮----
+const emitEvent = (event: TaskStreamingEvent) =>
+⋮----
+private _v1GetTask(getReq: GetTaskRequest): V1CoreOut
+⋮----
+private _v1ListTasks(listReq: ListTasksRequest): V1CoreOut
+⋮----
+private _v1CancelTask(cancelReq: CancelTaskRequest): V1CoreOut
+⋮----
+private _v1StreamSubscribe(
+		subReq: SubscribeToTaskRequest,
+		wrapFrame: (frame: StreamResponse) => string,
+		sseHeaders: Record<string, string>,
+): Response | V1CoreError
+⋮----
+private _v1GetExtendedAgentCard(): V1CoreOut
+⋮----
+private _v1CreatePushConfig(raw: Record<string, unknown>): V1CoreOut
+⋮----
+private _v1GetPushConfig(
+		getReq: GetTaskPushNotificationConfigRequest,
+): V1CoreOut
+⋮----
+private _v1ListPushConfigs(
+		listReq: ListTaskPushNotificationConfigsRequest,
+): V1CoreOut
+⋮----
+private _v1DeletePushConfig(
+		delReq: DeleteTaskPushNotificationConfigRequest,
+): V1CoreOut
+⋮----
+private _v1UpdatePushConfig(raw: Record<string, unknown>): V1CoreOut
 ⋮----
 private _resolveDrainWaiters(): void
 ⋮----
 private async _waitForDrain(timeoutMs: number): Promise<void>
 ⋮----
 private _postCallback(
-    callbackUrl: string,
-    taskId: string,
-    state: TaskState | "submitted" | "completed" | "failed",
-    extra: Record<string, unknown> = {},
+		callbackUrl: string,
+		taskId: string,
+		state: TaskState | "submitted" | "completed" | "failed",
+		extra: Record<string, unknown> = {},
 ): void
 
 ================
 File: src/adapters/http/github-webhook.ts
 ================
-import type { GitHubBotPort, GitHubWebhookEvent } from "@ports/github-bot-port";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
 import { JABR_PORTS } from "@constants/ecosystem";
+import type { GitHubBotPort, GitHubWebhookEvent } from "@ports/github-bot-port";
 import {
 	parseGitHubEvent,
 	verifySignature,
@@ -539,6 +1113,7 @@ File: src/adapters/http/stdio-bridge.ts
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { jabrUrl } from "@config/jabr-config";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
 import type {
 	MemoryStorePort,
 	SessionData,
@@ -607,6 +1182,8 @@ import {
 	idempotencyConflictResponse,
 } from "@adapters/idempotency-lock";
 import { rateLimitResponse } from "@adapters/rate-limit";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type {
 	TelegramBotPort,
 	TelegramChatAction,
@@ -614,7 +1191,6 @@ import type {
 	TelegramParseMode,
 } from "@ports/telegram-bot-port";
 import { buildCorsHeaders, err, ok } from "@utils/rpc";
-import { JABR_PORTS } from "@constants/ecosystem";
 ⋮----
 export interface TelegramWebhookAdapterConfig {
 	botToken: string;
@@ -679,9 +1255,12 @@ import {
 	idempotencyConflictResponse,
 } from "@adapters/idempotency-lock";
 import { rateLimitResponse } from "@adapters/rate-limit";
-import { buildCorsHeaders, err, ok } from "@utils/rpc";
 import type { A2AClientPort } from "@ports/a2a-client-port";
-import { WebhookToA2ABridge, type WebhookEvent } from "../../../src/core/webhook-to-a2a-bridge";
+import { buildCorsHeaders, err, ok } from "@utils/rpc";
+import {
+	type WebhookEvent,
+	WebhookToA2ABridge,
+} from "../../../src/core/webhook-to-a2a-bridge";
 ⋮----
 export interface WebhookServerConfig {
 	port: number;
@@ -727,6 +1306,8 @@ stop(): void
 File: src/adapters/http/whatsapp-webhook.ts
 ================
 import { createHmac } from "node:crypto";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import {
 	isAudioMessage,
 	isDocumentMessage,
@@ -743,7 +1324,6 @@ import {
 	type WhatsAppWebhookEvent,
 } from "@ports/whatsapp-bot-port";
 import type { BunRequest } from "bun";
-import { JABR_PORTS } from "@constants/ecosystem";
 ⋮----
 export interface WhatsAppWebhookAdapterConfig {
 	webhookSecret: string;
@@ -863,16 +1443,16 @@ const signal = async () =>
 ================
 File: src/adapters/ipfs/ipfs-artifact-adapter.ts
 ================
+import type { ArtifactPort } from "@ports/artifact-port";
 import { KUBO_API } from "@/constants/ipfs";
 import { formDataWithFile } from "@/utils/converter";
 import { throwIfKuboError } from "@/utils/ipfs";
-import type { ArtifactPort } from "@ports/artifact-port";
 ⋮----
 export class IpfsArtifactAdapter implements ArtifactPort
 ⋮----
 async store(
-    data: Buffer | string,
-    options?: { pin?: boolean; name?: string },
+		data: Buffer | string,
+		options?: { pin?: boolean; name?: string },
 ): Promise<string>
 ⋮----
 async retrieve(cid: string): Promise<Buffer>
@@ -884,7 +1464,7 @@ async pin(cid: string): Promise<void>
 async unpin(cid: string): Promise<void>
 ⋮----
 async getMetadata(
-    cid: string,
+		cid: string,
 ): Promise<
 ⋮----
 // Size via /block/stat (returns { Key, Size }).
@@ -918,6 +1498,7 @@ export function createLlmAdapter(budget?: BudgetPort): LlmPort
 ================
 File: src/adapters/llm/openai.ts
 ================
+import type { BudgetPort } from "@ports/budget-port";
 import type { LlmPort, LlmRequest, LlmResponse } from "@ports/llm-port";
 ⋮----
 function validateTemperature(t: number | undefined): number | undefined
@@ -931,7 +1512,10 @@ constructor(
 ⋮----
 get providerName(): string
 ⋮----
-async complete(messages:
+async complete(
+		messages: { role: string; content: string }[],
+		opts?: { maxTokens?: number; system?: string },
+): Promise<
 ⋮----
 async generate(request: LlmRequest): Promise<LlmResponse>
 ⋮----
@@ -1050,8 +1634,8 @@ const poll = async (): Promise<void> =>
 ================
 File: src/adapters/websocket/bun-websocket-adapter.ts
 ================
-import type { RealtimeEvent, RealtimePort } from "@ports/realtime-port";
 import { DEV_ALLOWED_ORIGINS } from "@constants/ecosystem";
+import type { RealtimeEvent, RealtimePort } from "@ports/realtime-port";
 import { buildCorsHeaders, buildCorsPreflightHeaders } from "@utils/rpc";
 ⋮----
 export interface BunWebSocketAdapterConfig {
@@ -1289,6 +1873,21 @@ export interface AgentPricing {
 File: src/adapters/x402/x402-client.ts
 ================
 import type { AgentCard } from "@agents/types";
+import {
+	V1_METHOD_SEND_MESSAGE,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "@constants/a2a-v1";
+import {
+	fromWireSendMessageResponse,
+	toWireSendMessageRequest,
+} from "@/adapters/a2a/serialize";
+import type {
+	Message,
+	SendMessageRequest,
+	SendMessageResponse,
+} from "@/types/a2a-v1";
+import type { JSONRPCResponse } from "@/utils/rpc";
 import { SettlementLedger } from "./settlement-ledger";
 import type { PaymentToken, SettlementPricing } from "./types";
 ⋮----
@@ -1296,6 +1895,7 @@ export interface X402ClientConfig {
 	ledger: SettlementLedger;
 	delegatorUrl: string;
 	defaultCurrency?: string;
+	apiKey?: string;
 }
 ⋮----
 export function getSettlementPricing(
@@ -1328,6 +1928,9 @@ private async sendTask(
 		text: string,
 		token?: PaymentToken,
 ): Promise<string>
+⋮----
+// The A2AServer sync path returns a flat result { text }. Prefer it,
+// then fall back to structured SendMessageResponse forms.
 
 ================
 File: src/adapters/x402/x402-server.ts
@@ -1468,10 +2071,10 @@ isLocked(eventId: string): boolean
 gc(): void
 ⋮----
 getSnapshot(): Record<
-    string,
-    { acquiredAt: string; expiresAt: string; ttlRemainingMs: number }
-  > {
-    this.gc();
+		string,
+		{ acquiredAt: string; expiresAt: string; ttlRemainingMs: number }
+	> {
+		this.gc();
 ⋮----
 reset(): void
 ⋮----
@@ -1577,6 +2180,61 @@ deleteSession(id: string): boolean
 getSession(id: string): SessionData | null
 ⋮----
 saveSession(id: string, data: SessionData): void
+
+================
+File: src/adapters/plugin-loader.ts
+================
+import type { PluginRegistryUseCase } from "@core/plugin-registry";
+import {
+	createPluginRegistryUseCase,
+	type PluginContextDeps,
+} from "@core/plugin-registry";
+import type { IPlugin, PluginExport, PluginMetadata } from "@ports/plugin";
+import type { DomainEventBus } from "@ports/plugin-event-bus.types";
+⋮----
+export interface PluginLoaderOptions {
+	pluginsDir?: string;
+	registry?: PluginRegistryUseCase;
+	eventBus?: DomainEventBus;
+}
+⋮----
+export interface LoadedPluginInfo {
+	name: string;
+	version: string;
+	path: string;
+	state: "discovered" | "loaded" | "error";
+	error?: string;
+}
+⋮----
+export interface PluginLoaderResult {
+	plugins: LoadedPluginInfo[];
+	registry: PluginRegistryUseCase;
+	eventBus: DomainEventBus;
+}
+⋮----
+export class BunDynamicPluginLoaderAdapter
+⋮----
+constructor(deps: PluginContextDeps, options: PluginLoaderOptions =
+⋮----
+async loadAll(): Promise<PluginLoaderResult>
+⋮----
+async loadPlugin(
+		name: string,
+		pluginPath: string,
+): Promise<LoadedPluginInfo>
+⋮----
+async initializeAll(): Promise<void>
+⋮----
+async shutdownAll(): Promise<void>
+⋮----
+getRegistry(): PluginRegistryUseCase
+⋮----
+getEventBus(): DomainEventBus
+⋮----
+export function createPluginLoader(
+	deps: PluginContextDeps,
+	options?: PluginLoaderOptions,
+): BunDynamicPluginLoaderAdapter
 
 ================
 File: src/adapters/pollinations-image.ts
@@ -1729,10 +2387,11 @@ saveSession(id: string, data: SessionData): void
 ================
 File: src/adapters/sqlite-task-store.ts
 ================
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { initSchema } from "@adapters/sqlite-db";
 import type { A2AMessage, A2APart } from "@agents/types";
-import type { Task, TaskStorePort } from "@ports/task-store";
+import type { DLQEntry, Task, TaskFilter, TaskStorePort } from "@ports/task-store";
+import type { Task as A2ATask } from "../types/a2a-v1.ts";
 ⋮----
 export class SqliteTaskStore implements TaskStorePort
 ⋮----
@@ -1755,9 +2414,31 @@ appendArtifact(
 ⋮----
 listByState(state: Task["state"]): Task[]
 ⋮----
+list(filter?: TaskFilter): Task[]
+⋮----
+subscribe(taskId: string, cb: (task: Task) => void): () => void
+⋮----
+private notifySubscribers(taskId: string, task: Task): void
+⋮----
 getTransitionHistory(
 		taskId: string,
 ): Array<
+⋮----
+getRetryCount(taskId: string): number
+⋮----
+incrementRetryCount(taskId: string): void
+⋮----
+moveToDLQ(taskId: string, error: string): void
+⋮----
+listDLQ(): DLQEntry[]
+⋮----
+getDLQEntry(taskId: string): DLQEntry | undefined
+⋮----
+retryFromDLQ(taskId: string): boolean
+⋮----
+purgeDLQ(taskId: string): boolean
+⋮----
+purgeAllDLQ(): number
 
 ================
 File: src/adapters/subscription-manager.ts
@@ -1788,7 +2469,8 @@ get size(): number
 File: src/adapters/task-memory.ts
 ================
 import type { A2AMessage, A2APart } from "@agents/types";
-import type { Task, TaskStorePort } from "@ports/task-store";
+import type { DLQEntry, Task, TaskFilter, TaskStorePort } from "@ports/task-store";
+import type { Task as A2ATask } from "../types/a2a-v1.ts";
 ⋮----
 export class TaskMemory implements TaskStorePort
 ⋮----
@@ -1807,9 +2489,31 @@ appendArtifact(
 ⋮----
 listByState(state: Task["state"]): Task[]
 ⋮----
+list(filter?: TaskFilter): Task[]
+⋮----
+subscribe(taskId: string, cb: (task: Task) => void): () => void
+⋮----
+private notifySubscribers(taskId: string, task: Task): void
+⋮----
 getTransitionHistory(
 		taskId: string,
 ): Array<
+⋮----
+getRetryCount(taskId: string): number
+⋮----
+incrementRetryCount(taskId: string): void
+⋮----
+moveToDLQ(taskId: string, error: string): void
+⋮----
+listDLQ(): DLQEntry[]
+⋮----
+getDLQEntry(taskId: string): DLQEntry | undefined
+⋮----
+retryFromDLQ(taskId: string): boolean
+⋮----
+purgeDLQ(taskId: string): boolean
+⋮----
+purgeAllDLQ(): number
 
 ================
 File: src/security/api-key-registry.ts
@@ -1820,6 +2524,8 @@ export class ApiKeyRegistry
 ⋮----
 constructor(entries: KeyEntry[])
 ⋮----
+addKey(entry: KeyEntry): void
+⋮----
 authenticate(apiKey: string | null): ResolvedCaller | null
 ⋮----
 canInvoke(caller: ResolvedCaller, agentName: string): boolean
@@ -1827,7 +2533,20 @@ canInvoke(caller: ResolvedCaller, agentName: string): boolean
 ================
 File: src/security/auth-middleware.ts
 ================
-import { verifyWithScopes, type OAuthScope } from "./jwt.ts";
+import {
+	V1_METHOD_CANCEL_TASK,
+	V1_METHOD_CREATE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_GET_EXTENDED_AGENT_CARD,
+	V1_METHOD_GET_TASK,
+	V1_METHOD_GET_TASK_PUSH_NOTIFICATION_CONFIG,
+	V1_METHOD_LIST_TASK_PUSH_NOTIFICATION_CONFIGS,
+	V1_METHOD_LIST_TASKS,
+	V1_METHOD_SEND_MESSAGE,
+	V1_METHOD_SEND_STREAMING_MESSAGE,
+	V1_METHOD_SUBSCRIBE_TO_TASK,
+} from "../constants/a2a-v1.ts";
+import { type OAuthScope, verifyWithScopes } from "./jwt.ts";
 ⋮----
 export function scopesForMethod(method: string): OAuthScope[]
 
@@ -1836,7 +2555,10 @@ File: src/security/handover-chain.ts
 ================
 export function wouldCreateCycle(chain: string[], next: string): boolean
 ⋮----
-export function extendChain(currentChain: string[], agentName: string): string[]
+export function extendChain(
+	currentChain: string[],
+	agentName: string,
+): string[]
 ⋮----
 export function formatChain(chain: string[]): string
 ⋮----
@@ -1848,20 +2570,21 @@ export function createCircularHandoffError(
 ================
 File: src/security/jwt.ts
 ================
-import { SignJWT, jwtVerify, type JWTPayload } from "jose";
-⋮----
 export type OAuthScope =
 	| "a2a:read"
 	| "a2a:write"
 	| "a2a:stream"
 	| "a2a:admin";
 ⋮----
-export interface TokenClaims extends JWTPayload {
+export interface TokenClaims {
 	sub: string;
 	scope: string;
 	allowed_agents: string[];
 	token_type: "access" | "refresh";
-	kid: string;
+	kid?: string;
+	iat?: number;
+	exp?: number;
+	jti?: string;
 }
 ⋮----
 export interface VerifiedToken {
@@ -1870,34 +2593,34 @@ export interface VerifiedToken {
 	thumbprint: string;
 }
 ⋮----
-function getSecret(): Uint8Array
+function getSecret(): Uint8Array<ArrayBuffer>
 ⋮----
 async function kid(): Promise<string>
 ⋮----
-// ---------------------------------------------------------------------------
-// Token minting
-// ---------------------------------------------------------------------------
+/** Import the HMAC-SHA256 signing key once and reuse it across calls. */
+async function getSigningKey(): Promise<CryptoKey>
 ⋮----
-/**
- * Mint a new JWT access token.
- *
- * @param opts.subject    Caller description (sub claim).
- * @param opts.scopes     Granted scopes.
- * @param opts.agents     Inherited agent allowlist (empty = wildcard).
- * @param opts.ttlSeconds Token lifetime in seconds (default 15 min).
- */
-export async function mintAccessToken(
-	opts: {
-		subject: string;
-		scopes: OAuthScope[];
-		agents: string[];
-		ttlSeconds?: number;
-	},
+function b64url(input: string): string
+⋮----
+function b64urlBytes(bytes: Uint8Array): string
+⋮----
+async function signCompact(
+	keyId: string,
+	claims: Record<string, unknown>,
 ): Promise<string>
 ⋮----
-export async function mintRefreshToken(
-	opts: { subject: string; agents: string[]; ttlSeconds?: number },
-): Promise<string>
+export async function mintAccessToken(opts: {
+	subject: string;
+	scopes: OAuthScope[];
+	agents: string[];
+	ttlSeconds?: number;
+}): Promise<string>
+⋮----
+export async function mintRefreshToken(opts: {
+	subject: string;
+	agents: string[];
+	ttlSeconds?: number;
+}): Promise<string>
 ⋮----
 export async function verifyToken(token: string): Promise<VerifiedToken>
 ⋮----
@@ -1921,19 +2644,19 @@ export function parseScopes(scopeStr: string): OAuthScope[]
 ================
 File: src/security/oauth-server.ts
 ================
+import type { OAuthTokenRequest, OAuthTokenResponse } from "@/types/types.ts";
+import { ApiKeyRegistry } from "./api-key-registry.ts";
 import type { OAuthScope, VerifiedToken } from "./jwt.ts";
 import {
-	mintAccessToken,
-	mintRefreshToken,
-	verifyToken,
+	ACCESS_TOKEN_TTL_SECONDS,
 	ADMIN_SCOPES,
 	DEFAULT_SCOPES,
-	ACCESS_TOKEN_TTL_SECONDS,
+	mintAccessToken,
+	mintRefreshToken,
 	REFRESH_TOKEN_TTL_SECONDS,
+	verifyToken,
 } from "./jwt.ts";
 import { getTokenStore } from "./token-store.ts";
-import { ApiKeyRegistry } from "./api-key-registry.ts";
-import type { OAuthTokenRequest, OAuthTokenResponse } from "@/types/types.ts";
 ⋮----
 async function handleClientCredentialsGrant(
 	body: OAuthTokenRequest,
@@ -1975,9 +2698,7 @@ async function storeRefreshToken(
 // OAuth metadata (RFC 8414)
 // ---------------------------------------------------------------------------
 ⋮----
-export function oauthMetadata(
-	baseUrl: string,
-): Record<string, unknown>
+export function oauthMetadata(baseUrl: string): Record<string, unknown>
 ⋮----
 // Not implemented (PKCE flow would go here):
 // authorization_endpoint: `${baseUrl}/authorize`,

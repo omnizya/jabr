@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **R&D roadmap** (`docs/rd-roadmap.md`) — research & development opportunities unlocked by the dependency stack and the opensrc source-exploration tool, with a prioritized TODO backlog (P0–P3).
 - **Cross-references** to the R&D roadmap from `README.md` (Documentation table) and `CANONICAL.md` (Roadmap + References).
 
+### Changed
+- **A2A wire protocol** — migrated from the legacy `tasks/send`-family methods to the A2A v1.0 method set (`SendMessage`, `SendStreamingMessage` via SSE, `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, `GetExtendedAgentCard`, push-notification config). Legacy method names now return `-32601`.
+- **Docs normalized** — `CANONICAL.md`, `.github/copilot-instructions.md`, and source doc-comments updated to the v1.0 wire contract; `docs/jabr-TODO.md` removed (fully superseded by `TODO.md`).
+- **Scripts migrated to `A2AClient`** — `scripts/demo.ts` and `scripts/jabr-cli.ts` now send tasks through the shared `A2AClient` adapter (`SendMessage`) instead of hand-rolled `tasks/send` fetches; `scripts/generate-agent-souls.py` protocol string and `scripts/route-test.ts` comment updated to the v1.0 contract.
+
 ### Removed
 - **`moment` dependency** — it was declared in `package.json` but never imported anywhere in the codebase (dead weight). Removed from `dependencies` and the lockfile. Native `Intl`/`Temporal` APIs are the documented replacement for any future date/time needs.
 

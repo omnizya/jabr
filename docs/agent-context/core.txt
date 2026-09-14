@@ -53,7 +53,7 @@ Notes:
 ================================================================
 User Provided Header
 ================================================================
-Jabr — regenerated 2026-09-09T23:01:01Z. Do NOT edit by hand.\nCore Domain Logic — hexagonal ports & adapters. ZERO infrastructure imports in core.
+Jabr — regenerated 2026-09-14T08:16:30Z. Do NOT edit by hand.\nCore Domain Logic — hexagonal ports & adapters. ZERO infrastructure imports in core.
 
 ================================================================
 Directory Structure
@@ -67,8 +67,10 @@ src/
     jabir.ts
     jarvis.ts
     librarian.ts
+    llm-agent.ts
     oracle.ts
     orchestrator.ts
+    plugin-registry.ts
     rushd.ts
     scientist.ts
     tool-router.ts
@@ -103,6 +105,7 @@ src/
     tool-map.ts
     whatsapp-bot-port.ts
   types/
+    a2a-v1.ts
     types.ts
 
 ================================================================
@@ -112,11 +115,15 @@ Files
 ================
 File: src/core/cognitive-loop.ts
 ================
-import { stopWords } from "@/constants/stopwords";
-import type { CognitiveLoopConfig, ConsensusInput, ConsensusResult } from "@/types/agents";
 import type { AgentCard } from "@agents/types";
 import { SYNTHESIS_TEMPERATURE } from "@constants/app-constants";
 import type { LlmPort } from "@ports/llm-port";
+import { stopWords } from "@/constants/stopwords";
+import type {
+	CognitiveLoopConfig,
+	ConsensusInput,
+	ConsensusResult,
+} from "@/types/types";
 ⋮----
 export class CognitiveLoop
 ⋮----
@@ -174,6 +181,12 @@ private buildSimpleSynthesis(
 File: src/core/designer.ts
 ================
 import type { AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { ImageGenPort } from "@ports/image-gen-port";
 import type { TaskStorePort } from "@ports/task-store";
 ⋮----
@@ -193,6 +206,12 @@ async execute(taskId: string, userText: string): Promise<void>
 File: src/core/explorer.ts
 ================
 import type { AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { McpToolPort } from "@ports/mcp-tool-port";
 import type { TaskStorePort } from "@ports/task-store";
 ⋮----
@@ -214,7 +233,13 @@ async execute(taskId: string, userText: string): Promise<void>
 File: src/core/fixer.ts
 ================
 import type { A2AMessage, AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
 import { SYNTHESIS_TEMPERATURE } from "@constants/app-constants";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
@@ -237,15 +262,24 @@ File: src/core/jabir.ts
 import type {
 	A2AMessage,
 	AgentCard,
-	HandoverRequest,
 	ResolvedCaller,
 } from "@agents/types";
 import { decodeHandover } from "@agents/types";
-import type { KnowledgePort } from "@ports/knowledge-port";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { TaskStorePort } from "@ports/task-store";
-import { MAX_HANDOVER_DEPTH, ToolRouter } from "./tool-router.ts";
-import { wouldCreateCycle, extendChain, createCircularHandoffError } from "../security/handover-chain.ts";
+import { MAX_HANDOVER_DEPTH, DLQ_MAX_RETRIES } from "@constants/app";
+import {
+	createCircularHandoffError,
+	extendChain,
+	wouldCreateCycle,
+} from "@security/handover-chain";
+import { ToolRouter } from "./tool-router";
 ⋮----
 export class JabirAgent
 ⋮----
@@ -282,7 +316,12 @@ private async executeWithDepth(
 File: src/core/jarvis.ts
 ================
 import type { AgentCard, SkillDocument } from "@agents/types";
-import { jabrUrl } from "@config/jabr-config";
+import { jabrUrl, jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
 import type { KnowledgePort } from "@ports/knowledge-port";
@@ -399,6 +438,12 @@ private async syncFindingsToKanban(findings: Finding[]): Promise<void>
 File: src/core/librarian.ts
 ================
 import type { A2AMessage, AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { KnowledgePort } from "@ports/knowledge-port";
 import type { SearchPort, SearchResult } from "@ports/search-port";
 import type { SkillStorePort } from "@ports/skill-store";
@@ -431,11 +476,62 @@ async executeTask(userText: string): Promise<string>
 async execute(taskId: string, userText: string): Promise<void>
 
 ================
+File: src/core/llm-agent.ts
+================
+import type { AgentCard, AgentSkill, TaskState } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_HTTP,
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
+import type { LlmPort } from "@ports/llm-port";
+⋮----
+export interface LlmAgentConfig {
+	name: string;
+	description: string;
+	version: string;
+	port: number;
+	skills?: AgentSkill[];
+}
+⋮----
+export class LlmAgent
+⋮----
+constructor(config: LlmAgentConfig, llm: LlmPort)
+⋮----
+async handleTask(message: string): Promise<string>
+⋮----
+async handleTaskStreaming(
+		message: string,
+		taskId: string,
+		emit: (event: {
+			type: "status" | "artifact";
+			taskId: string;
+			state?: TaskState;
+			message?: string;
+			timestamp: string;
+			artifact?: {
+				name: string;
+				parts: Array<{ kind: string; text?: string }>;
+			};
+		}) => void,
+): Promise<string>
+⋮----
+const onChunk = (chunk: string) =>
+
+================
 File: src/core/oracle.ts
 ================
 import type { A2AMessage, AgentCard } from "@agents/types";
 import { encodeHandover } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
 import { RESEARCH_TEMPERATURE } from "@constants/app-constants";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
@@ -474,11 +570,164 @@ File: src/core/orchestrator.ts
 
 
 ================
+File: src/core/plugin-registry.ts
+================
+import type { AgentRegistryPort } from "@ports/agent-registry";
+import type { BudgetPort } from "@ports/budget-port";
+import type { KanbanPort } from "@ports/kanban-port";
+import type { KnowledgePort } from "@ports/knowledge-port";
+import type { MemoryStorePort } from "@ports/memory-store";
+import type {
+	EventSubscription,
+	IPlugin,
+	PluginCapability,
+	PluginContext,
+	PluginEventSubscriber,
+	PluginExport,
+	PluginMetadata,
+} from "@ports/plugin";
+import type {
+	DomainEventBus,
+	DomainEventMap,
+	SubscriptionId,
+} from "@ports/plugin-event-bus.types";
+import type { RealtimePort } from "@ports/realtime-port";
+import type { TaskStorePort } from "@ports/task-store";
+⋮----
+export type PluginLifecycleState =
+	| "Discovered"
+	| "Validated"
+	| "Loaded"
+	| "Initialized"
+	| "Running"
+	| "Shutdown"
+	| "Error";
+⋮----
+export interface PluginRegistryEntry {
+	readonly plugin: IPlugin;
+	readonly metadata: PluginMetadata;
+	readonly export: PluginExport;
+	state: PluginLifecycleState;
+	subscriptions: SubscriptionId[];
+	error?: string;
+}
+⋮----
+export interface PluginContextDeps {
+	taskStore: TaskStorePort;
+	memoryStore: MemoryStorePort;
+	agentRegistry: AgentRegistryPort;
+	kanban: KanbanPort;
+	knowledge: KnowledgePort;
+	realtime: RealtimePort;
+	budget: BudgetPort;
+	eventBus: DomainEventBus;
+	logger: {
+		info: (msg: string) => void;
+		warn: (msg: string) => void;
+		error: (msg: string) => void;
+		debug?: (msg: string) => void;
+	};
+}
+⋮----
+function createPluginEventSubscriber(
+	eventBus: DomainEventBus,
+	pluginName: string,
+): PluginEventSubscriber
+⋮----
+subscribe<K extends keyof DomainEventMap>(
+			eventName: K,
+			handler: (
+				payload: DomainEventMap[K],
+				eventName: string,
+			) => void | Promise<void>,
+): EventSubscription
+⋮----
+const unsub = ()
+⋮----
+unsubscribe(subscription: EventSubscription): void
+⋮----
+unsubscribeAll<K extends keyof DomainEventMap>(eventName?: K): void
+⋮----
+export function createPluginContext(
+	deps: PluginContextDeps,
+	pluginName: string,
+	pluginVersion: string,
+): PluginContext
+⋮----
+export interface PluginRegistryUseCase {
+	register(
+		pluginExport: PluginExport,
+	): Promise<{ success: boolean; error?: string }>;
+	list(): ReadonlyArray<{
+		name: string;
+		version: string;
+		state: PluginLifecycleState;
+		error?: string;
+	}>;
+	get(name: string): Readonly<PluginRegistryEntry> | undefined;
+	initializeAll(): Promise<void>;
+	shutdownAll(): Promise<void>;
+	shutdown(name: string): Promise<void>;
+	getEventBus(): DomainEventBus;
+}
+⋮----
+register(
+		pluginExport: PluginExport,
+): Promise<
+⋮----
+list(): ReadonlyArray<
+⋮----
+get(name: string): Readonly<PluginRegistryEntry> | undefined;
+⋮----
+initializeAll(): Promise<void>;
+⋮----
+shutdownAll(): Promise<void>;
+⋮----
+shutdown(name: string): Promise<void>;
+⋮----
+getEventBus(): DomainEventBus;
+⋮----
+export function createPluginRegistryUseCase(
+	deps: PluginContextDeps,
+): PluginRegistryUseCase
+⋮----
+async function validatePlugin(
+		pluginExport: PluginExport,
+): Promise<
+⋮----
+async function register(
+		pluginExport: PluginExport,
+): Promise<
+⋮----
+function list()
+⋮----
+function get(name: string)
+⋮----
+async function initializeAll(): Promise<void>
+⋮----
+async function shutdownAll(): Promise<void>
+⋮----
+async function shutdown(name: string): Promise<void>
+⋮----
+async function shutdownPlugin(
+		name: string,
+		entry: PluginRegistryEntry,
+): Promise<void>
+⋮----
+function getEventBus(): DomainEventBus
+
+================
 File: src/core/rushd.ts
 ================
 import type { A2AMessage, AgentCard } from "@agents/types";
 import { encodeHandover } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
 import { RESEARCH_TEMPERATURE } from "@constants/app-constants";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
@@ -516,6 +765,10 @@ File: src/core/scientist.ts
 ================
 import type { AgentCard, AgentSkill } from "@agents/types";
 import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
 import { JABR_PORTS } from "@constants/ecosystem";
 import type { McpToolPort } from "@ports/mcp-tool-port";
 ⋮----
@@ -528,17 +781,26 @@ async execute(taskId: string, text: string): Promise<string>
 ================
 File: src/core/tool-router.ts
 ================
-import type { TaskStartPayload, TaskCompletePayload, TaskFailedPayload } from "@/ports";
+import type {
+	TaskCompletePayload,
+	TaskFailedPayload,
+	TaskStartPayload,
+} from "@/ports";
 import type { TaskStorePort } from "@/ports/task-store";
-import type { ConsensusInput, ToolRouterConfig } from "@/types/agents";
-import type { AgentCard } from "@/types/types";
+import type {
+	AgentCard,
+	ConsensusInput,
+	ToolRouterConfig,
+	VerificationConfig,
+	VerificationResult,
+} from "@/types/types";
 ⋮----
 export class ToolRouter
 ⋮----
 constructor(public cfg: ToolRouterConfig)
 ⋮----
 async routeTask(
-    text: string,
+		text: string,
 ): Promise<
 ⋮----
 async getAgentUrl(agentName: string): Promise<string | undefined>
@@ -548,22 +810,30 @@ async getCard(agentName: string): Promise<AgentCard | undefined>
 getAvailableAgentNames(): string[]
 ⋮----
 async delegateTask(
-    agentUrl: string,
-    text: string,
-    agentName?: string,
+		agentUrl: string,
+		text: string,
+		agentName?: string,
 ): Promise<string>
 ⋮----
 async deductBudget(agentName: string, textLength: number): Promise<void>
 ⋮----
 async delegateToMultiple(
-    agentNames: string[],
-    userText: string,
+		agentNames: string[],
+		userText: string,
 ): Promise<ConsensusInput[]>
 ⋮----
 async executeConsensus(
-    userText: string,
-    agentNames?: string[],
+		userText: string,
+		agentNames?: string[],
 ): Promise<string>
+⋮----
+shouldVerifyTask(taskText: string): boolean
+⋮----
+async runVerification(
+		taskText: string,
+		specialistResult: string,
+		specialistAgentName: string,
+): Promise<VerificationResult | null>
 ⋮----
 async getWorldState(): Promise<Record<string, unknown>>
 ⋮----
@@ -572,43 +842,43 @@ async getWorldState(): Promise<Record<string, unknown>>
 // ---- Kanban sync ----
 ⋮----
 async syncToKanban(
-    taskStore: TaskStorePort,
-    taskId: string,
-    result: string,
+		taskStore: TaskStorePort,
+		taskId: string,
+		result: string,
 ): Promise<void>
 ⋮----
 private emitToRoom(taskId: string, event: any): void
 ⋮----
 emitTaskCreated(
-    taskId: string,
-    agent: string,
-    extra?: { title?: string; priority?: number; parentTaskIds?: string[] },
+		taskId: string,
+		agent: string,
+		extra?: { title?: string; priority?: number; parentTaskIds?: string[] },
 ): void
 ⋮----
 emitTaskProgress(taskId: string, percent: number, message: string): void
 ⋮----
 emitTaskCompleted(
-    taskId: string,
-    result: unknown,
-    extra?: {
-      startedAt?: string;
-      title?: string;
-      assignee?: string;
-      priority?: number;
-    },
+		taskId: string,
+		result: unknown,
+		extra?: {
+			startedAt?: string;
+			title?: string;
+			assignee?: string;
+			priority?: number;
+		},
 ): void
 ⋮----
 emitTaskFailed(
-    taskId: string,
-    error: string,
-    extra?: {
-      startedAt?: string;
-      title?: string;
-      assignee?: string;
-      priority?: number;
-      retryable?: boolean;
-      retryCount?: number;
-    },
+		taskId: string,
+		error: string,
+		extra?: {
+			startedAt?: string;
+			title?: string;
+			assignee?: string;
+			priority?: number;
+			retryable?: boolean;
+			retryCount?: number;
+		},
 ): void
 ⋮----
 private extractTags(card: AgentCard): string[]
@@ -619,10 +889,16 @@ private extractKeywords(text: string): string[]
 File: src/core/verification.ts
 ================
 import type { A2AMessage, AgentCard } from "@agents/types";
+import { jabrUrlForPort } from "@config/jabr-config";
+import {
+	PROTOCOL_BINDING_JSONRPC,
+	SUPPORTED_INTERFACES_VERSION,
+} from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
-import  { CognitiveLoop } from "./cognitive-loop";
+import { CognitiveLoop } from "./cognitive-loop";
 import type { ConsensusInput } from "./tool-router";
 ⋮----
 export interface VerificationResult {
@@ -668,12 +944,12 @@ async execute(taskId: string, userText: string): Promise<void>
 ================
 File: src/core/webhook-to-a2a-bridge.ts
 ================
-import type { WebhookEvent, WebhookToA2ABridgeConfig } from "@/types/types";
 import type { A2AClientPort } from "@ports/a2a-client-port";
+import type { WebhookEvent, WebhookToA2ABridgeConfig } from "@/types/types";
 ⋮----
 export class WebhookToA2ABridge
 ⋮----
-constructor(config: WebhookToA2ABridgeConfig)
+constructor(config: WebhookToA2ABridgeConfig<A2AClientPort>)
 ⋮----
 async onEvent(payload: WebhookEvent): Promise<unknown>
 ⋮----
@@ -682,7 +958,7 @@ private dispatchToA2A(payload: WebhookEvent, message: string): void
 private buildMessage(payload: WebhookEvent): string
 ⋮----
 export function createWebhookToA2ABridge(
-  config: WebhookToA2ABridgeConfig,
+	config: WebhookToA2ABridgeConfig<A2AClientPort>,
 ): WebhookToA2ABridge
 
 ================
@@ -1812,6 +2088,7 @@ list(): string[];
 File: src/ports/task-store.ts
 ================
 import type { A2AMessage, A2APart } from "@agents/types";
+import type { Task as A2ATask } from "../types/a2a-v1.ts";
 ⋮----
 export interface Task {
 	id: string;
@@ -1829,6 +2106,22 @@ export interface Task {
 	artifacts: Array<{ name: string; parts: A2APart[] }>;
 }
 ⋮----
+export interface TaskFilter {
+	status?: A2ATask["status"]["state"];
+	contextId?: string;
+	pageSize?: number;
+}
+⋮----
+export interface DLQEntry {
+	taskId: string;
+	state: string;
+	error: string;
+	retryCount: number;
+	movedAt: string;
+	messageCount: number;
+	lastError?: string;
+}
+⋮----
 export interface TaskStorePort {
 	create(taskId: string): Task;
 	get(taskId: string): Task | undefined;
@@ -1839,9 +2132,19 @@ export interface TaskStorePort {
 		artifact: { name: string; parts: A2APart[] },
 	): void;
 	listByState(state: Task["state"]): Task[];
+	list(filter?: TaskFilter): Task[];
+	subscribe(taskId: string, cb: (task: Task) => void): () => void;
 	getTransitionHistory(
 		taskId: string,
 	): Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }>;
+	getRetryCount(taskId: string): number;
+	incrementRetryCount(taskId: string): void;
+	moveToDLQ(taskId: string, error: string): void;
+	listDLQ(): DLQEntry[];
+	getDLQEntry(taskId: string): DLQEntry | undefined;
+	retryFromDLQ(taskId: string): boolean;
+	purgeDLQ(taskId: string): boolean;
+	purgeAllDLQ(): number;
 }
 ⋮----
 create(taskId: string): Task;
@@ -1853,9 +2156,19 @@ appendArtifact(
 		artifact: { name: string; parts: A2APart[] },
 	): void;
 listByState(state: Task["state"]): Task[];
+list(filter?: TaskFilter): Task[];
+subscribe(taskId: string, cb: (task: Task)
 getTransitionHistory(
 		taskId: string,
 ): Array<
+getRetryCount(taskId: string): number;
+incrementRetryCount(taskId: string): void;
+moveToDLQ(taskId: string, error: string): void;
+listDLQ(): DLQEntry[];
+getDLQEntry(taskId: string): DLQEntry | undefined;
+retryFromDLQ(taskId: string): boolean;
+purgeDLQ(taskId: string): boolean;
+purgeAllDLQ(): number;
 
 ================
 File: src/ports/telegram-bot-port.ts
@@ -2201,16 +2514,411 @@ sendTemplateMessage(
 markAsRead(messageId: string): Promise<void>;
 
 ================
+File: src/types/a2a-v1.ts
+================
+export type Role = "user" | "agent";
+⋮----
+export interface TextPart {
+	readonly kind: "text";
+	readonly text: string;
+}
+⋮----
+export interface FilePart {
+	readonly kind: "file";
+	readonly file: {
+		readonly name: string;
+		readonly mimeType: string;
+		readonly bytes?: string;
+		readonly uri?: string;
+	};
+}
+⋮----
+export interface RawPart {
+	readonly kind: "raw";
+	readonly raw: string;
+}
+⋮----
+export interface DataPart {
+	readonly kind: "data";
+	readonly data: unknown;
+}
+⋮----
+export interface FunctionCallPart {
+	readonly kind: "functionCall";
+	readonly functionCall: {
+		readonly id: string;
+		readonly name: string;
+		readonly args: Record<string, unknown>;
+	};
+}
+⋮----
+export interface FunctionResponsePart {
+	readonly kind: "functionResponse";
+	readonly functionResponse: {
+		readonly id: string;
+		readonly name: string;
+		readonly response: unknown;
+	};
+}
+⋮----
+export type Part =
+	| TextPart
+	| FilePart
+	| RawPart
+	| DataPart
+	| FunctionCallPart
+	| FunctionResponsePart;
+⋮----
+export interface Message {
+	readonly role: Role;
+	readonly messageId: string;
+	readonly contextId?: string;
+	readonly taskId?: string;
+	readonly parts: readonly Part[];
+	readonly metadata?: Record<string, unknown>;
+	readonly extensions?: readonly string[];
+	readonly referenceTaskIds?: readonly string[];
+}
+⋮----
+export interface Artifact {
+	readonly artifactId: string;
+	readonly name?: string;
+	readonly description?: string;
+	readonly parts: readonly Part[];
+	readonly metadata?: Record<string, unknown>;
+	readonly extensions?: readonly string[];
+}
+⋮----
+export type TaskState =
+	| "submitted"
+	| "working"
+	| "input-required"
+	| "auth-required"
+	| "completed"
+	| "failed"
+	| "canceled"
+	| "rejected"
+	| "unspecified";
+⋮----
+export interface TaskStatus {
+	readonly state: TaskState;
+	readonly message?: Message;
+	readonly timestamp?: string;
+}
+⋮----
+export interface Task {
+	readonly taskId: string;
+	readonly contextId?: string;
+	readonly status: TaskStatus;
+	readonly history?: readonly Message[];
+	readonly artifacts?: readonly Artifact[];
+	readonly metadata?: Record<string, unknown>;
+}
+⋮----
+export interface SendMessageConfiguration {
+	readonly acceptedOutputModes?: readonly string[];
+	readonly taskPushNotificationConfig?: TaskPushNotificationConfig;
+	readonly historyLength?: number;
+	readonly returnImmediately?: boolean;
+}
+⋮----
+export interface SendMessageRequest {
+	readonly message: Message;
+	readonly notificationUrl?: string;
+	readonly sendMessageConfiguration?: SendMessageConfiguration;
+	readonly metadata?: Record<string, unknown>;
+}
+⋮----
+export interface SendMessageResponse {
+	readonly task?: Task;
+	readonly message?: Message;
+}
+⋮----
+export interface TaskStatusUpdateEvent {
+	readonly taskId: string;
+	readonly contextId: string;
+	readonly status: TaskStatus;
+	readonly final?: boolean;
+	readonly metadata?: Record<string, unknown>;
+}
+⋮----
+export interface TaskArtifactUpdateEvent {
+	readonly taskId: string;
+	readonly contextId: string;
+	readonly artifact: Artifact;
+	readonly append?: boolean;
+	readonly lastChunk?: boolean;
+	readonly metadata?: Record<string, unknown>;
+}
+⋮----
+export interface StreamResponseTask {
+	readonly task: Task;
+}
+⋮----
+export interface StreamResponseMessage {
+	readonly message: Message;
+}
+⋮----
+export interface StreamResponseStatusUpdate {
+	readonly statusUpdate: TaskStatusUpdateEvent;
+}
+⋮----
+export interface StreamResponseArtifactUpdate {
+	readonly artifactUpdate: TaskArtifactUpdateEvent;
+}
+⋮----
+export interface StreamResponseJsonRpcResponse {
+	readonly jsonRpcResponse: {
+		readonly result?: unknown;
+		readonly error?: {
+			readonly code: number;
+			readonly message: string;
+		};
+	};
+}
+⋮----
+export type StreamResponse =
+	| StreamResponseTask
+	| StreamResponseMessage
+	| StreamResponseStatusUpdate
+	| StreamResponseArtifactUpdate
+	| StreamResponseJsonRpcResponse;
+⋮----
+export interface ListTasksRequest {
+	readonly contextId?: string;
+	readonly status?: TaskState;
+	readonly pageSize?: number;
+	readonly pageToken?: string;
+	readonly historyLength?: number;
+	readonly statusTimestampAfter?: string;
+	readonly includeArtifacts?: boolean;
+}
+⋮----
+export interface ListTasksResponse {
+	readonly tasks: readonly Task[];
+	readonly nextPageToken?: string;
+	readonly pageSize: number;
+	readonly totalSize: number;
+}
+⋮----
+export interface GetTaskRequest {
+	readonly id: string;
+	readonly historyLength?: number;
+}
+⋮----
+export interface CancelTaskRequest {
+	readonly id: string;
+	readonly metadata?: Record<string, unknown>;
+}
+⋮----
+export interface TaskPushNotificationConfig {
+	readonly id: string;
+	readonly taskId: string;
+	readonly url: string;
+	readonly token?: string;
+	readonly authentication?: {
+		readonly schemes: readonly string[];
+		readonly credentials?: string;
+	};
+	readonly tenant?: string;
+}
+⋮----
+export interface GetTaskPushNotificationConfigRequest {
+	readonly taskId: string;
+	readonly id: string;
+}
+⋮----
+export interface DeleteTaskPushNotificationConfigRequest {
+	readonly taskId: string;
+	readonly id: string;
+}
+⋮----
+export interface ListTaskPushNotificationConfigsRequest {
+	readonly taskId: string;
+	readonly pageSize?: number;
+	readonly pageToken?: string;
+}
+⋮----
+export interface ListTaskPushNotificationConfigsResponse {
+	readonly configs: readonly TaskPushNotificationConfig[];
+	readonly nextPageToken?: string;
+}
+⋮----
+export interface SubscribeToTaskRequest {
+	readonly id: string;
+}
+⋮----
+export interface GetExtendedAgentCardRequest {
+	readonly tenant?: string;
+}
+⋮----
+export interface AgentInterface {
+	readonly url: string;
+	readonly protocolBinding: string;
+	readonly protocolVersion: string;
+	readonly tenant?: string;
+}
+⋮----
+export interface AgentProvider {
+	readonly url: string;
+	readonly organization: string;
+}
+⋮----
+export interface AgentCapabilities {
+	readonly streaming?: boolean;
+	readonly pushNotifications?: boolean;
+	readonly extensions?: readonly AgentExtension[];
+	readonly extendedAgentCard?: boolean;
+}
+⋮----
+export interface AgentExtension {
+	readonly uri: string;
+	readonly description: string;
+	readonly required: boolean;
+	readonly params?: Record<string, unknown>;
+}
+⋮----
+export interface AgentSkill {
+	readonly id: string;
+	readonly name?: string;
+	readonly description?: string;
+	readonly tags?: readonly string[];
+	readonly examples?: readonly string[];
+	readonly inputModes?: readonly string[];
+	readonly outputModes?: readonly string[];
+	readonly securityRequirements?: readonly SecurityRequirement[];
+}
+⋮----
+export interface SecurityRequirement {
+	readonly schemes: Record<string, readonly string[]>;
+}
+⋮----
+export interface AgentCard {
+	readonly name: string;
+	readonly description?: string;
+	readonly url: string;
+	readonly version: string;
+	readonly supportedInterfaces: readonly AgentInterface[];
+	readonly provider?: AgentProvider;
+	readonly documentationUrl?: string;
+	readonly capabilities?: AgentCapabilities;
+	readonly securitySchemes?: Record<string, SecurityScheme>;
+	readonly securityRequirements?: readonly SecurityRequirement[];
+	readonly defaultInputModes: readonly string[];
+	readonly defaultOutputModes?: readonly string[];
+	readonly skills?: readonly AgentSkill[];
+	readonly signatures?: readonly AgentCardSignature[];
+	readonly iconUrl?: string;
+}
+⋮----
+export interface AgentCardSignature {
+	readonly protected: string;
+	readonly signature: string;
+	readonly header?: Record<string, unknown>;
+}
+⋮----
+export interface APIKeySecurityScheme {
+	readonly type: "apiKey";
+	readonly description?: string;
+	readonly location: "query" | "header" | "cookie";
+	readonly name: string;
+}
+⋮----
+export interface HTTPAuthSecurityScheme {
+	readonly type: "http";
+	readonly description?: string;
+	readonly scheme: string;
+	readonly bearerFormat?: string;
+}
+⋮----
+export interface OAuth2SecurityScheme {
+	readonly type: "oauth2";
+	readonly description?: string;
+	readonly flows: OAuthFlows;
+	readonly oauth2MetadataUrl?: string;
+}
+⋮----
+export interface OpenIdConnectSecurityScheme {
+	readonly type: "openIdConnect";
+	readonly description?: string;
+	readonly openIdConnectUrl: string;
+}
+⋮----
+export interface MutualTlsSecurityScheme {
+	readonly type: "mutualTls";
+	readonly description?: string;
+}
+⋮----
+export type SecurityScheme =
+	| APIKeySecurityScheme
+	| HTTPAuthSecurityScheme
+	| OAuth2SecurityScheme
+	| OpenIdConnectSecurityScheme
+	| MutualTlsSecurityScheme;
+⋮----
+export interface OAuthFlows {
+	readonly authorizationCode?: AuthorizationCodeOAuthFlow;
+	readonly clientCredentials?: ClientCredentialsOAuthFlow;
+	readonly implicit?: ImplicitOAuthFlow;
+	readonly password?: PasswordOAuthFlow;
+	readonly deviceCode?: DeviceCodeOAuthFlow;
+}
+⋮----
+export interface AuthorizationCodeOAuthFlow {
+	readonly authorizationUrl: string;
+	readonly tokenUrl: string;
+	readonly refreshUrl?: string;
+	readonly scopes: Record<string, string>;
+	readonly pkceRequired?: boolean;
+}
+⋮----
+export interface ClientCredentialsOAuthFlow {
+	readonly tokenUrl: string;
+	readonly refreshUrl?: string;
+	readonly scopes: Record<string, string>;
+}
+⋮----
+export interface ImplicitOAuthFlow {
+	readonly authorizationUrl: string;
+	readonly refreshUrl?: string;
+	readonly scopes: Record<string, string>;
+}
+⋮----
+export interface PasswordOAuthFlow {
+	readonly tokenUrl: string;
+	readonly refreshUrl?: string;
+	readonly scopes: Record<string, string>;
+}
+⋮----
+export interface DeviceCodeOAuthFlow {
+	readonly deviceAuthorizationUrl: string;
+	readonly tokenUrl: string;
+	readonly refreshUrl?: string;
+	readonly scopes: Record<string, string>;
+}
+⋮----
+export interface ExtendedAgentCard {
+	readonly agentCard?: AgentCard;
+}
+
+================
 File: src/types/types.ts
 ================
+import type { AgentRegistryPort } from "@/ports/agent-registry";
+import type { BudgetPort } from "@/ports/budget-port";
+import type { KanbanPort } from "@/ports/kanban-port";
+import type { MemoryStorePort } from "@/ports/memory-store";
+import type { DomainEventBus } from "@/ports/plugin-event-bus.types";
+import type { RealtimePort } from "@/ports/realtime-port";
+⋮----
 export interface GunNode {
-  get(path: string): GunNode;
-  put(data: unknown, cb?: (ack: GunAck) => void): void;
-  on(cb: (data: unknown, key?: string) => void): void;
-  once(cb: (data: unknown, key?: string) => void): void;
-  off(cb?: (data: unknown, key?: string) => void): void;
-  map(): GunNode;
-  [key: string]: unknown;
+	get(path: string): GunNode;
+	put(data: unknown, cb?: (ack: GunAck) => void): void;
+	on(cb: (data: unknown, key?: string) => void): void;
+	once(cb: (data: unknown, key?: string) => void): void;
+	off(cb?: (data: unknown, key?: string) => void): void;
+	map(): GunNode;
+	[key: string]: unknown;
 }
 ⋮----
 get(path: string): GunNode;
@@ -2221,22 +2929,22 @@ off(cb?: (data: unknown, key?: string)
 map(): GunNode;
 ⋮----
 export interface GunAck {
-  err?: any;
-  ok?: any;
+	err?: any;
+	ok?: any;
 }
 ⋮----
 export interface GunInstance extends GunNode {
-  SEA?: {
-    secret(): string;
-    pair(): { publicKey: string; secretKey: string };
-  };
-  user(): {
-    create(secret: string, cb: (ack: GunAck) => void): void;
-    auth(secret: string, cb: (ack: GunAck) => void): void;
-  };
-  settings?: {
-    [key: string]: any;
-  };
+	SEA?: {
+		secret(): string;
+		pair(): { publicKey: string; secretKey: string };
+	};
+	user(): {
+		create(secret: string, cb: (ack: GunAck) => void): void;
+		auth(secret: string, cb: (ack: GunAck) => void): void;
+	};
+	settings?: {
+		[key: string]: any;
+	};
 }
 ⋮----
 secret(): string;
@@ -2248,325 +2956,372 @@ create(secret: string, cb: (ack: GunAck)
 auth(secret: string, cb: (ack: GunAck)
 ⋮----
 export interface GunConstructor<T> {
-  (opts?: {
-    file?: any;
-    web?: any;
-    peers?: GunPeerUrl[];
-    localStorage?: any;
-    radix?: any;
-  }): T;
+	(opts?: {
+		file?: any;
+		web?: any;
+		peers?: GunPeerUrl[];
+		localStorage?: any;
+		radix?: any;
+	}): T;
 }
 ⋮----
 export type GunPeerUrl = string;
 export interface ConsensusInput {
-  agentName: string;
-  card: AgentCard;
-  response: string;
+	agentName: string;
+	card: AgentCard;
+	response: string;
 }
 ⋮----
 export interface ConsensusResult {
-  winner: ConsensusInput;
-  scores: Array<{ agentName: string; score: number; reason: string }>;
-  synthesized: string;
+	winner: ConsensusInput;
+	scores: Array<{ agentName: string; score: number; reason: string }>;
+	synthesized: string;
 }
 ⋮----
 export interface CognitiveLoopConfig {
-  judgeAgentName?: string;
-  minAgents?: number;
-  confidenceThreshold?: number;
+	judgeAgentName?: string;
+	minAgents?: number;
+	confidenceThreshold?: number;
 }
 ⋮----
 export interface AgentConfig {
-  name: string;
-  url: string;
-  card: AgentCard;
+	name: string;
+	url: string;
+	card: AgentCard;
 }
 ⋮----
-export interface ToolRouterConfig<O,M,N,I,Z,Y,A,X,P> {
-  agents: Record<string, AgentConfig>;
-  registry?:O
-  x402Client?:M
-  budget?:N
-  cognitiveLoop?:I
-  memory?: Z
-  knowledge?: Y
-  kanban?: A
-  realtime?: X
-  pluginEventBus?:P
+export interface TaskDelegator {
+	delegateTask(
+		agentUrl: string,
+		text: string,
+		agentName?: string,
+	): Promise<string>;
 }
 ⋮----
-export type WebhookSource = "github" | "telegram" | "whatsapp" | "generic"
+delegateTask(
+		agentUrl: string,
+		text: string,
+		agentName?: string,
+	): Promise<string>;
+⋮----
+export interface ConsensusEvaluator {
+	evaluate(
+		inputs: ConsensusInput[],
+		taskText: string,
+	): Promise<ConsensusResult>;
+}
+⋮----
+evaluate(
+		inputs: ConsensusInput[],
+		taskText: string,
+	): Promise<ConsensusResult>;
+⋮----
+export interface ToolRouterKnowledgePort {
+	query(
+		text: string,
+		topK?: number,
+	): Promise<Array<{ slug: string; content: string }>>;
+}
+⋮----
+query(
+		text: string,
+		topK?: number,
+): Promise<Array<
+⋮----
+export interface VerificationConfig {
+	enabled: boolean;
+	keywords: string;
+	agentName: string;
+	consensusThreshold: number;
+}
+⋮----
+export interface VerificationResult {
+	consensus: boolean;
+	confidence: number;
+	winner: string;
+	synthesized: string;
+	scores: Array<{ agentName: string; score: number; reason: string }>;
+	contested: boolean;
+	threshold: number;
+	participantCount: number;
+}
+⋮----
+export interface ToolRouterConfig {
+	agents: Record<string, AgentConfig>;
+	registry?: AgentRegistryPort;
+	x402Client?: TaskDelegator;
+	budget?: BudgetPort;
+	cognitiveLoop?: ConsensusEvaluator;
+	memory?: MemoryStorePort;
+	knowledge?: ToolRouterKnowledgePort;
+	kanban?: KanbanPort;
+	realtime?: RealtimePort;
+	pluginEventBus?: DomainEventBus;
+	verification?: VerificationConfig;
+}
+⋮----
+export type WebhookSource = "github" | "telegram" | "whatsapp" | "generic";
 export interface WebhookEvent {
-  eventId: string;
-  source: WebhookSource;
-  type: string;
-  payload: unknown;
-  timestamp: number;
+	eventId: string;
+	source: WebhookSource;
+	type: string;
+	payload: unknown;
+	timestamp: number;
 }
 ⋮----
 export interface WebhookToA2ABridgeConfig<T> {
-  a2aClient: T
-  hermesUrl: string;
-  onEvent?: (payload: WebhookEvent) => Promise<unknown>;
-}
-export interface AgentConfig {
-  name: string;
-  description: string;
-  url: string;
-  version: string;
-  port: number;
+	a2aClient: T;
+	hermesUrl: string;
+	onEvent?: (payload: WebhookEvent) => Promise<unknown>;
 }
 ⋮----
-export type AgentInterfaceType = "http" | "grpc";
+import type { AgentInterface as A2AAgentInterface } from "../types/a2a-v1.ts";
 ⋮----
-export interface AgentInterface {
-  type: AgentInterfaceType;
-  url: string;
-}
+export type AgentInterface = A2AAgentInterface;
 ⋮----
 export interface AgentPricing {
-  costPerTask: number;
-  costPerToken?: number;
-  settlement?: AgentSettlment;
+	costPerTask: number;
+	costPerToken?: number;
+	settlement?: AgentSettlment;
 }
 export interface AgentSettlment {
-  costPerTask: number;
-  costPerToken?: number;
-  currency?: string;
-  autoRefillThreshold?: number;
-  autoRefillAmount?: number;
-  chainEndpoint?: string;
-  contractAddress?: string;
+	costPerTask: number;
+	costPerToken?: number;
+	currency?: string;
+	autoRefillThreshold?: number;
+	autoRefillAmount?: number;
+	chainEndpoint?: string;
+	contractAddress?: string;
 }
 ⋮----
 export interface PushNotificationConfig {
-  url: string;
-  token?: string;
+	url: string;
+	token?: string;
 }
 ⋮----
 export interface AgentCardCapabilities {
-  streaming?: boolean;
-  pushNotifications?: boolean;
-  stateTransitionHistory?: boolean;
-  pushNotificationConfig?: PushNotificationConfig;
-  extensions?: AgentExtension[];
-  extendedAgentCard?: boolean;
+	streaming?: boolean;
+	pushNotifications?: boolean;
+	stateTransitionHistory?: boolean;
+	pushNotificationConfig?: PushNotificationConfig;
+	extensions?: AgentExtension[];
+	extendedAgentCard?: boolean;
 }
 ⋮----
 export interface AgentExtension {
-  uri: string;
-  description?: string;
-  required?: boolean;
+	uri: string;
+	description?: string;
+	required?: boolean;
 }
 ⋮----
 export type SecurityScheme =
-  | APIKeySecurityScheme
-  | HTTPAuthSecurityScheme
-  | OAuth2SecurityScheme
-  | OpenIdConnectSecurityScheme
-  | MutualTlsSecurityScheme;
+	| APIKeySecurityScheme
+	| HTTPAuthSecurityScheme
+	| OAuth2SecurityScheme
+	| OpenIdConnectSecurityScheme
+	| MutualTlsSecurityScheme;
 ⋮----
 export interface APIKeySecurityScheme {
-  type: "apiKey";
-  description?: string;
-  location: string;
-  name: string;
+	type: "apiKey";
+	description?: string;
+	location: string;
+	name: string;
 }
 ⋮----
 export interface HTTPAuthSecurityScheme {
-  type: "http";
-  description?: string;
-  scheme: string;
-  bearerFormat?: string;
+	type: "http";
+	description?: string;
+	scheme: string;
+	bearerFormat?: string;
 }
 ⋮----
 export interface OAuth2SecurityScheme {
-  type: "oauth2";
-  description?: string;
-  flows: OAuthFlows;
-  oauth2MetadataUrl?: string;
+	type: "oauth2";
+	description?: string;
+	flows: OAuthFlows;
+	oauth2MetadataUrl?: string;
 }
 ⋮----
 export interface OpenIdConnectSecurityScheme {
-  type: "openIdConnect";
-  description?: string;
-  openIdConnectUrl: string;
+	type: "openIdConnect";
+	description?: string;
+	openIdConnectUrl: string;
 }
 ⋮----
 export interface MutualTlsSecurityScheme {
-  type: "mtls";
-  description?: string;
+	type: "mtls";
+	description?: string;
 }
 ⋮----
 export interface OAuthFlows {
-  authorizationCode?: AuthorizationCodeOAuthFlow;
-  clientCredentials?: ClientCredentialsOAuthFlow;
-  implicit?: ImplicitOAuthFlow;
-  password?: PasswordOAuthFlow;
-  deviceCode?: DeviceCodeOAuthFlow;
+	authorizationCode?: AuthorizationCodeOAuthFlow;
+	clientCredentials?: ClientCredentialsOAuthFlow;
+	implicit?: ImplicitOAuthFlow;
+	password?: PasswordOAuthFlow;
+	deviceCode?: DeviceCodeOAuthFlow;
 }
 ⋮----
 export interface AuthorizationCodeOAuthFlow {
-  authorizationUrl: string;
-  tokenUrl: string;
-  refreshUrl?: string;
-  scopes: Record<string, string>;
-  pkceRequired?: boolean;
+	authorizationUrl: string;
+	tokenUrl: string;
+	refreshUrl?: string;
+	scopes: Record<string, string>;
+	pkceRequired?: boolean;
 }
 ⋮----
 export interface ClientCredentialsOAuthFlow {
-  tokenUrl: string;
-  refreshUrl?: string;
-  scopes: Record<string, string>;
+	tokenUrl: string;
+	refreshUrl?: string;
+	scopes: Record<string, string>;
 }
 ⋮----
 export interface ImplicitOAuthFlow {
-  authorizationUrl: string;
-  refreshUrl?: string;
-  scopes: Record<string, string>;
+	authorizationUrl: string;
+	refreshUrl?: string;
+	scopes: Record<string, string>;
 }
 ⋮----
 export interface PasswordOAuthFlow {
-  tokenUrl: string;
-  refreshUrl?: string;
-  scopes: Record<string, string>;
+	tokenUrl: string;
+	refreshUrl?: string;
+	scopes: Record<string, string>;
 }
 ⋮----
 export interface DeviceCodeOAuthFlow {
-  deviceAuthorizationUrl: string;
-  tokenUrl: string;
-  refreshUrl?: string;
-  scopes: Record<string, string>;
+	deviceAuthorizationUrl: string;
+	tokenUrl: string;
+	refreshUrl?: string;
+	scopes: Record<string, string>;
 }
 ⋮----
 export interface SecurityRequirement {
-  schemes: Record<string, string[]>;
+	schemes: Record<string, string[]>;
 }
 ⋮----
 export interface AgentSkill {
-  name: string;
-  description: string;
-  tags: string[];
-  examples?: string[];
-  inputModes?: string[];
-  outputModes?: string[];
-  securityRequirements?: SecurityRequirement[];
+	name: string;
+	description: string;
+	tags: string[];
+	examples?: string[];
+	inputModes?: string[];
+	outputModes?: string[];
+	securityRequirements?: SecurityRequirement[];
 }
 ⋮----
 export interface AgentCard {
-  name: string;
-  description: string;
-  url: string;
-  version: string;
-  capabilities: AgentCardCapabilities;
-  skills: AgentSkill[];
-  supportedInterfaces?: AgentInterface[];
-  successRate?: number;
-  pricing?: AgentPricing;
-  securitySchemes?: Record<string, SecurityScheme>;
-  securityRequirements?: SecurityRequirement[];
+	name: string;
+	description: string;
+	url: string;
+	version: string;
+	capabilities: AgentCardCapabilities;
+	skills: AgentSkill[];
+	supportedInterfaces: readonly AgentInterface[];
+	successRate?: number;
+	pricing?: AgentPricing;
+	securitySchemes?: Record<string, SecurityScheme>;
+	securityRequirements?: SecurityRequirement[];
 }
 ⋮----
 export type TaskState =
-  | "submitted"
-  | "working"
-  | "input-required"
-  | "completed"
-  | "failed"
-  | "canceled"
-  | "rejected"
-  | "auth-required"
-  | "unknown";
+	| "submitted"
+	| "working"
+	| "input-required"
+	| "completed"
+	| "failed"
+	| "canceled"
+	| "rejected"
+	| "auth-required"
+	| "unknown";
 ⋮----
 export type TaskStreamingEvent =
-  | {
-      type: "status";
-      taskId: string;
-      state: TaskState;
-      message?: string;
-      timestamp: string;
-    }
-  | {
-      type: "artifact";
-      taskId: string;
-      artifact: { name: string; parts: Array<{ kind: string; text?: string }> };
-    };
+	| {
+			type: "status";
+			taskId: string;
+			state: TaskState;
+			message?: string;
+			timestamp: string;
+	  }
+	| {
+			type: "artifact";
+			taskId: string;
+			artifact: { name: string; parts: Array<{ kind: string; text?: string }> };
+	  };
 ⋮----
 export interface A2ATaskStatus {
-  state: TaskState;
-  timestamp: string;
-  message?: A2AMessage;
+	state: TaskState;
+	timestamp: string;
+	message?: A2AMessage;
 }
 ⋮----
 export interface A2ATask {
-  id: string;
-  contextId: string;
-  status: A2ATaskStatus;
-  history: A2AMessage[];
-  artifacts?: A2AArtifact[];
-  metadata?: Record<string, unknown>;
+	id: string;
+	contextId: string;
+	status: A2ATaskStatus;
+	history: A2AMessage[];
+	artifacts?: A2AArtifact[];
+	metadata?: Record<string, unknown>;
 }
 ⋮----
 export type A2AMessageRole = "user" | "agent" | "assistant" | "tool";
 ⋮----
 export interface A2AMessage {
-  messageId: string;
-  role: A2AMessageRole;
-  kind: "message";
-  parts: A2APart[];
-  contextId: string;
-  taskId?: string;
-  referenceTaskIds?: string[];
+	messageId: string;
+	role: A2AMessageRole;
+	kind: "message";
+	parts: A2APart[];
+	contextId: string;
+	taskId?: string;
+	referenceTaskIds?: string[];
 }
 ⋮----
 export type A2APart =
-  | { kind: "text"; text: string }
-  | {
-      kind: "file";
-      file: { base64: string; mimeType?: string; filename?: string };
-    }
-  | { kind: "data"; data: Record<string, unknown>; mimeType?: string };
+	| { kind: "text"; text: string }
+	| {
+			kind: "file";
+			file: { base64: string; mimeType?: string; filename?: string };
+	  }
+	| { kind: "data"; data: Record<string, unknown>; mimeType?: string };
 ⋮----
 export interface A2AArtifact {
-  artifactId: string;
-  name?: string;
-  description?: string;
-  parts: A2APart[];
-  metadata?: Record<string, unknown>;
-  extensions?: string[];
+	artifactId: string;
+	name?: string;
+	description?: string;
+	parts: A2APart[];
+	metadata?: Record<string, unknown>;
+	extensions?: string[];
 }
 ⋮----
 export function createTextArtifact(
-  artifactId: string,
-  text: string,
-  name?: string,
+	artifactId: string,
+	text: string,
+	name?: string,
 ): A2AArtifact
 ⋮----
 export function createFileArtifact(
-  artifactId: string,
-  base64: string,
-  mimeType?: string,
-  filename?: string,
-  name?: string,
+	artifactId: string,
+	base64: string,
+	mimeType?: string,
+	filename?: string,
+	name?: string,
 ): A2AArtifact
 ⋮----
 export function createDataArtifact(
-  artifactId: string,
-  data: Record<string, unknown>,
-  mimeType?: string,
-  name?: string,
+	artifactId: string,
+	data: Record<string, unknown>,
+	mimeType?: string,
+	name?: string,
 ): A2AArtifact
 ⋮----
 export function createMultipartArtifact(
-  artifactId: string,
-  parts: A2APart[],
-  name?: string,
+	artifactId: string,
+	parts: A2APart[],
+	name?: string,
 ): A2AArtifact
 ⋮----
 export interface HandoverRequest {
-  transferTo: string;
-  reason: string;
-  context: string;
+	transferTo: string;
+	reason: string;
+	context: string;
 }
 ⋮----
 export function encodeHandover(req: HandoverRequest): string
@@ -2574,142 +3329,146 @@ export function encodeHandover(req: HandoverRequest): string
 export function decodeHandover(text: string): HandoverRequest | null
 ⋮----
 export interface ACPRequest {
-  jsonrpc: "2.0";
-  id: number | string;
-  method: string;
-  params?: unknown;
+	jsonrpc: "2.0";
+	id: number | string;
+	method: string;
+	params?: unknown;
 }
 ⋮----
 export interface ErrorCard {
-  code: number;
-  message: string;
-  data?: unknown;
+	code: number;
+	message: string;
+	data?: unknown;
 }
 ⋮----
 export interface ACPResponse {
-  jsonrpc: "2.0";
-  id: number | string;
-  result?: unknown;
-  error?: ErrorCard;
+	jsonrpc: "2.0";
+	id: number | string;
+	result?: unknown;
+	error?: ErrorCard;
 }
 ⋮----
 export interface SkillDocument {
-  name: string;
-  description: string;
-  tags: string[];
-  steps: string[];
-  createdAt: string;
-  usageCount: number;
-  successRate: number;
+	name: string;
+	description: string;
+	tags: string[];
+	steps: string[];
+	createdAt: string;
+	usageCount: number;
+	successRate: number;
 }
 ⋮----
 export interface MCPToolCall {
-  name: string;
-  arguments: Record<string, unknown>;
+	name: string;
+	arguments: Record<string, unknown>;
 }
 ⋮----
 export interface MCPToolResult {
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
+	content: Array<{ type: "text"; text: string }>;
+	isError?: boolean;
 }
 ⋮----
 export interface McpResource {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
+	uri: string;
+	name: string;
+	description?: string;
+	mimeType?: string;
 }
 ⋮----
 export interface McpResourceContent {
-  uri: string;
-  text?: string;
-  blob?: string;
-  mimeType?: string;
+	uri: string;
+	text?: string;
+	blob?: string;
+	mimeType?: string;
 }
 ⋮----
 export interface ResourceSubscription {
-  id: string;
-  uri: string;
-  listenerId?: string;
-  createdAt: string;
+	id: string;
+	uri: string;
+	listenerId?: string;
+	createdAt: string;
 }
 ⋮----
 export type WorldStateAgentStatus = "online" | "offline" | "unknown";
 export interface WorldStateAgent {
-  name: string;
-  port: number;
-  status: WorldStateAgentStatus;
-  skills: string[];
+	name: string;
+	port: number;
+	status: WorldStateAgentStatus;
+	skills: string[];
 }
 ⋮----
 export interface WorldStateTasks {
-  total: number;
-  active: number;
-  completed: number;
-  failed: number;
+	total: number;
+	active: number;
+	completed: number;
+	failed: number;
 }
 ⋮----
 export interface WorldStateMemory {
-  totalEntries: number;
-  lastUpdated?: string;
+	totalEntries: number;
+	lastUpdated?: string;
 }
 ⋮----
 export interface WorldStateSkills {
-  total: number;
-  recentSlugs: string[];
+	total: number;
+	recentSlugs: string[];
 }
 ⋮----
 export interface WorldState {
-  timestamp: string;
-  agents: Array<WorldStateAgent>;
-  tasks: WorldStateTasks;
-  memory: WorldStateMemory;
-  skills: WorldStateSkills;
+	timestamp: string;
+	agents: Array<WorldStateAgent>;
+	tasks: WorldStateTasks;
+	memory: WorldStateMemory;
+	skills: WorldStateSkills;
 }
 ⋮----
 export interface ResolvedCaller {
-  description: string;
-  allowedAgents: string[];
+	description: string;
+	allowedAgents: string[];
 }
 ⋮----
-export interface A2AServerConfig<R,S> {
-  port: number;
-  card: AgentCard;
-  onTask: (
-    message: string,
-    caller?: ResolvedCaller,
-    signal?: AbortSignal,
-  ) => Promise<string>;
-  apiKeyRegistry?: R
-  requireAuth?: boolean;
-  enableOAuth?: boolean;
-  drainTimeoutMs?: number;
-  onTaskStreaming?: (
-    message: string,
-    taskId: string,
-    emit: (event: TaskStreamingEvent) => void,
-    caller?: ResolvedCaller,
-    signal?: AbortSignal,
-  ) => Promise<string>;
-  onWorldState?: () => Promise<any>;
-  taskStore?: S
-  pushNotificationConfig?: PushNotificationConfig;
+import type { AgentCard as A2AAgentCard } from "../types/a2a-v1.ts";
+⋮----
+export interface A2AServerConfig<R, S> {
+	port: number;
+	card: AgentCard;
+	onTask: (
+		message: string,
+		caller?: ResolvedCaller,
+		signal?: AbortSignal,
+	) => Promise<string>;
+	apiKeyRegistry?: R;
+	requireAuth?: boolean;
+	enableOAuth?: boolean;
+	drainTimeoutMs?: number;
+	onTaskStreaming?: (
+		message: string,
+		taskId: string,
+		emit: (event: TaskStreamingEvent) => void,
+		caller?: ResolvedCaller,
+		signal?: AbortSignal,
+	) => Promise<string>;
+	onWorldState?: () => Promise<Record<string, unknown>>;
+	taskStore?: S;
+	pushNotificationConfig?: PushNotificationConfig;
+	tenantPrefix?: string;
+	extendedAgentCard?: A2AAgentCard;
 }
 ⋮----
 export interface RegistryEntry {
-  url: string;
-  card: AgentCard;
-  tags: string[];
+	url: string;
+	card: AgentCard;
+	tags: string[];
 }
 export interface IdempotencyLockConfig {
-  ttlMs?: number;
+	ttlMs?: number;
 }
 ⋮----
 export interface LockResult {
-  acquired: boolean;
-  acquiredAt: Date;
-  expiresAt: Date;
-  ttlRemainingMs: number;
+	acquired: boolean;
+	acquiredAt: Date;
+	expiresAt: Date;
+	ttlRemainingMs: number;
 }
 ⋮----
 export interface KeyEntry {

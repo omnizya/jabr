@@ -53,7 +53,7 @@ Notes:
 ================================================================
 User Provided Header
 ================================================================
-Jabr — regenerated 2026-09-09T23:01:01Z. Do NOT edit by hand.\nComposition Roots & MCP Server — wiring layer. No business logic.
+Jabr — regenerated 2026-09-14T08:16:30Z. Do NOT edit by hand.\nComposition Roots & MCP Server — wiring layer. No business logic.
 
 ================================================================
 Directory Structure
@@ -73,6 +73,7 @@ src/
       index.ts
       jarvis.ts
       librarian.ts
+      llm.ts
       oracle.ts
       scientist.ts
       verification.ts
@@ -110,7 +111,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { ServerCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import pkg from "../package.json";
+import pkg from "../../../../package.json";
 import {
 	boundedNumber,
 	cappedString,
@@ -191,8 +192,8 @@ File: src/runtime/agents/designer.ts
 ================
 import { PollinationsImageAdapter } from "@adapters/pollinations-image";
 import { TaskMemory } from "@adapters/task-memory";
-import { DESIGNER_CARD, DesignerAgent } from "../../core/designer.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
+import { DESIGNER_CARD, DesignerAgent } from "../../core/designer.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { runAgent } from "../serve.ts";
@@ -202,11 +203,11 @@ File: src/runtime/agents/explorer.ts
 ================
 import { McpClientAdapter } from "@adapters/mcp/mcp-client";
 import { TaskMemory } from "@adapters/task-memory";
+import { JABR_PORTS } from "@constants/ecosystem";
 import { EXPLORER_CARD, ExplorerAgent } from "../../core/explorer.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { runAgent } from "../serve.ts";
-import { JABR_PORTS } from "@constants/ecosystem";
 
 ================
 File: src/runtime/agents/fixer.ts
@@ -215,8 +216,8 @@ import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { FIXER_CARD, FixerAgent } from "../../core/fixer.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
+import { FIXER_CARD, FixerAgent } from "../../core/fixer.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { extractLastResponse, runAgent } from "../serve.ts";
@@ -239,8 +240,9 @@ import { Search9Router } from "@adapters/search-9router";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
 import { jabrUrl, jabrUrlForPort } from "@config/jabr-config";
-import { JARVIS_CARD, JarvisAgent } from "../../core/jarvis.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
+import { JARVIS_CARD, JarvisAgent } from "../../core/jarvis.ts";
+import { ApiKeyRegistry } from "../../security/api-key-registry.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { extractLastResponse } from "../serve.ts";
@@ -257,9 +259,9 @@ import { MemPalaceAdapter } from "@adapters/mem-palace";
 import { Search9Router } from "@adapters/search-9router";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { LIBRARIAN_CARD, LibrarianAgent } from "../../core/librarian.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
 import type { LlmPort } from "@ports/llm-port";
+import { LIBRARIAN_CARD, LibrarianAgent } from "../../core/librarian.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { runAgent } from "../serve.ts";
@@ -269,14 +271,39 @@ function shouldWireLlm(): boolean
 function createLlm(): LlmPort
 
 ================
+File: src/runtime/agents/llm.ts
+================
+import { A2AServer } from "@adapters/http/a2a-server";
+import { createLlmAdapter } from "@adapters/llm/factory";
+import type {
+	ResolvedCaller,
+	TaskState,
+	TaskStreamingEvent,
+} from "@agents/types";
+import { JABR_PORTS } from "@constants/ecosystem";
+import { LlmAgent } from "../../core/llm-agent.ts";
+import { ApiKeyRegistry } from "../../security/api-key-registry.ts";
+import { initLifecycle } from "../lifecycle.ts";
+import { createRealtimePort } from "../realtime.ts";
+⋮----
+async onTask(message: string): Promise<string>
+async onTaskStreaming(
+		message: string,
+		taskId: string,
+		emit: (event: TaskStreamingEvent) => void,
+		_caller?: ResolvedCaller,
+		_signal?: AbortSignal,
+): Promise<string>
+
+================
 File: src/runtime/agents/oracle.ts
 ================
 import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { createLlmAdapter } from "@adapters/llm/factory";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { ORACLE_CARD, OracleAgent } from "../../core/oracle.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
+import { ORACLE_CARD, OracleAgent } from "../../core/oracle.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { runAgent } from "../serve.ts";
@@ -286,8 +313,9 @@ File: src/runtime/agents/scientist.ts
 ================
 import { A2AServer } from "@adapters/http/a2a-server";
 import { McpClientAdapter } from "@adapters/mcp/mcp-client";
-import { ScientistAgent } from "../../core/scientist.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
+import { ScientistAgent } from "../../core/scientist.ts";
+import { ApiKeyRegistry } from "../../security/api-key-registry.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 ⋮----
@@ -298,8 +326,11 @@ File: src/runtime/agents/verification.ts
 ================
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { VERIFICATION_CARD, VerificationAgent } from "../../core/verification.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
+import {
+	VERIFICATION_CARD,
+	VerificationAgent,
+} from "../../core/verification.ts";
 import { initLifecycle } from "../lifecycle.ts";
 import { createRealtimePort } from "../realtime.ts";
 import { runAgent } from "../serve.ts";
@@ -307,11 +338,11 @@ import { runAgent } from "../serve.ts";
 ================
 File: src/runtime/acp-bridge.ts
 ================
+import { join } from "node:path";
 import { StdioBridge } from "@adapters/http/stdio-bridge";
 import { openJabrDb } from "@adapters/sqlite-db";
 import { SqliteMemoryStore } from "@adapters/sqlite-memory-store";
 import { jabrUrl } from "@config/jabr-config";
-import { join } from "node:path";
 
 ================
 File: src/runtime/lifecycle.ts
@@ -354,7 +385,6 @@ export function bridgeRealtimeToPlugin(
 File: src/runtime/orchestrator.ts
 ================
 import { A2AClient } from "@adapters/a2a/client";
-import { startBunWebSocketAdapter } from "@adapters/websocket/bun-websocket-adapter.ts";
 import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { A2AServer } from "@adapters/http/a2a-server";
@@ -365,20 +395,25 @@ import { RateLimiter } from "@adapters/rate-limit";
 import { openJabrDb } from "@adapters/sqlite-db.ts";
 import { SqliteMemoryStore } from "@adapters/sqlite-memory-store.ts";
 import { SqliteTaskStore } from "@adapters/sqlite-task-store.ts";
+import { startBunWebSocketAdapter } from "@adapters/websocket/bun-websocket-adapter.ts";
 import { SettlementLedger } from "@adapters/x402/settlement-ledger.ts";
 import { X402Client } from "@adapters/x402/x402-client";
 import { X402Server } from "@adapters/x402/x402-server";
 import type { ResolvedCaller } from "@agents/types";
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
-import { ORCHESTRATOR_CARD, OrchestratorAgent } from "../core/orchestrator.ts";
-import { type AgentConfig, ToolRouter } from "../core/tool-router.ts";
 import { JABR_PORTS } from "@constants/ecosystem";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
+import { verbose } from "@utils/logger";
+import type { AgentConfig } from "@/types/types";
+import { ORCHESTRATOR_CARD, OrchestratorAgent } from "../core/orchestrator.ts";
+import { ToolRouter } from "../core/tool-router.ts";
+import { CognitiveLoop } from "../core/cognitive-loop.ts";
 import { ApiKeyRegistry } from "../security/api-key-registry.ts";
 import { bridgeRealtimeToPlugin, initLifecycle } from "./lifecycle.ts";
-import { verbose } from "@utils/logger";
+import { optionalBoolEnv, optionalEnv } from "@config/env-manager.ts";
+import { JABR_VERIFY_KEYWORDS_DEFAULT } from "@constants/app";
 ⋮----
 async onTask(text: string, caller?: ResolvedCaller): Promise<string>
 async onWorldState()
@@ -406,8 +441,8 @@ import { TaskMemory } from "@adapters/task-memory";
 import type { AgentCard, TaskStreamingEvent } from "@agents/types";
 import { jabrUrlForPort } from "@config/jabr-config";
 import type { TaskStorePort } from "@ports/task-store";
-import { ApiKeyRegistry } from "../security/api-key-registry";
 import { verbose } from "@utils/logger";
+import { ApiKeyRegistry } from "../security/api-key-registry";
 ⋮----
 export function extractLastResponse(
 	taskStore: TaskStorePort,

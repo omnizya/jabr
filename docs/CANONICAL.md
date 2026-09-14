@@ -106,7 +106,7 @@ agents/
 **Transport:** HTTP JSON-RPC + SSE (streaming in v1.0)
 **Agent Cards:** `/.well-known/agent-card.json`
 
-**Current wire protocol (v0.3-compatible):**
+**Current wire protocol (A2A v1.0):**
 ```bash
 # POST to root path ONLY
 curl -X POST http://localhost:4000/ \
@@ -114,32 +114,45 @@ curl -X POST http://localhost:4000/ \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "tasks/send",
+    "method": "SendMessage",
     "params": {
       "message": {
+        "role": "user",
         "parts": [{"kind": "text", "text": "Review this code..."}]
       }
     }
   }'
 ```
 
-**Response:**
+**Response (synchronous `SendMessage`):**
 ```jsonc
 {
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
     "task": {
-      "id": "task_123",
-      "state": "working",
-      "artifacts": [...]
+      "taskId": "task_123",
+      "status": {
+        "state": "completed",
+        "message": {
+          "role": "agent",
+          "parts": [{"kind": "text", "text": "Review complete..."}]
+        },
+        "timestamp": "..."
+      }
+    },
+    "message": {
+      "role": "agent",
+      "parts": [{"kind": "text", "text": "Review complete..."}]
     }
   }
 }
 ```
 
 **Jabr's A2A implementation:**
-- Synchronous (no SSE streaming yet)
+- Synchronous `SendMessage` (awaits handler, returns inline) + SSE streaming via `SendStreamingMessage`
+- Additional v1.0 methods: `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, `GetExtendedAgentCard`, push-notification config (Create/Get/List/Delete `TaskPushNotificationConfig`)
+- Legacy `tasks/send`-family methods are **removed** — unknown methods return `-32601`
 - Agent Card at `/.well-known/agent-card.json`
 - `%%HANDOVER%%` protocol for recursive delegation
 - Tag-scored routing via `DynamicRegistry`
@@ -195,11 +208,11 @@ curl -X POST http://localhost:4000/ \
   "name": "oracle",
   "description": "Code review, simplification, architecture",
   "url": "http://localhost:4001",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "capabilities": {
-    "streaming": false,           // ❌ Not yet implemented
-    "pushNotifications": false,    // ❌ Not yet implemented
-    "stateTransitionHistory": false // ❌ Not yet implemented
+    "streaming": true,            // SendStreamingMessage (SSE) — advertised when onTaskStreaming set
+    "pushNotifications": false,   // optional per-deployment; config endpoints implemented
+    "stateTransitionHistory": true
   },
   "tags": ["review", "simplify", "architecture", "code-quality"],
   "inputModes": ["text"],
@@ -500,13 +513,15 @@ Together, these enable the "agentic economy" — agents that don't just think, b
 
 **Goal:** Pass A2A v1.0 conformance tests.
 
-- [ ] Add SSE streaming to `a2a-server.ts`
-- [ ] Add push notification endpoint (`tasks/sendSubscribe`)
-- [ ] Implement full 9-state task lifecycle
-- [ ] Add `INPUT_REQUIRED`, `REJECTED`, `AUTH_REQUIRED` states
-- [ ] Add Agent Card capabilities flags (`streaming`, `pushNotifications`, `stateTransitionHistory`)
+- [x] Add SSE streaming to `a2a-server.ts`
+- [x] Add SSE streaming + push-notification config endpoints (`SendStreamingMessage`, `Create/Get/List/DeleteTaskPushNotificationConfig`)
+- [x] Implement full 9-state task lifecycle
+- [x] Add `INPUT_REQUIRED`, `REJECTED`, `AUTH_REQUIRED` states
+- [x] Add Agent Card capabilities flags (`streaming`, `pushNotifications`, `stateTransitionHistory`)
 - [x] Add API key auth middleware
 - [ ] Add typed `Artifact` types (not just text)
+
+> **Status:** A2A v1.0 wire compliance complete (methods, SSE, lifecycle states, capabilities). Only typed `Artifact` types remain open.
 
 ### Phase 2 — Production Hardening (2-3 weeks)
 

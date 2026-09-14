@@ -1,6 +1,6 @@
 # Jabr — Agent Context Index
 
-Generated: 2026-09-09T23:01:19Z
+Generated: 2026-09-14T08:16:52Z
 
 This directory contains domain-split context packs for coding agents.
 Load only the slice relevant to your task — don't stuff everything into context.
@@ -9,12 +9,12 @@ Load only the slice relevant to your task — don't stuff everything into contex
 
 | Pack | Scope | Files | Size |
 |------|-------|-------|------|
-| `adapters.txt` | Infrastructure adapters + security | 46 | 56K |
-| `composition.txt` | Composition roots + MCP server | 17 | 16K |
-| `config.txt` | Config files + documentation | 18 | 172K |
-| `core.txt` | Domain logic + ports (hexagonal core) | 42 | 68K |
-| `scripts.txt` | CLI scripts + shared utils | 143 | 148K |
-| `tests.txt` | Unit + e2e tests | 56 | 40K |
+| `adapters.txt` | Infrastructure adapters + security | 48 | 72K |
+| `composition.txt` | Composition roots + MCP server | 18 | 16K |
+| `config.txt` | Config files + documentation | 19 | 196K |
+| `core.txt` | Domain logic + ports (hexagonal core) | 45 | 88K |
+| `scripts.txt` | CLI scripts + shared utils | 138 | 184K |
+| `tests.txt` | Unit + e2e tests | 64 | 48K |
 
 ## How to Use
 
@@ -69,6 +69,9 @@ Pre-fetched dependency sources (read-only, cached at `~/.opensrc/`):
   - lint-staged@17.5.0  →  repos/github.com/lint-staged/lint-staged/17.5.0
   - repomix@1.18.0  →  repos/github.com/yamadashy/repomix/1.18.0
   - typescript@7.0.2  →  repos/github.com/microsoft/TypeScript/7.0.2
+  - typescript-language-server@6.0.0  →  repos/github.com/typescript-language-server/typescript-language-server/6.0.0
+  - pino@10.3.1  →  repos/github.com/pinojs/pino/10.3.1
+  - @opentelemetry/api@1.9.1  →  repos/github.com/open-telemetry/opentelemetry-js/1.9.1
 ```
 
 ## Architecture Cheat Sheet

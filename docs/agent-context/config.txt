@@ -53,12 +53,14 @@ Notes:
 ================================================================
 User Provided Header
 ================================================================
-Jabr — regenerated 2026-09-09T23:01:01Z. Do NOT edit by hand.\nConfig + Docs — project manifest, architecture, changelog.
+Jabr — regenerated 2026-09-14T08:16:30Z. Do NOT edit by hand.\nConfig + Docs — project manifest, architecture, changelog.
 
 ================================================================
 Directory Structure
 ================================================================
 docs/
+  r-and-d/
+    004-tool-integrations.md
   CANONICAL.md
   CHANGELOG.md
   CLAUDE.md
@@ -67,8 +69,8 @@ docs/
   GEMINI.md
   hermes.config.md
   INDEX.md
+  JABR-FRONTEND-PLAN.md
   JABR-GROWTH.md
-  jabr-TODO.md
   REBRANDING.md
 AGENTS.md
 biome.json
@@ -81,6 +83,556 @@ tsconfig.json
 ================================================================
 Files
 ================================================================
+
+================
+File: docs/r-and-d/004-tool-integrations.md
+================
+# R&D-004: Tool Integrations — opensrc / Graft / Headroom / RTK
+
+> **Status:** APPROVED
+> **Review:** 2026-09-12 — architecture sound, four factual corrections applied (see [§10 Review](#10-review))
+> **Created:** 2026-09-12
+> **Author:** Jabr R&D
+> **Scope:** Integrate four external tools into the Jabr ecosystem so specialized agents can use them natively via MCP or CLI.
+
+---
+
+## 1. Executive Summary
+
+Jabr currently has one MCP-backed toolset (repomix: `pack_repository`, `grep_repomix_output`, `read_repomix_output`) consumed by Explorer and Jarvis agents. Four external tools are already installed on the host machine and proven in the wild:
+
+| Tool | Version | What it does | Current Jabr usage |
+|------|---------|-------------|-------------------|
+| **opensrc** | 0.7.3 | Fetch dependency source code for AI agents | ❌ None |
+| **Graft** | 0.16.0 | Codebase graph for coding agents (MCP + CLI) | ⚠️ Installed + graph live in repo; not yet exposed to Jabr agents |
+| **Headroom** | 0.37.0 | Context optimization proxy (60–95% token reduction on tool outputs) | ⚠️ `HeadroomAdapter` exists but is budget-tracking only, not the proxy |
+| **RTK** | 0.48.0 | CLI proxy that filters/summarizes system outputs before LLM context | ❌ None |
+
+This document researches each tool, brainstorms integration patterns, proposes a unified architecture, and writes an implementation plan.
+
+---
+
+## 2. Tool Deep-Dives
+
+### 2.1 opensrc
+
+**Source:** `opensrc` (npm/bun package, v0.7.3)
+**Binary:** `~/.cache/.bun/bin/opensrc`
+**Cache:** `~/.opensrc/` (36 packages pre-cached)
+
+**Core mechanic:** Resolves any npm/PyPI/crates.io/GitHub package to a shallow-cloned git repo at the correct version tag. Returns a local filesystem path. Agents `cat`/`rg`/`find` the source directly.
+
+**Key commands:**
+```
+opensrc path zod                          # → /home/m7r/.opensrc/repos/github.com/colinhacks/zod/4.6.0/
+opensrc path pypi:requests                # → .../pypi/requests/...
+opensrc path @modelcontextprotocol/sdk    # → .../npm/@modelcontextprotocol/sdk/1.30.0/
+opensrc fetch zod react next              # pre-warm cache
+opensrc list                              # show cached
+```
+
+**Version resolution:** Auto-detects from lockfiles (npm only). PyPI/crates use latest unless pinned.
+
+**Registries:** npm, PyPI (`pypi:`), crates.io (`crates:`), GitHub (`owner/repo`), GitLab, Bitbucket.
+
+**Strengths:**
+- Zero-config for public packages
+- Cache is just files — agents read with normal file tools
+- Works with any agent that can run shell commands
+- Already has 36 packages cached (Jabr-relevant: zod, hono, drizzle-orm, @a2a-js/sdk, @modelcontextprotocol/sdk, express, jose, bcryptjs, etc.)
+
+**Limitations:**
+- No MCP server (CLI only)
+- PyPI/crates don't auto-detect version from lockfiles
+- First fetch is slow (full clone)
+
+### 2.2 Graft
+
+**Source:** `github.com/trailhq/Graft` (MIT, 7.2k ★)
+**Package:** `@nanonets/graft` (npm)
+**Binary:** `~/.cache/.bun/bin/graft` (v0.16.0, installed)
+
+**Core mechanic:** Parses a repo with tree-sitter into a code graph (markdown nodes + `wiring.json`). Serves retrieval over MCP. The graph is a local cache (gitignored `graft/` folder).
+
+**Two-tier architecture:**
+- **Tier 1 (free, no key):** Pure tree-sitter — every function, class, call edge. Deterministic, ~3ms staleness check.
+- **Tier 2 (`--deep`, paid):** LLM summarizes each file, groups into concept nodes. Cached by content hash.
+
+**MCP tools (6):**
+| Tool | Purpose |
+|------|---------|
+| `graft_find_code` | Ranked nodes with file:line + source inlined |
+| `graft_file_api` | Every signature in a file, no bodies |
+| `graft_trace_calls` | Who depends on it / what it depends on (blast radius) |
+| `graft_find_all` | Regex hits grouped by enclosing symbol |
+| `graft_repo_map` | Directory clusters, hubs, hotspots |
+| `graft_check_freshness` | Drift detection |
+
+**Benchmark (162 runs, Claude Sonnet 5):**
+- 46% fewer tool calls
+- 42% fewer tokens
+- 60% less latency
+- Correctness equal or better (SWE-bench: 33/50 vs 27/50 cold)
+
+**Agent wiring:** `graft init` writes skill/rule files for Claude Code, Cursor, Codex, Gemini, Copilot, Kiro, Windsurf, Grok, AdaL. Also registers MCP server in `.mcp.json`.
+
+**Strengths:**
+- No daemon, no server — graph is just files
+- Auto-syncs on query (~3ms check)
+- Works with uncommitted edits
+- Receiver-type call resolution (not just name matching)
+- Monorepo-aware
+
+**Limitations:**
+- Tier 2 needs LLM API key (cost)
+- Primarily designed for single-repo (monorepo support exists but newer)
+
+**Jabr status:** Installed (v0.16.0) and this repo's graph is already built (`graft/` folder, 636 cards, `graft check: OK`). The remaining work is agent exposure — not installation.
+
+### 2.3 Headroom
+
+**Source:** `headroom` (v0.37.0, installed via mise/uv)
+**Binary:** `~/.local/share/mise/shims/headroom`
+
+**Core mechanic:** Two complementary subsystems:
+
+1. **Proxy** (`headroom proxy`): Local HTTP proxy on :8787 that intercepts agent→LLM traffic and compresses large tool outputs by 60–95%. Uses hash markers so LLM can call `headroom_retrieve` for full content on demand.
+
+2. **MCP Server** (`headroom mcp serve`): Exposes `headroom_retrieve`, `headroom_compress`, `headroom_stats` tools.
+
+**Current Jabr status:** `HeadroomAdapter` in `src/adapters/headroom/headroom.ts` implements `BudgetPort` — it only does token counting/caps. It does NOT integrate the proxy or MCP tools. The actual Headroom proxy has never been started for Jabr.
+
+**Strengths:**
+- 60–95% token reduction on tool outputs
+- Transparent to agents (proxy mode)
+- Budget-aware (built-in spending cap)
+- MCP tools for explicit retrieval
+
+**Limitations:**
+- Proxy mode requires routing LLM traffic through :8787 (changes `ANTHROPIC_BASE_URL` etc.)
+- Conflicts with prompt caching (compaction invalidates cached prefixes)
+- The `HeadroomAdapter` name is misleading — it's a budget counter, not the Headroom proxy
+
+### 2.4 RTK (Red Toolkit)
+
+**Source:** `rtk` (v0.48.0, Rust CLI, installed via cargo/mise)
+**Binary:** `~/.local/bin/rtk`
+
+**Core mechanic:** CLI proxy/wrapper that intercepts common commands and produces token-optimized output. NOT a proxy server — it's a command wrapper.
+
+**Key subcommands:**
+```
+rtk ls          # Compact directory listing
+rtk tree        # Token-optimized tree
+rtk read        # Read file with intelligent filtering
+rtk grep        # Compact grep (strip whitespace, truncate, group by file)
+rtk rg          # Compact ripgrep
+rtk git         # Compact git output
+rtk gh          # Compact GitHub CLI
+rtk test        # Show only failures
+rtk diff        # Ultra-condensed diff
+rtk find        # Find with compact tree
+rtk log         # Filter/deduplicate logs
+rtk deps        # Summarize dependencies
+rtk summary     # Heuristic 2-line summary of any command
+rtk err         # Show only errors/warnings
+```
+
+**Config:** `~/.config/rtk/config.toml` — tracking, filters, tee mode, limits.
+
+**Token savings:** Tracked via `rtk gain` — shows history of savings.
+
+**Strengths:**
+- Drop-in replacement for common CLI commands
+- No daemon, no server, no config needed
+- Works with any agent that can run shell commands
+- 30+ command wrappers
+- Token savings tracking built-in
+
+**Limitations:**
+- CLI-only (no MCP server)
+- Agent must choose to use `rtk <cmd>` instead of `<cmd>`
+- Heuristic-based (not LLM-powered)
+
+---
+
+## 3. Integration Architecture Brainstorm
+
+### 3.1 Pattern Analysis
+
+| Pattern | Tools | Pros | Cons |
+|---------|-------|------|------|
+| **A. MCP Server** | Graft, Headroom | Native tool discovery, schema-validated, works with `McpToolPort` | Only Graft and Headroom have MCP servers |
+| **B. CLI via shell** | opensrc, RTK, Graft CLI | Universal — any agent with terminal access can use | No schema validation, agent must know CLI flags |
+| **C. Hybrid** (MCP + CLI) | All four | Best of both — MCP for discovery, CLI for flexibility | More code to maintain |
+
+### 3.2 Proposed Architecture: Layered Tool Bus
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Jabr Agents                        │
+│  Explorer  Fixer  Oracle  Librarian  Jarvis  ...    │
+└──────────────┬──────────────────────┬────────────────┘
+               │                      │
+       ┌───────▼───────┐      ┌───────▼───────┐
+       │  McpToolPort  │      │  ShellPort    │
+       │  (existing)   │      │  (new)        │
+       └───────┬───────┘      └───────┬───────┘
+               │                      │
+    ┌──────────┼──────────┐           │
+    │          │          │     ┌─────▼──────────────┐
+    ▼          ▼          ▼     │  CLI Tool Adapters  │
+ Graft MCP  Headroom MCP  repomix  │  (opensrc, RTK,   │
+                                  │   graft CLI)       │
+                                  └────────────────────┘
+```
+
+**Key insight:** Jabr already has `McpToolPort` for MCP tools. We add a `ShellPort` for CLI-based tools. Both ports are injected into agents that need them.
+
+### 3.3 Agent-to-Tool Mapping
+
+| Agent | Role | Tools | Rationale |
+|-------|------|-------|-----------|
+| **BATTUTA** (Explorer) | Codebase reconnaissance | Graft MCP, RTK, opensrc | Needs code graph, compact output, and dependency source |
+| **TARIQ** (Fixer) | Implementation | Graft MCP, opensrc, RTK | Needs call-trace, dependency source, compact test/build output |
+| **RUSHD** (Oracle) | Architecture review | Graft MCP, opensrc | Needs blast-radius analysis, dependency internals |
+| **FIHRIYA** (Librarian) | Knowledge/research | opensrc, RTK | Needs dependency source, compact doc lookup |
+| **Wazir** (Jarvis) | Codebase steward | Graft MCP, RTK, opensrc | Needs repo map, compact scan output, dependency tracking |
+| **KHWARIZMI** (Scientist) | Data/scripting | RTK | Needs compact test/script output |
+| **FIRNAS** (Designer) | UI/UX | — | No direct need for these tools |
+| **JABIR** (Orchestrator) | Routing | Headroom MCP | Needs token savings stats for routing decisions |
+
+### 3.4 Integration Approaches per Tool
+
+#### opensrc → ShellPort (CLI-only)
+
+```
+opensrc path <pkg>  →  /home/m7r/.opensrc/repos/...
+```
+
+- New `opensrc.ts` adapter in `src/adapters/cli/`
+- Wraps `opensrc path` and `opensrc fetch`
+- Agents call: `shellExec("opensrc path zod")` → read files from returned path
+- Pre-warm cache for Jabr's own dependencies at init time
+
+#### Graft → McpToolPort (MCP) + ShellPort (CLI fallback)
+
+```
+graft_find_code, graft_trace_calls, ...  (via MCP)
+graft build, graft ask, graft map         (via CLI)
+```
+
+- Register Graft's MCP server in `src/protocols/mcp/server/tools.ts` config
+- OR spawn `graft mcp` as a subprocess (like repomix)
+- CLI fallback for `graft build` (graph construction)
+- Graph already exists in this repo — skip `graft init`; verify freshness with `graft check`
+
+#### Headroom → Proxy + McpToolPort
+
+```
+Proxy:         JABR_OPENAI_BASE_URL / NINEROUTER_URL → http://127.0.0.1:8787 (per provider)
+MCP tools:     headroom_retrieve, headroom_compress, headroom_stats
+Budget:        Existing HeadroomAdapter (keep for token counting)
+```
+
+- Start `headroom proxy` as background process at Jabr startup
+- Register Headroom MCP server
+- Rename `HeadroomAdapter` → `BudgetAdapter` (it's not the Headroom proxy)
+- Wire proxy URL into LLM provider config when `JABR_HEADROOM_PROXY=1`
+
+#### RTK → ShellPort (CLI wrapper)
+
+```
+rtk <cmd>  →  compact output
+```
+
+- New `rtk.ts` adapter in `src/adapters/cli/`
+- Wraps common commands: `rtk ls`, `rtk grep`, `rtk git`, `rtk test`, etc.
+- Agents prepend `rtk` to shell commands when output size matters
+- Config: respect `~/.config/rtk/config.toml` limits
+
+---
+
+## 4. Detailed Design
+
+### 4.1 New Port: ShellPort
+
+```typescript
+// src/ports/shell-port.ts
+export interface ShellResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+export interface ShellPort {
+  exec(command: string, args: string[], opts?: {
+    cwd?: string;
+    timeout?: number;
+    maxOutput?: number;  // truncate to N chars
+  }): Promise<ShellResult>;
+}
+```
+
+**Why a port?** Core agents shouldn't depend on child_process directly. The port enables:
+- Testing with mock shell
+- Sandboxing in production
+- Future: remote shell execution
+
+### 4.2 CLI Adapters
+
+```
+src/adapters/cli/
+├── opensrc.ts      // opensrc path, opensrc fetch, opensrc list
+├── rtk.ts          // rtk ls, rtk grep, rtk git, rtk test, ...
+└── index.ts        // re-exports
+```
+
+Each adapter wraps the CLI with typed methods:
+
+```typescript
+// src/adapters/cli/opensrc.ts
+export class OpensrcAdapter {
+  async path(pkg: string, version?: string): Promise<string> {
+    // returns local path to cached source
+  }
+  async fetch(pkgs: string[]): Promise<void> {
+    // pre-warm cache
+  }
+  async list(): Promise<Array<{name, version, path}>> {
+    // list cached packages
+  }
+}
+```
+
+### 4.3 Graft Integration via MCP
+
+Two options:
+
+**Option A: External MCP server (preferred)**
+- User runs `graft init --no-agents` in their repo
+- Graft spawns its own MCP server
+- Jabr connects as MCP client (like it does for repomix)
+
+**Option B: Embedded in Jabr's MCP server**
+- Add Graft tools directly to `src/protocols/mcp/server/tools.ts`
+- Call `graft` CLI under the hood
+- More control, but duplicates Graft's server logic
+
+**Recommendation:** Option A — let Graft own its server. Jabr connects as a client.
+
+### 4.4 Headroom Integration
+
+```
+src/adapters/headroom/
+├── headroom-proxy.ts    // manages `headroom proxy` lifecycle
+├── headroom-mcp.ts      // connects to Headroom's MCP server
+└── budget-adapter.ts    // renamed from HeadroomAdapter
+```
+
+**Startup flow:**
+1. Jabr checks `JABR_HEADROOM_PROXY` env
+2. If enabled: start `headroom proxy` as background process
+3. Set the active provider's base URL to the proxy (`JABR_OPENAI_BASE_URL` for OpenAI-compatible, `NINEROUTER_URL` for 9Router)
+4. Register Headroom MCP tools
+5. Budget tracking continues via `BudgetAdapter`
+
+### 4.5 Agent Card Updates
+
+Each agent's `AgentCard.skills` should advertise the new capabilities:
+
+```typescript
+// Explorer (BATTUTA) — add:
+{ name: "Dependency source lookup", tags: ["opensrc", "dependency", "source"] },
+{ name: "Code graph query", tags: ["graft", "code-graph", "call-graph"] },
+{ name: "Compact output", tags: ["rtk", "filter", "compact"] },
+
+// Fixer (TARIQ) — add:
+{ name: "Dependency source lookup", tags: ["opensrc", "dependency", "source"] },
+{ name: "Call trace", tags: ["graft", "trace", "blast-radius"] },
+
+// Oracle (RUSHD) — add:
+{ name: "Dependency deep-dive", tags: ["opensrc", "dependency", "internals"] },
+{ name: "Impact analysis", tags: ["graft", "impact", "callers"] },
+```
+
+### 4.6 SOUL.md Updates
+
+Each agent's SOUL.md should include tool usage guidelines. Note: SOUL.md files are
+**hand-authored** and don't exist yet — `scripts/generate-agent-souls.py` generates
+`souls/<slug>/IDENTITY.md` + `AGENTS.md` (SOUL.md is explicitly not generated).
+Phase 4 must create or update souls via that established system:
+
+```markdown
+## Tool Usage
+
+### opensrc
+Use `opensrc path <pkg>` when you need to read a dependency's implementation,
+not just its types. Always check if source is already cached before fetching.
+
+### Graft
+Use `graft_find_code` for "where is X implemented" questions.
+Use `graft_trace_calls` for blast-radius analysis before refactoring.
+Use `graft_repo_map` for first-look orientation in unfamiliar repos.
+
+### RTK
+Prepend `rtk` to commands where output size matters:
+- `rtk ls` instead of `ls` for large directories
+- `rtk grep` instead of `grep` for broad searches
+- `rtk test` to see only failures
+- `rtk diff` for compact change summaries
+```
+
+---
+
+## 5. Implementation Plan
+
+### Phase 1: ShellPort + CLI Adapters (low risk, high value)
+
+| Step | Task | Files | Effort |
+|------|------|-------|--------|
+| 1.1 | Create `ShellPort` interface | `src/ports/shell-port.ts` | 30 min |
+| 1.2 | Create `ShellPortAdapter` (child_process impl) | `src/adapters/cli/shell-adapter.ts` | 1 hr |
+| 1.3 | Create `OpensrcAdapter` | `src/adapters/cli/opensrc.ts` | 45 min |
+| 1.4 | Create `RtkAdapter` | `src/adapters/cli/rtk.ts` | 45 min |
+| 1.5 | Wire adapters into Explorer agent | `src/core/explorer.ts`, `src/runtime/agents/explorer.ts` | 1 hr |
+| 1.6 | Wire adapters into Fixer agent | `src/core/fixer.ts`, `src/runtime/agents/fixer.ts` | 1 hr |
+| 1.7 | Wire adapters into Oracle agent | `src/core/oracle.ts`, `src/runtime/agents/oracle.ts` | 45 min |
+| 1.8 | Wire adapters into Jarvis agent | `src/core/jarvis.ts`, `src/runtime/agents/jarvis.ts` | 45 min |
+| 1.9 | Update AgentCard skills | All `*_CARD` in `src/core/*.ts` | 30 min |
+| 1.10 | Tests | `tests/` | 2 hr |
+
+**Phase 1 total:** ~9 hours
+
+### Phase 2: Graft Integration (medium risk, high value)
+
+| Step | Task | Files | Effort |
+|------|------|-------|--------|
+| 2.1 | Verify Graft installed + graph current (`graft check`; `graft upgrade` if stale) | — | 5 min |
+| 2.2 | Skip `graft init` — graph already exists in this repo | — | 0 min |
+| 2.3 | Create `GraftMcpAdapter` (connect to Graft's MCP server) | `src/adapters/mcp/graft-client.ts` | 1 hr |
+| 2.4 | Wire into Explorer, Fixer, Oracle, Jarvis | Core files | 2 hr |
+| 2.5 | Update AgentCard skills | All `*_CARD` | 30 min |
+| 2.6 | Tests | `tests/` | 1 hr |
+
+**Phase 2 total:** ~5 hours
+
+### Phase 3: Headroom Proxy Integration (medium risk, medium value)
+
+| Step | Task | Files | Effort |
+|------|------|-------|--------|
+| 3.1 | Rename `HeadroomAdapter` → `BudgetAdapter` | `src/adapters/headroom/budget.ts` | 30 min |
+| 3.2 | Create `HeadroomProxyAdapter` (process lifecycle) | `src/adapters/headroom/proxy.ts` | 1 hr |
+| 3.3 | Create `HeadroomMcpAdapter` | `src/adapters/headroom/mcp.ts` | 1 hr |
+| 3.4 | Wire proxy startup into runtime composition | `src/runtime/*.ts` | 1 hr |
+| 3.5 | Add env config (`JABR_HEADROOM_PROXY`) | `src/config/env-manager.ts` | 30 min |
+| 3.6 | Tests | `tests/` | 1 hr |
+
+**Phase 3 total:** ~5 hours
+
+### Phase 4: SOUL.md Updates + Documentation
+
+| Step | Task | Files | Effort |
+|------|------|-------|--------|
+| 4.1 | Create/extend BATTUTA soul + tool guidance | `souls/battuta/` (generator, then hand-author SOUL.md) | 30 min |
+| 4.2 | Create/extend TARIQ soul + tool guidance | `souls/tariq/` (generator, then hand-author SOUL.md) | 30 min |
+| 4.3 | Create/extend RUSHD soul + tool guidance | `souls/rushd/` (generator, then hand-author SOUL.md) | 30 min |
+| 4.4 | Create/extend WAZIR soul + tool guidance | `souls/wazir/` (generator, then hand-author SOUL.md) | 30 min |
+| 4.5 | Create/extend FIHRIYA soul + tool guidance | `souls/fihriya/` (generator, then hand-author SOUL.md) | 30 min |
+| 4.6 | Create/extend KHWARIZMI soul + tool guidance | `souls/khwarizmi/` (generator, then hand-author SOUL.md) | 30 min |
+| 4.7 | Write integration guide | `docs/integrations.md` | 1 hr |
+
+**Phase 4 total:** ~4 hours
+
+### Total Estimated Effort: ~23 hours
+
+---
+
+## 6. Risks & Mitigations
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Headroom proxy conflicts with prompt caching | High | Disable proxy when `JABR_LLM_PROVIDER` uses caching; document the conflict |
+| Graft Tier 2 costs money | Medium | Default to Tier 1 only; make Tier 2 opt-in via `JABR_GRAFT_DEEP=1` |
+| RTK not available on agent's machine | Low | Graceful fallback to raw commands if `rtk` not found |
+| opensrc cache grows unbounded | Low | `opensrc clean --npm` weekly; cache is gitignored |
+| Too many tools per agent → decision paralysis | Medium | Each agent gets 2–3 tools max; tools match agent's core responsibility |
+| Shell injection via CLI tools | High | Sanitize all inputs; use `shell_quote`; never pass raw user text to shell |
+
+---
+
+## 7. Open Questions
+
+1. **Should Graft be embedded or external?** External MCP server is cleaner but requires the user to have Graft installed. Should Jabr auto-install it?
+
+2. **Headroom proxy vs Budget tracking:** Should the proxy be default-on or opt-in? The 60–95% token savings are significant, but the caching conflict is real.
+
+3. **RTK enforcement:** Should agents be forced to use `rtk` for certain commands, or is it a soft suggestion in SOUL.md? Forcing is more effective but less flexible.
+
+4. **opensrc pre-warming:** Should Jabr pre-fetch source for all dependencies in `package-lock.json` at startup? This would eliminate first-query latency but adds startup time.
+
+5. **Tool discovery:** Should Jabr auto-detect which tools are installed and only wire available ones? Or should it fail fast if a configured tool is missing?
+
+---
+
+## 8. Decision Log
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-09-12 | Use ShellPort pattern for CLI tools | Consistent with existing McpToolPort; testable; swappable |
+| 2026-09-12 | Graft via external MCP server (Option A) | Don't duplicate Graft's logic; let it own its server |
+| 2026-09-12 | Rename HeadroomAdapter → BudgetAdapter | Current name is misleading; it's not the Headroom proxy |
+| 2026-09-12 | Phase 1 first (lowest risk, highest immediate value) | ShellPort + opensrc + RTK are pure additions, no behavior change |
+
+---
+
+## 9. See Also
+
+- [R&D-001: Agent Architecture](../r-and-d/001-agent-architecture.md)
+- [R&D-002: MCP Protocol](../r-and-d/002-mcp-protocol.md)
+- [R&D-003: Memory & Knowledge](../r-and-d/003-memory-knowledge.md)
+- [Graft README](https://github.com/trailhq/Graft)
+- [opensrc skill](../../.hermes/skills/productivity/opensrc/SKILL.md)
+- [Headroom skill](../../.hermes/skills/productivity/headroom/SKILL.md)
+
+---
+
+## 10. Review
+
+> **Verdict:** APPROVED — 2026-09-12 R&D review. Architecture is sound; four
+> factual/stale claims corrected in this revision (below). Non-blocking
+> follow-ups recorded for implementation.
+
+### 10.1 Blocking corrections applied
+
+1. **Graft status** — §1/§2.2 claimed "not installed". Actual: `graft` v0.16.0
+   installed, and this repo's graph is already built (`graft/` folder, 636 cards,
+   `graft check: OK`). Phase 2 re-scoped from "install + init" to "verify + wire".
+2. **Wrong file path** — `mcp-servers/tools.ts` (×2) → `src/protocols/mcp/server/tools.ts`.
+3. **Phase 4 soul paths** — `souls/*/SOUL.md` don't exist. Repo generates
+   `souls/<slug>/IDENTITY.md` + `AGENTS.md` via `scripts/generate-agent-souls.py`;
+   SOUL.md is hand-authored only. Phase 4 rewritten around the generator.
+4. **Proxy env vars** — `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` → actual surface:
+   `JABR_OPENAI_BASE_URL` (OpenAI-compatible) / `NINEROUTER_URL` (9Router).
+
+### 10.2 Verified correct
+
+- §3.3/§4.5 agent names match source cards (BATTUTA, TARIQ, RUSHD, FIHRIYA/WAZIR,
+  KHWARIZMI, FIRNAS, JABIR).
+- "`HeadroomAdapter` is budget-tracking only" ✓ (implements `BudgetPort`, char/4 proxy).
+- `McpToolPort` exists; `ShellPort` + `src/adapters/cli/` are true gaps.
+- Tool versions (opensrc 0.7.3, headroom 0.37.0, rtk 0.48.0) and repomix tools.
+- Risk table incl. shell-injection high severity; phase ordering.
+
+### 10.3 Non-blocking follow-ups (from Divergent lens)
+
+- `tools.ts` already spawns `repomix` via `Bun.spawnSync` — ShellPort should absorb
+  that precedent (timeout, stderr parse).
+- Tier-2 graph never deep-built ("meaning tier 1% complete — 5289/5324 pending");
+  one `graft build --deep` improves agent-facing retrieval after Phase 2.
+- RTK is already the ecosystem default (CLAUDE.md golden rule) — §4.6 SOUL guidance
+  should align with `rtk`-prefix norm.
+- `verification.ts` agent missing from Phase 1 wiring table — add if it needs these tools.
 
 ================
 File: docs/CANONICAL.md
@@ -193,7 +745,7 @@ agents/
 **Transport:** HTTP JSON-RPC + SSE (streaming in v1.0)
 **Agent Cards:** `/.well-known/agent-card.json`
 
-**Current wire protocol (v0.3-compatible):**
+**Current wire protocol (A2A v1.0):**
 ```bash
 # POST to root path ONLY
 curl -X POST http://localhost:4000/ \
@@ -201,32 +753,45 @@ curl -X POST http://localhost:4000/ \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "tasks/send",
+    "method": "SendMessage",
     "params": {
       "message": {
+        "role": "user",
         "parts": [{"kind": "text", "text": "Review this code..."}]
       }
     }
   }'
 ```
 
-**Response:**
+**Response (synchronous `SendMessage`):**
 ```jsonc
 {
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
     "task": {
-      "id": "task_123",
-      "state": "working",
-      "artifacts": [...]
+      "taskId": "task_123",
+      "status": {
+        "state": "completed",
+        "message": {
+          "role": "agent",
+          "parts": [{"kind": "text", "text": "Review complete..."}]
+        },
+        "timestamp": "..."
+      }
+    },
+    "message": {
+      "role": "agent",
+      "parts": [{"kind": "text", "text": "Review complete..."}]
     }
   }
 }
 ```
 
 **Jabr's A2A implementation:**
-- Synchronous (no SSE streaming yet)
+- Synchronous `SendMessage` (awaits handler, returns inline) + SSE streaming via `SendStreamingMessage`
+- Additional v1.0 methods: `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, `GetExtendedAgentCard`, push-notification config (Create/Get/List/Delete `TaskPushNotificationConfig`)
+- Legacy `tasks/send`-family methods are **removed** — unknown methods return `-32601`
 - Agent Card at `/.well-known/agent-card.json`
 - `%%HANDOVER%%` protocol for recursive delegation
 - Tag-scored routing via `DynamicRegistry`
@@ -282,11 +847,11 @@ curl -X POST http://localhost:4000/ \
   "name": "oracle",
   "description": "Code review, simplification, architecture",
   "url": "http://localhost:4001",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "capabilities": {
-    "streaming": false,           // ❌ Not yet implemented
-    "pushNotifications": false,    // ❌ Not yet implemented
-    "stateTransitionHistory": false // ❌ Not yet implemented
+    "streaming": true,            // SendStreamingMessage (SSE) — advertised when onTaskStreaming set
+    "pushNotifications": false,   // optional per-deployment; config endpoints implemented
+    "stateTransitionHistory": true
   },
   "tags": ["review", "simplify", "architecture", "code-quality"],
   "inputModes": ["text"],
@@ -587,13 +1152,15 @@ Together, these enable the "agentic economy" — agents that don't just think, b
 
 **Goal:** Pass A2A v1.0 conformance tests.
 
-- [ ] Add SSE streaming to `a2a-server.ts`
-- [ ] Add push notification endpoint (`tasks/sendSubscribe`)
-- [ ] Implement full 9-state task lifecycle
-- [ ] Add `INPUT_REQUIRED`, `REJECTED`, `AUTH_REQUIRED` states
-- [ ] Add Agent Card capabilities flags (`streaming`, `pushNotifications`, `stateTransitionHistory`)
+- [x] Add SSE streaming to `a2a-server.ts`
+- [x] Add SSE streaming + push-notification config endpoints (`SendStreamingMessage`, `Create/Get/List/DeleteTaskPushNotificationConfig`)
+- [x] Implement full 9-state task lifecycle
+- [x] Add `INPUT_REQUIRED`, `REJECTED`, `AUTH_REQUIRED` states
+- [x] Add Agent Card capabilities flags (`streaming`, `pushNotifications`, `stateTransitionHistory`)
 - [x] Add API key auth middleware
 - [ ] Add typed `Artifact` types (not just text)
+
+> **Status:** A2A v1.0 wire compliance complete (methods, SSE, lifecycle states, capabilities). Only typed `Artifact` types remain open.
 
 ### Phase 2 — Production Hardening (2-3 weeks)
 
@@ -749,6 +1316,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **R&D roadmap** (`docs/rd-roadmap.md`) — research & development opportunities unlocked by the dependency stack and the opensrc source-exploration tool, with a prioritized TODO backlog (P0–P3).
 - **Cross-references** to the R&D roadmap from `README.md` (Documentation table) and `CANONICAL.md` (Roadmap + References).
+
+### Changed
+- **A2A wire protocol** — migrated from the legacy `tasks/send`-family methods to the A2A v1.0 method set (`SendMessage`, `SendStreamingMessage` via SSE, `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, `GetExtendedAgentCard`, push-notification config). Legacy method names now return `-32601`.
+- **Docs normalized** — `CANONICAL.md`, `.github/copilot-instructions.md`, and source doc-comments updated to the v1.0 wire contract; `docs/jabr-TODO.md` removed (fully superseded by `TODO.md`).
+- **Scripts migrated to `A2AClient`** — `scripts/demo.ts` and `scripts/jabr-cli.ts` now send tasks through the shared `A2AClient` adapter (`SendMessage`) instead of hand-rolled `tasks/send` fetches; `scripts/generate-agent-souls.py` protocol string and `scripts/route-test.ts` comment updated to the v1.0 contract.
 
 ### Removed
 - **`moment` dependency** — it was declared in `package.json` but never imported anywhere in the codebase (dead weight). Removed from `dependencies` and the lockfile. Native `Intl`/`Temporal` APIs are the documented replacement for any future date/time needs.
@@ -1561,13 +2133,20 @@ Every asset in the JABR universe shares one coherent visual language: **the anci
 ================
 File: docs/FIXME.md
 ================
-- [ ] cli is outdated:
-      - Unknown agent: all
-        Known agents: orchestrator, oracle, librarian, explorer, designer, fixer, scientist, jarvis, mcp, acp-bridge
-        error: script "cli" exited with code 1
-    main issue the cli still uses old names and no all arg
+- [x] cli `send` had no `all` guard — `send all` fell through to `Unknown agent: all`.
+    Fixed (scripts/jabr-cli.ts `cmdSend`): `send` targets one agent by name; `all` now
+    prints a clear error listing known agents and exit code 1. Verified live:
+    `bun scripts/jabr-cli.ts send all "hello"` → "Cannot send to 'all' — send targets one
+    agent by name." `status/start/stop/restart/logs all` already worked.
+    Note: FIXME's "cli still uses old names" was stale — agent list is current
+    (orchestrator, oracle, librarian, explorer, designer, fixer, scientist, verification,
+    jarvis, mcp, acp-bridge). `verification` was missing from this FIXME's list.
 
-- [ ] bun test is failing which means the demo could fail too or the whole system might break
+- [x] bun test failures are service-dependent, not code defects. Verified:
+    `bun test` unit suites (security/, config/, adapter units) → 178 pass, 0 fail.
+    Failing suites need live services: `fixer-login-llm` / `fixer-login-disabled-full`
+    require the 9Router LLM gateway (ConnectionRefused: localhost:20127), e2e suites need
+    running agents. Run `bun run dev` first, then `bun test` for full pass.
 
 ================
 File: docs/GEMINI.md
@@ -1730,12 +2309,314 @@ graph, not in these files: `graft callers <symbol>` is the only way to read them
 - [FIXME](FIXME.md) — FIXME
 - [GEMINI](GEMINI.md) — GEMINI
 - [hermes.config](hermes.config.md) — hermes.config
-- [jabr-TODO](jabr-TODO.md) — jabr-TODO
 - [README](README.md) — README
 - [REBRANDING](REBRANDING.md) — REBRANDING
 - [SESSION_TRANSCRIPT_2026-09-04](SESSION_TRANSCRIPT_2026-09-04.md) — SESSION_TRANSCRIPT_2026-09-04
 - [session-ses_f92e](session-ses_f92e.md) — session-ses_f92e
 - [TODO](TODO.md) — TODO
+
+================
+File: docs/JABR-FRONTEND-PLAN.md
+================
+# Jabr Frontend Plan
+
+**Status:** Planned  
+**Scope:** Operator console for the Jabr multi-agent system  
+**Last updated:** 2026-09-12
+
+## Product direction
+
+Build a **Jabr Control Plane**: a web interface for operating, observing, and
+debugging Jabr as a live multi-agent system. The frontend should make routing,
+delegation, task progress, agent health, memory, and protocol traffic
+understandable and controllable.
+
+This is an operator console, not a generic chat UI.
+
+## Primary capabilities
+
+- Submit tasks to the orchestrator.
+- Follow delegation and handover in real time.
+- Inspect agent health, capabilities, models, and current load.
+- Browse task history, artifacts, memory, and generated skills.
+- Inspect A2A, ACP, MCP, realtime, and LLM activity.
+- Intervene when a task needs input.
+- Retry or cancel tasks where the backend supports those actions.
+
+## Information architecture
+
+### Overview
+
+The default screen should answer: **Is Jabr healthy, and what is happening
+now?**
+
+- System health summary.
+- Online agents and current load.
+- Active tasks.
+- Recent failures and alerts.
+- Throughput and latency summaries.
+- Memory and skill counts.
+- Live event timeline.
+- Task submission command bar.
+
+### Task workspace
+
+The task view is the core operator workflow:
+
+- Task prompt, ID, timestamps, and lifecycle state.
+- Root task and parent/child relationships.
+- Assigned agent and per-agent progress.
+- Delegation graph and handover history.
+- Token and budget consumption.
+- Event and protocol logs.
+- Artifacts and final result.
+- Retry, cancel, or continue actions.
+
+The delegation graph should be a signature feature. For example,
+`Orchestrator -> Oracle -> Fixer` should be visible as a causal execution tree,
+not only as a flat activity list.
+
+### Agent catalog
+
+Each agent should expose:
+
+- Online, offline, degraded, or error state.
+- Endpoint and protocol.
+- Capabilities and tags.
+- Current tasks.
+- Recent success/failure rate and average latency.
+- Configured model/provider.
+- Token budget usage.
+- Agent card and supported operations.
+
+### Memory and knowledge
+
+Provide searchable views for:
+
+- Orchestrator memory.
+- MemPalace entries.
+- Generated skills.
+- Recent recalls.
+- Task-to-memory relationships.
+- Agent, tag, and time filters.
+- Inspect, expire, or invalidate actions where supported.
+
+### Protocol inspector
+
+Provide a developer-oriented inspector for:
+
+- A2A JSON-RPC requests and responses.
+- MCP tool calls.
+- ACP session events.
+- Realtime events.
+- Request duration, correlation IDs, errors, and retries.
+- Raw payload and structured representations.
+
+The inspector should support following a task across all protocol events.
+
+### Operations and settings
+
+- Connected services and ports.
+- LLM provider and model configuration.
+- Budget limits.
+- Realtime connection status.
+- Auth/session information.
+- Feature flags and environment diagnostics.
+
+Secrets must never be returned to or rendered by the browser.
+
+## Frontend architecture
+
+Use a separate `frontend/` application:
+
+```text
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── router.tsx
+│   │   ├── providers.tsx
+│   │   └── layout/
+│   ├── features/
+│   │   ├── overview/
+│   │   ├── tasks/
+│   │   ├── agents/
+│   │   ├── memory/
+│   │   ├── protocols/
+│   │   └── settings/
+│   ├── components/
+│   ├── lib/
+│   │   ├── api-client.ts
+│   │   ├── realtime-client.ts
+│   │   └── query-client.ts
+│   └── types/
+```
+
+Recommended technology:
+
+- React and TypeScript.
+- Vite.
+- TanStack Query for server state.
+- A small event store for realtime projections.
+- React Router.
+- CSS variables and design tokens.
+- A graph library only for task delegation visualization.
+
+Keep domain logic out of components. The frontend should consume typed API and
+event contracts and maintain a projection of backend state.
+
+## Backend contracts required
+
+The current realtime and world-state foundations are useful, but the frontend
+needs stable read models before most screens are built.
+
+### World state
+
+Expand `getWorldState()` to provide:
+
+```ts
+interface JabrWorldState {
+  timestamp: string;
+  agents: AgentSnapshot[];
+  tasks: TaskSummary[];
+  memory: MemorySummary;
+  skills: SkillSummary;
+  system: SystemHealth;
+}
+```
+
+The current `agents` and `tasks` fields are incomplete and should become
+actual operational snapshots.
+
+### Task detail
+
+Expose a task read model containing:
+
+- Task ID, root task ID, and parent task ID.
+- Prompt, state, assigned agent, and child tasks.
+- Timestamps and progress.
+- Events and protocol messages.
+- Artifacts and result.
+- Token usage and budget data.
+- Error and retry information.
+
+### Realtime semantics
+
+Extend the existing realtime event union with:
+
+- Monotonically increasing event sequence.
+- Event timestamp.
+- Correlation and root task IDs.
+- Schema version.
+- Replay or snapshot support after reconnect.
+
+The frontend should:
+
+1. Fetch an initial snapshot.
+2. Connect to realtime.
+3. Apply events in sequence.
+4. Refetch when a sequence gap is detected.
+5. Reconnect with backoff.
+6. Show stale/degraded state instead of silently freezing.
+
+## Visual and interaction direction
+
+Use a calm technical control-room aesthetic:
+
+- Dark-first, high-contrast interface.
+- Restrained accent colors per agent.
+- Explicit labels and icons for task states.
+- Dense but readable operational tables.
+- Detail panels for task inspection.
+- Timeline and graph views for causality.
+- Keyboard-first command interaction.
+- Desktop-first operator workflows with responsive behavior.
+
+Accessibility requirements:
+
+- Never rely on color alone for status.
+- Keyboard navigation for every action.
+- Reduced-motion mode.
+- Visible focus states.
+- Live-region announcements for critical task changes.
+- Sufficient contrast in dark mode.
+
+## Delivery phases
+
+### Phase 0: Contracts and UX foundation
+
+- Define frontend types and API contracts.
+- Define world-state and task-detail endpoints.
+- Specify realtime event ordering and recovery.
+- Wireframe Overview, Task Workspace, and Agent Catalog.
+- Decide the authentication boundary.
+
+**Exit condition:** frontend and backend agree on data models.
+
+### Phase 1: Functional control plane
+
+- Application shell and navigation.
+- Overview screen.
+- Task submission.
+- Active task list.
+- Realtime connection.
+- Task detail page.
+- Basic agent status cards.
+- Alerts and failure states.
+
+**Exit condition:** an operator can submit a task and follow it end to end.
+
+### Phase 2: Observability
+
+- Delegation graph.
+- Event timeline.
+- Protocol inspector.
+- Task reload and replay.
+- Retry and cancel controls.
+- Latency and token metrics.
+- Reconnect and stale-state UX.
+
+**Exit condition:** an operator can diagnose why a task behaved as it did.
+
+### Phase 3: Knowledge and agent operations
+
+- Agent catalog and capability inspection.
+- Memory browser and search.
+- Skills browser.
+- Task-to-memory links.
+- Model/provider and budget views.
+- Operational diagnostics.
+
+**Exit condition:** Jabr is inspectable as a platform, not only as a task
+runner.
+
+### Phase 4: Hardening
+
+- Authentication and authorization.
+- Audit trail for operator actions.
+- URL-deep-linkable task and event views.
+- Frontend error monitoring.
+- End-to-end tests for task submission and realtime recovery.
+- Performance testing with concurrent tasks and events.
+- Production deployment packaging.
+
+## First milestone acceptance criteria
+
+- A user can submit a task from the browser.
+- The task appears immediately in the active-task list.
+- The selected agent and lifecycle transitions are visible.
+- Delegated child tasks are visible.
+- Progress and completion update without refresh.
+- Realtime disconnection is clearly indicated.
+- Reconnection does not duplicate events or lose task state.
+- Failed tasks expose the error and recovery action.
+- Tasks can be reopened directly by URL.
+- The interface remains usable when no agents are online.
+
+## Architectural decision
+
+Build the frontend around **event-sourced operational views with snapshot
+recovery**, rather than polling isolated endpoints. This matches Jabr's
+realtime direction and keeps the UI coherent as the agent graph grows.
 
 ================
 File: docs/JABR-GROWTH.md
@@ -1783,11 +2664,11 @@ Jabr has evolved from a simple multi-agent experiment into a production-grade A2
 | **Production** | ✅ Complete | API key auth, circular handoff detection, dead letter queue, OpenTelemetry, rate limiting |
 | **Memory** | ✅ Complete | Hierarchical distillation, shared knowledge graph, TTL/decay, conflict resolution |
 | **x402** | ✅ Complete | Payment middleware, agent pricing, cross-agent settlement |
-| **Webhooks** | 🔄 In Progress | Generic server, GitHub bot, Telegram, WhatsApp |
-| **MCP** | 📋 Planned | Elicitation, sampling, structured output, prompts, roots |
-| **Real-time** | 📋 Planned | Bun WebSocket, live dashboards, event streaming |
-| **IPFS** | 📋 Planned | Artifact storage, immutable logs, content addressing |
-| **Plugin System** | 📋 Planned | PnP architecture, event-driven, Bun bundles |
+| **Webhooks** | ✅ Complete | Generic server + GitHub bot live-wired (port 4007); Telegram + WhatsApp adapters implemented with tests (not booted) |
+| **MCP** | 🔄 In Progress | Server + tools + resources live; elicitation landed with tests; sampling/prompts/roots pending |
+| **Real-time** | ✅ Complete | Bun WebSocket (4008), task-scoped rooms, e2e dashboard test, plugin-bus bridge |
+| **IPFS** | 🔄 In Progress | Artifact adapter + e2e test present; immutable-log pipeline pending |
+| **Plugin System** | 🔄 In Progress | PnP registry + loader landed with tests (34 pass); samples: analytics, notification |
 
 ### Agent Ecosystem
 
@@ -1836,9 +2717,9 @@ agents/
 
 | Integration | Status | Priority |
 |-------------|--------|----------|
-| **GitHub Bot** | 🔄 In Progress | High |
-| **Telegram Bot** | 🔄 In Progress | High |
-| **WhatsApp Bot** | 📋 Planned | Medium |
+| **GitHub Bot** | ✅ Complete | Live-wired on port 4007 with X-Hub-Signature-256 verification + e2e test |
+| **Telegram Bot** | 🔄 In Progress | Adapter built + tested; not booted in orchestrator |
+| **WhatsApp Bot** | 🔄 In Progress | Adapter built + tested; not booted in orchestrator |
 | **Discord Bot** | 📋 Planned | Low |
 | **Slack Bot** | 📋 Planned | Low |
 
@@ -1846,10 +2727,10 @@ agents/
 
 | Component | Status | Priority |
 |-----------|--------|----------|
-| **Webhook Server** | 🔄 In Progress | High |
-| **Real-time (WebSocket)** | 📋 Planned | High |
-| **IPFS Artifact Storage** | 📋 Planned | Medium |
-| **GunJS Graph Memory** | 📋 Planned | Experimental |
+| **Webhook Server** | ✅ Complete | Generic server + idempotency + A2A bridge + tests |
+| **Real-time (WebSocket)** | ✅ Complete | Bun WebSocket (4008), task-scoped rooms, e2e test |
+| **IPFS Artifact Storage** | 🔄 In Progress | Adapter + e2e test present; pipeline pending |
+| **GunJS Graph Memory** | 🔄 In Progress | Adapter + multi-node sync test present |
 | **Docker Containerization** | 📋 Planned | Medium |
 | **Monitoring Dashboard** | 📋 Planned | Medium |
 
@@ -1857,7 +2738,7 @@ agents/
 
 | Feature | Status | Priority |
 |---------|--------|----------|
-| **Plugin System (PnP)** | 📋 Planned | Medium |
+| **Plugin System (PnP)** | 🔄 In Progress | Registry + loader landed (34 tests pass); samples in plugins/ |
 | **Plugin Marketplace** | 📋 Planned | Future |
 | **Plugin SDK** | 📋 Planned | Future |
 | **Plugin Security Model** | 📋 Planned | Medium |
@@ -2117,209 +2998,6 @@ The plugin system is the key enabler for long-term growth — it allows Jabr to 
 ---
 
 **Next step:** Implement Phase 1 of the plugin system (core infrastructure).
-
-================
-File: docs/jabr-TODO.md
-================
-# Jabr — Gap Tasks (v0.3.0 → v0.4.0)
-
-## GAP-1 · Kill `ROUTING_TABLE` — pure tag routing
-**File**: `agents/core/orchestrator.ts`
-**Problem**: `routeTask()` checks `ROUTING_TABLE` first, only falls through to `DynamicRegistry.matchAgent()` on miss. Keyword table is dead weight — `DynamicRegistry` already has tag-matching.
-**Task**:
-- Delete `ROUTING_TABLE` export and the `for` loop in `routeTask()`
-- `routeTask()` becomes: `dynamicRegistry.matchAgent(text) ?? { agentName: "librarian", label: "Librarian Agent" }`
-- Add `tags` to every `AgentSkill` in each specialist `run/*.ts` entry point
-- Confirm `bun run typecheck` passes
-- Update `AGENTS.md` routing section
-
----
-
-## GAP-2 · Live-wire `jabr://world-state` — real agent health
-**File**: `mcp-servers/tools.ts`
-**Problem**: `getWorldState` callback returns `agents: []` — no live data. Tasks count from stale disk files, not in-memory `TaskStorePort`.
-**Task**:
-- Expose `GET /state` on Orchestrator returning `{ agents, tasks }` from live stores
-- `getWorldState` fetches `ORCHESTRATOR_URL/state` (with timeout + fallback)
-- `agents[]` shape: `{ name, port, status: "up"|"down", lastSeen: ISO }`
-- Wire health-check pings in `DynamicRegistry` → update `lastSeen`
-- `tasks` counts from live `TaskStorePort` snapshot
-
----
-
-## GAP-3 · Demo script — reflect 6-agent topology
-**File**: `scripts/demo.ts`
-**Problem**: Demo still tests 3-agent layout (Coder / Researcher / Orchestrator). Agents renamed and split into Oracle / Librarian / Explorer / Designer / Fixer.
-**Task**:
-- Replace all references: Coder→Fixer (4005), Researcher→Librarian (4002)
-- Add card-discovery checks for Explorer (4003), Oracle (4001), Designer (4004)
-- Add routing test: "find all TODO comments" → must route to Explorer
-- Add routing test: "review this function for edge cases" → must route to Oracle
-- Add consensus test: `discover` method → returns all 5 specialist cards
-- Add handover test: send task with `%%HANDOVER%%` in mock response, verify depth counter
-- Keep skill-persistence and memory checks
-
----
-
-## GAP-4 · `run_python` — persistent uv venv + dependency support
-**File**: `mcp-servers/tools.ts`
-**Problem**: Each `run_python` call writes a temp `.py` and runs `uv run --quiet`. No way to install packages — `import numpy` fails silently.
-**Task**:
-- Add `packages` param: `{ code: string, packages?: string[] }`
-- When `packages` present: `uv run --with numpy,pandas --quiet tmpPath`
-- Add `run_python_file` tool: `{ path: string, packages?: string[] }` — runs a workspace `.py` file directly
-- Add `python_repl` tool: persists a `uv` venv at `./tmp/jabr-venv/`, shares state across calls
-- 30s timeout for package installs, 10s for plain code
-- Sanitize `packages` list: alphanumeric + `-_.` only
-
----
-
-## GAP-5 · Python agent layer — `agents/run/scientist.ts`
-**File**: new `agents/run/scientist.ts` + `agents/core/scientist.ts`
-**Problem**: Python capability exists only as an MCP tool (`run_python`). No dedicated A2A agent for data science. Fixer handles Python requests via keyword match — wrong specialist.
-**Task**:
-- New Scientist Agent on port 4006
-- Skills: `data-analysis`, `script-generation`, `statistical-modeling`, `visualization`
-- Tags: `python`, `data`, `analysis`, `pandas`, `numpy`, `plot`, `csv`, `statistics`
-- `core/scientist.ts`: generates Python scripts, delegates to MCP `run_python`
-- Add port `McpToolPort` interface: `callTool(name, args): Promise<string>`
-- Adapter: `adapters/mcp-client.ts` — MCP client connecting to `jabr-tools` stdio server
-- Add `scientist` to `dev` script
-- Add Scientist routing keywords to `DynamicRegistry` seed
-
----
-
-## GAP-6 · Sampling → provider-agnostic LLM port (SEP-2577 migration)
-**Files**: `agents/core/cognitive-loop.ts`, `agents/core/orchestrator.ts`, new `agents/ports/llm-port.ts`, new `agents/adapters/llm/`
-**Problem**: ADR flags `sampling/createMessage` deprecated (SEP-2577, 12-month grace from 2026-07-28). Must be fully provider-agnostic — no vendor lock-in.
-
-**Design — `LlmPort` (Vercel AI SDK compatible)**:
-```ts
-export interface LlmMessage { role: "user" | "assistant"; content: string }
-export interface LlmUsage { inputTokens: number; outputTokens: number }
-export interface LlmResult { text: string; usage: LlmUsage }
-export interface LlmPort {
-  complete(messages: LlmMessage[], opts?: { maxTokens?: number; system?: string }): Promise<LlmResult>
-  readonly providerName: string
-}
-```
-
-**Adapters** — one file per provider, all implement `LlmPort`:
-- `agents/adapters/llm/openai.ts` — `JABR_OPENAI_BASE_URL` + `JABR_OPENAI_API_KEY` + `JABR_OPENAI_MODEL`
-- `agents/adapters/llm/google.ts` — `JABR_GOOGLE_API_KEY` + `JABR_GOOGLE_MODEL`
-- `agents/adapters/llm/ollama.ts` — `JABR_OLLAMA_URL` + `JABR_OLLAMA_MODEL` — fully local
-- `agents/adapters/llm/openrouter.ts` — thin wrapper over `openai.ts`
-
-**Factory** `agents/adapters/llm/factory.ts`:
-```ts
-// JABR_LLM_PROVIDER=ollama|openai|google|openrouter  (default: ollama)
-export function createLlmAdapter(): LlmPort { ... }
-```
-
-**Wire**:
-- `CognitiveLoop` constructor accepts `llm?: LlmPort` — when present, uses it for Judge synthesis
-- `executeConsensus()` passes `llm` from composition root
-- Gate behind `JABR_CONSENSUS_LLM=true` — default off (weighted scoring still works)
-- Remove all `sampling/createMessage` references
-
----
-
-## GAP-7 · Mem-Palace integration
-**Files**: new `agents/adapters/mem-palace.ts`, `agents/ports/knowledge-port.ts`
-**Task**:
-- `KnowledgePort` interface: `store(key, content, tags)`, `query(text, topK?)`, `relate(keyA, keyB, relation)`
-- `MemPalaceAdapter`: stores entries as `memory/palace/<slug>.json`
-- Embedding: call `run_python` MCP tool with `sentence-transformers` (uv inline) — or stub with BM25 tag overlap
-- Wire into `OrchestratorAgent`: before routing, `query(userText, 3)` → prepend top results as context
-- Wire into Librarian: after research task, `store(slug, summary, tags)`
-- Expose as MCP resource: `jabr://palace/{slug}` and `jabr://palace/query?q={text}`
-- CLI tool `scripts/palace.ts`: `bun scripts/palace.ts query "A2A handover"`
-
----
-
-## GAP-8 · Headroom integration
-**Files**: new `agents/adapters/headroom.ts`, `agents/ports/budget-port.ts`
-**Task**:
-- `BudgetPort` interface: `consume(agentName, tokens)`, `remaining(agentName)`, `isExhausted(agentName)`, `reset()`
-- `HeadroomAdapter`: in-memory per-agent token counters, caps via `JABR_TOKEN_CAP_<AGENT>` env vars (default 100k/session)
-- Integrate into `LlmPort` adapters: each call returns `LlmUsage` → call `budget.consume()` after every `complete()`
-- Integrate into `AgentRegistryPort.delegateTask()`: check `budget.isExhausted()` → throw `BudgetExhaustedError`
-- Orchestrator catches `BudgetExhaustedError`: reroutes to next best agent
-- Expose budget state in `jabr://world-state`: add `budget: { [agentName]: { used, cap, pct } }`
-- Add `GET /budget` endpoint on Orchestrator
-
----
-
-## GAP-9 · `ROUTING_TABLE` removal cleanup sweep
-**Depends on**: GAP-1
-**Files**: `AGENTS.md`, `README.md`, `opencode.json`, `agents/run/orchestrator.ts`
-**Task**:
-- After GAP-1 lands, grep for any remaining `ROUTING_TABLE` references
-- Update `AGENTS.md` notes section
-- Update `README.md` routing description
-- Ensure `run/orchestrator.ts` seeds `DynamicRegistry` with all 6 specialist ports on startup
-
----
-
-## Priority order
-
-| # | Task | Effort | Blocks |
-|---|------|--------|--------|
-| GAP-1 | Kill ROUTING_TABLE | S | GAP-9 |
-| GAP-3 | Fix demo script | S | — |
-| GAP-2 | Live world-state | M | — |
-| GAP-4 | uv packages support | M | GAP-5 |
-| GAP-5 | Scientist agent | M | GAP-4 |
-| GAP-6 | Provider-agnostic LlmPort + consensus | M | GAP-8 |
-| GAP-7 | Mem-Palace | L | — |
-| GAP-8 | Headroom | M | GAP-6 |
-| GAP-9 | Cleanup sweep | S | GAP-1 |
-
----
-
-## DONE · v0.4.x
-
-### [x] GAP-4 · `run_python` — persistent uv venv + dependency support (2026-08-27)
-- Added `packages` param to `run_python`, `run_python_file` tool, and `python_repl` with persistent `./.python_env/` venv. 30s/10s timeouts.
-
-### [x] GAP-5 · Scientist agent (2026-08-27)
-- New Scientist Agent on port 4006. Skills: `data-analysis`, `script-generation`, `statistical-modeling`, `visualization`.
-
-### [x] GAP-1 · Kill `ROUTING_TABLE` — pure tag routing (2026-08-28)
-- Removed `ROUTING_TABLE` from `agents/core/orchestrator.ts`. `routeTask()` now delegates entirely to `DynamicRegistry.matchAgent()`.
-
-### [x] GAP-2 · Live-wire `jabr://world-state` (2026-08-28)
-- `getWorldState` fetches live data from `DynamicRegistry`. Agents have `status: "up"|"down"` and `lastSeen`.
-
-### [x] GAP-8 · Headroom integration (2026-08-28)
-- `HeadroomAdapter` in `agents/adapters/headroom.ts`. `BudgetPort` interface. Budget state in `jabr://world-state`.
-
-### [x] GAP-3 · Demo script — 6-agent topology (2026-08-29)
-- `scripts/demo.ts` rewritten with all 6 agents, consensus, handover, discovery tests.
-
-### [x] GAP-6 · Sampling → provider-agnostic LlmPort (2026-08-29)
-- `LlmPort` interface + `NineRouterLlmAdapter`. `CognitiveLoop` accepts optional `LlmPort`.
-
-### [x] GAP-9 · `ROUTING_TABLE` cleanup sweep (2026-08-29)
-- Removed remaining `ROUTING_TABLE` references from docs.
-
-### [x] CLI · Agent management CLI (scripts/jabr-cli.ts)
-- `bun scripts/jabr-cli.ts` / `bun run cli`: start, stop, restart, status, logs, send, config.
-
----
-
-## Known Issues (updated 2026-09-09)
-
-- [ ] Routing tie-break: tag tie → first in iteration order wins (design decision needed) — **JABR board `t_0c4e01c7` (blocked)**
-- [ ] Handover path not exercised: oracle `%%HANDOVER%%` chain never triggers through current routing — needs design review
-- [ ] Specialists are deterministic keyword matchers — cannot implement new MCP tools end-to-end — decide which specialists need LLM
-- [x] ~~NINEROUTER env vars~~ — FIXED 2026-08-29, `d5f4a0c`
-- [x] ~~scientist crashes~~ — fixed `mcp-client.ts` syntax error
-- [x] ~~jarvis crashes~~ — fixed startup issues
-- [x] ~~mcp/acp-bridge stdio~~ — now integrated with HTTP health checks
-- [ ] Test-file typecheck debt (149 errors in `tests/*`) — pre-existing, not blocking
-- [ ] JABR security chain (8 tasks) — archived, superseded by new sequential chain
-- [ ] Leaked API key in `~/.config/opencode/opencode.json` — needs rotation (blocked on user)
 
 ================
 File: docs/REBRANDING.md
@@ -2656,7 +3334,7 @@ Jabr uses a strict **Hexagonal Architecture (Ports & Adapters)**:
 ## Protocol Quick Reference
 
 ### A2A Server (`src/adapters/http/a2a-server.ts`)
-- POST to `/` (root path ONLY) with JSON-RPC method `tasks/send`.
+- POST to `/` (root path ONLY) with JSON-RPC method `SendMessage`.
 - Synchronous design: server awaits handlers and returns results inline.
 - Authentication supported via `X-API-Key` headers (via `ApiKeyRegistry`) and OAuth 2.1 JWT Bearer tokens.
 
@@ -2752,12 +3430,13 @@ File: bunfig.toml
 ================
 # bunfig.toml — bun configuration for Jabr.
 #
-# `tests/e2e-live.test.ts` is a LIVE diagnostic suite that requires the full
-# agent stack (ports 4000-4006 + jarvis 1337) to be running. It is excluded
-# from the default `bun test` run; run it explicitly with `bun run test:e2e`.
+# `tests/e2e-live.test.ts` requires the live agent stack (ports 4000-4006 +
+# jarvis 1337). It participates in the default `bun test` run but every suite
+# is gated with `describe.skipIf(!orchestratorUp)`, so it skips cleanly (exit
+# 0) when the stack is down and runs for real when it is up. Run it in
+# isolation with `bun run test:e2e`.
 
 [test]
-exclude = ["tests/e2e-live.test.ts"]
 
 ================
 File: package.json
@@ -2765,7 +3444,7 @@ File: package.json
 {
 	"name": "@omnizya/jabr",
 	"description": "ACP + A2A + MCP multi-agent experiment — Hermes + OpenCode stack",
-	"version": "0.4.0-pre-alpha",
+	"version": "0.4.1",
 	"module": "index.ts",
 	"type": "module",
 	"private": true,
@@ -2791,6 +3470,7 @@ File: package.json
 		"demo": "bun run --parallel scripts/demo.ts",
 		"scientist": "bun src/runtime/agents/scientist.ts",
 		"verification": "bun src/runtime/agents/verification.ts",
+		"llm": "bun src/runtime/agents/llm.ts",
 		"dev": "bash scripts/dev.sh",
 		"cli": "bun scripts/jabr-cli.ts",
 		"build": "bun scripts/build.ts",
@@ -2807,6 +3487,7 @@ File: package.json
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.12",
+		"@changesets/cli": "^3.0.2",
 		"@types/bun": "^1.4.2",
 		"husky": "^9.1.7",
 		"lint-staged": "^17.5.0",
@@ -2860,6 +3541,7 @@ Runtime: **Bun 1.4** (TypeScript) + **uv** (Python). No build step — run `.ts`
 | Document | Purpose |
 |----------|---------|
 | **[CANONICAL.md](./docs/CANONICAL.md)** | Full architecture, gap analysis, production readiness, roadmap |
+| **[JABR-FRONTEND-PLAN.md](./docs/JABR-FRONTEND-PLAN.md)** | Frontend control-plane architecture, UX, contracts, and delivery phases |
 | **[TODO.md](./TODO.md)** | Task tracker — completed work + future phases |
 | **[R&D Roadmap](./docs/rd-roadmap.md)** | R&D opportunities from the dependency stack + opensrc source exploration |
 | **[AGENTS.md](./AGENTS.md)** | Agent-specific notes (internal) |
@@ -3300,6 +3982,11 @@ t_c134b0b9  Push notifications: retry + error handling               ← blocked
 ### Capability Gap
 - [ ] **Specialists are deterministic keyword matchers** — cannot actually implement a new MCP tool end-to-end. Only jarvis (LLM) and oracle (LLM routing) are genuinely LLM-driven. Decide: which specialists need LLM?
 
+### Migrated from `docs/jabr-TODO.md` (deduped 2026-09-14)
+- [ ] **Test-file typecheck debt** — 149 errors in `tests/*`, pre-existing, not blocking.
+- [ ] **Leaked API key** — `~/.config/opencode/opencode.json` needs rotation (blocked on user).
+- [ ] **JABR security chain (8 tasks)** — archived, superseded by new sequential chain.
+
 ---
 
 ## What Genuinely Needs LLM
@@ -3318,40 +4005,41 @@ t_c134b0b9  Push notifications: retry + error handling               ← blocked
 File: tsconfig.json
 ================
 {
-  "compilerOptions": {
-    "lib": ["ESNext"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
-    "types": ["bun"],
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "paths": {
-      "@/*": ["./src/*"],
-      "@core/*": ["./src/core/*"],
-      "@ports/*": ["./src/ports/*"],
-      "@adapters/*": ["./src/adapters/*"],
-      "@runtime/*": ["./src/runtime/*"],
-      "@security/*": ["./src/security/*"],
-      "@config/*": ["./src/config/*"],
-      "@constants/*": ["./src/constants/*"],
-      "@utils/*": ["./src/utils/*"],
-      "@types/*": ["./src/types/*"],
-      "@agents/*": ["./src/types/*"],
-    },
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false,
-  },
+	"compilerOptions": {
+		"lib": ["ESNext"],
+		"target": "ESNext",
+		"module": "Preserve",
+		"moduleDetection": "force",
+		"jsx": "react-jsx",
+		"allowJs": true,
+		"types": ["bun"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"paths": {
+			"@/*": ["./src/*"],
+			"@core/*": ["./src/core/*"],
+			"@ports/*": ["./src/ports/*"],
+			"@adapters/*": ["./src/adapters/*"],
+			"@runtime/*": ["./src/runtime/*"],
+			"@security/*": ["./src/security/*"],
+			"@config/*": ["./src/config/*"],
+			"@constants/*": ["./src/constants/*"],
+			"@utils/*": ["./src/utils/*"],
+			"@types/*": ["./src/types/*"],
+			"@agents/*": ["./src/types/*"]
+		},
+		"strict": true,
+		"skipLibCheck": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
+		"noPropertyAccessFromIndexSignature": false
+	},
+	"exclude": ["labs"]
 }
 
 

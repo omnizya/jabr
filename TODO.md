@@ -257,6 +257,11 @@ t_c134b0b9  Push notifications: retry + error handling               ← blocked
 ### Capability Gap
 - [ ] **Specialists are deterministic keyword matchers** — cannot actually implement a new MCP tool end-to-end. Only jarvis (LLM) and oracle (LLM routing) are genuinely LLM-driven. Decide: which specialists need LLM?
 
+### Migrated from `docs/jabr-TODO.md` (deduped 2026-09-14)
+- [ ] **Test-file typecheck debt** — 149 errors in `tests/*`, pre-existing, not blocking.
+- [ ] **Leaked API key** — `~/.config/opencode/opencode.json` needs rotation (blocked on user).
+- [ ] **JABR security chain (8 tasks)** — archived, superseded by new sequential chain.
+
 ---
 
 ## What Genuinely Needs LLM

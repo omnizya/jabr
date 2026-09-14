@@ -53,7 +53,7 @@ Notes:
 ================================================================
 User Provided Header
 ================================================================
-Jabr — regenerated 2026-09-09T23:01:01Z. Do NOT edit by hand.\nTests — unit + e2e. Run with: bun test
+Jabr — regenerated 2026-09-14T08:16:30Z. Do NOT edit by hand.\nTests — unit + e2e. Run with: bun test
 
 ================================================================
 Directory Structure
@@ -62,6 +62,7 @@ tests/
   adapters/
     a2a-client-adapter.test.ts
     a2a-client-sse.test.ts
+    a2a-serialize.test.ts
     bun-websocket-adapter.test.ts
     elicitation-e2e.test.ts
     elicitation-port.test.ts
@@ -70,6 +71,7 @@ tests/
     lifecycle-plugin.test.ts
     lifecycle.test.ts
     mem-palace.test.ts
+    plugin-loader.test.ts
     skill-fs.test.ts
     telegram-webhook.test.ts
     webhook-server-idempotency.test.ts
@@ -91,10 +93,12 @@ tests/
   a2a-server-get.test.ts
   a2a-server-health.test.ts
   a2a-server-push.test.ts
+  a2a-server-rest.test.ts
   a2a-server-sse.test.ts
   api-key-registry.test.ts
   budget-token-approximation.test.ts
   cognitive-loop.test.ts
+  dlq.test.ts
   dynamic-registry-no-retry.test.ts
   dynamic-registry.test.ts
   e2e-ipfs.test.ts
@@ -107,12 +111,16 @@ tests/
   github-webhook-e2e.test.ts
   gunjs-multi-node-sync.test.ts
   mcp-resource-subscriptions.test.ts
+  mcp-run-python.test.ts
   mcp-tool-validation.test.ts
   oracle-handover.test.ts
   orchestrator-hmac-secret.test.ts
   orchestrator-route.test.ts
   orchestrator.test.ts
+  plugin-registry.test.ts
+  plugin-runtime-proof.test.ts
   rate-limit.test.ts
+  shura-routing.test.ts
   sqlite-stores.test.ts
   sqlite-task-enhanced.test.ts
   tool-router.test.ts
@@ -127,14 +135,20 @@ Files
 File: tests/adapters/a2a-client-adapter.test.ts
 ================
 import { describe, expect, test } from "bun:test";
-import { createTestEnv, overrideFetch } from "../../src/utils/test-helpers.ts";
+import {
+	V1_METHOD_SEND_MESSAGE,
+	WELL_KNOWN_AGENT_CARD_JSON,
+	WELL_KNOWN_AGENT_JSON,
+} from "../../src/constants/a2a-v1.ts";
 import { JABR_PORTS } from "../../src/constants/ecosystem.ts";
+import { createTestEnv, overrideFetch } from "../../src/utils/test-helpers.ts";
 
 ================
 File: tests/adapters/a2a-client-sse.test.ts
 ================
 import { describe, expect, test } from "bun:test";
 import { A2AClient } from "@adapters/http/a2a-client-adapter";
+import { V1_METHOD_SEND_STREAMING_MESSAGE } from "@constants/a2a-v1";
 import type { A2ASseEvent } from "@ports/a2a-client-port";
 ⋮----
 function sseFrame(event: string, data: unknown): Uint8Array
@@ -142,6 +156,50 @@ function sseFrame(event: string, data: unknown): Uint8Array
 function sseStream(frames: Uint8Array[]): ReadableStream<Uint8Array>
 ⋮----
 pull(controller)
+
+================
+File: tests/adapters/a2a-serialize.test.ts
+================
+import { describe, expect, test } from "bun:test";
+import {
+	fromWireAgentCard,
+	fromWireCancelTaskRequest,
+	fromWireExtendedAgentCard,
+	fromWireGetTaskRequest,
+	fromWireListTasksRequest,
+	fromWireListTasksResponse,
+	fromWireMessage,
+	fromWirePart,
+	fromWireSendMessageRequest,
+	fromWireSendMessageResponse,
+	fromWireStreamResponse,
+	fromWireTask,
+	fromWireTaskArtifactUpdateEvent,
+	fromWireTaskStatusUpdateEvent,
+	parsePart,
+	serializePart,
+	toWireAgentCard,
+	toWireCancelTaskRequest,
+	toWireExtendedAgentCard,
+	toWireGetTaskRequest,
+	toWireListTasksRequest,
+	toWireListTasksResponse,
+	toWireMessage,
+	toWirePart,
+	toWireSendMessageRequest,
+	toWireSendMessageResponse,
+	toWireStreamResponse,
+	toWireTask,
+	toWireTaskArtifactUpdateEvent,
+	toWireTaskStatusUpdateEvent,
+} from "../../src/adapters/a2a/serialize.ts";
+import type {
+	AgentCard,
+	Message,
+	Part,
+	Task,
+	TaskState,
+} from "../../src/types/a2a-v1.ts";
 
 ================
 File: tests/adapters/bun-websocket-adapter.test.ts
@@ -227,16 +285,63 @@ import { describe, expect, test } from "bun:test";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
-import { bridgeRealtimeToPlugin, initLifecycle } from "../../src/runtime/lifecycle";
+import {
+	bridgeRealtimeToPlugin,
+	initLifecycle,
+} from "../../src/runtime/lifecycle";
 
 ================
 File: tests/adapters/mem-palace.test.ts
 ================
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemPalaceAdapter } from "@adapters/mem-palace";
+
+================
+File: tests/adapters/plugin-loader.test.ts
+================
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { BunDynamicPluginLoaderAdapter } from "@adapters/plugin-loader";
+import type { A2AMessage, A2APart } from "@agents/types";
+import {
+	createPluginRegistryUseCase,
+	type PluginContextDeps,
+} from "@core/plugin-registry";
+import type {
+	CreateTaskOpts,
+	KanbanTask,
+	KanbanTaskStatus,
+} from "@ports/kanban-port";
+import type { KnowledgeEntry } from "@ports/knowledge-port";
+import type { SessionData } from "@ports/memory-store";
+import type { IPlugin, PluginMetadata } from "@ports/plugin";
+import { PluginEventBusImpl } from "@ports/plugin-event-bus";
+import type { DomainEventMap } from "@ports/plugin-event-bus.types";
+import type { RealtimeEvent } from "@ports/realtime-port";
+import type { Task } from "@ports/task-store";
+import { mkdir, rm, writeFile } from "fs/promises";
+import { join } from "path";
+import { fileURLToPath } from "url";
+⋮----
+function makeDeps(
+	overrides: Partial<PluginContextDeps> = {},
+): PluginContextDeps
+⋮----
+function createValidPluginCode(
+	name: string,
+	version: string,
+	events: string[] = [],
+): string
+⋮----
+function createInvalidPluginCode(): string
+⋮----
+function createFactoryOnlyPluginCode(name: string, version: string): string
+⋮----
+async function setupTestPlugins()
+⋮----
+async function cleanupTestPlugins()
 
 ================
 File: tests/adapters/skill-fs.test.ts
@@ -300,37 +405,37 @@ const resetLock = ()
 ================
 File: tests/adapters/webhook-to-a2a-bridge.test.ts
 ================
-import { describe, expect, test, mock, beforeEach } from "bun:test";
-import {
-  WebhookToA2ABridge,
-  type WebhookEvent,
-  type WebhookToA2ABridgeConfig,
-} from "../../src/core/webhook-to-a2a-bridge";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { A2AClientPort } from "@ports/a2a-client-port";
+import {
+	type WebhookEvent,
+	WebhookToA2ABridge,
+	type WebhookToA2ABridgeConfig,
+} from "../../src/core/webhook-to-a2a-bridge";
 ⋮----
 function makeEvent(overrides: Partial<WebhookEvent> =
 ⋮----
 interface MockA2AClient extends A2AClientPort {
-  sendTaskAsync: mock.Mock<
-    (agentUrl: string, message: string, contextId?: string) => Promise<string>
-  >;
-  sendTask: mock.Mock<
-    (
-      agentUrl: string,
-      message: string,
-      contextId?: string,
-    ) => Promise<{ text?: string }>
-  >;
-  discover: mock.Mock<(agentUrl: string) => Promise<Record<string, unknown>>>;
-  healthCheck: mock.Mock<(agentUrl: string) => Promise<boolean>>;
+	sendTaskAsync: mock.Mock<
+		(agentUrl: string, message: string, contextId?: string) => Promise<string>
+	>;
+	sendTask: mock.Mock<
+		(
+			agentUrl: string,
+			message: string,
+			contextId?: string,
+		) => Promise<{ text?: string }>
+	>;
+	discover: mock.Mock<(agentUrl: string) => Promise<Record<string, unknown>>>;
+	healthCheck: mock.Mock<(agentUrl: string) => Promise<boolean>>;
 }
 ⋮----
 function makeMockClient(): MockA2AClient
 ⋮----
 function makeBridge(
-  client: MockA2AClient,
-  hermesUrl = "http://localhost:4000",
-  innerEvent?: (payload: WebhookEvent) => Promise<unknown>,
+	client: MockA2AClient,
+	hermesUrl = "http://localhost:4000",
+	innerEvent?: (payload: WebhookEvent) => Promise<unknown>,
 ): WebhookToA2ABridge
 
 ================
@@ -394,7 +499,7 @@ function computeSignature(rawBody: string, secret: string): string
 ================
 File: tests/adapters/x402.test.ts
 ================
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { SettlementLedger } from "@adapters/x402/settlement-ledger";
 import type { PaymentToken } from "@adapters/x402/types";
 import { X402Client } from "@adapters/x402/x402-client";
@@ -422,21 +527,21 @@ function makeReq(paymentHeader: string | null): Request
 ================
 File: tests/config/env-manager.test.ts
 ================
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  optionalEnv,
-  requireEnv,
-  optionalIntEnv,
-  requireIntEnv,
-  optionalBoolEnv,
-  requireUrlEnv,
-  optionalUrlEnv,
-  optionalJsonEnv,
-  requireJsonEnv,
-  EnvManager,
-  EnvVarError,
-  setEnvManagerLogger,
-  resetEnvManagerLogger,
+	EnvManager,
+	EnvVarError,
+	optionalBoolEnv,
+	optionalEnv,
+	optionalIntEnv,
+	optionalJsonEnv,
+	optionalUrlEnv,
+	requireEnv,
+	requireIntEnv,
+	requireJsonEnv,
+	requireUrlEnv,
+	resetEnvManagerLogger,
+	setEnvManagerLogger,
 } from "../../src/config/env-manager.ts";
 ⋮----
 function useCaptureLogger()
@@ -457,10 +562,11 @@ function freshConfig(): Promise<typeof import("../../src/config/jabr-config")>
 ================
 File: tests/security/a2a-client-tls.test.ts
 ================
-import { afterEach, describe, expect, test, beforeEach } from "bun:test";
-import { A2AClient } from "@adapters/a2a/client";
-import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { execSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { A2AClient } from "@adapters/a2a/client";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
 ⋮----
 function generateTestCerts()
 ⋮----
@@ -474,20 +580,25 @@ fetch(req)
 File: tests/security/handover-chain.test.ts
 ================
 import { describe, expect, test } from "bun:test";
-import { wouldCreateCycle, extendChain, formatChain, createCircularHandoffError } from "../../src/security/handover-chain";
+import {
+	createCircularHandoffError,
+	extendChain,
+	formatChain,
+	wouldCreateCycle,
+} from "../../src/security/handover-chain";
 
 ================
 File: tests/security/oauth-jwt.test.ts
 ================
-import { describe, expect, test, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
-	mintAccessToken,
-	mintRefreshToken,
-	verifyToken,
-	verifyWithScopes,
-	parseScopes,
 	ADMIN_SCOPES,
 	DEFAULT_SCOPES,
+	mintAccessToken,
+	mintRefreshToken,
+	parseScopes,
+	verifyToken,
+	verifyWithScopes,
 } from "@security/jwt";
 import { TokenStore } from "@security/token-store";
 import { ApiKeyRegistry } from "../../src/security/api-key-registry";
@@ -503,11 +614,11 @@ async function tokenThumbprint(raw: string): Promise<string>
 ================
 File: tests/security/oauth-scope-enforcement.test.ts
 ================
-import { afterEach, describe, expect, test, beforeEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { A2AServer } from "@adapters/http/a2a-server";
 import type { A2AServerConfig } from "@agents/types";
-import { ApiKeyRegistry } from "../../src/security/api-key-registry";
 import { mintAccessToken } from "@security/jwt";
+import { ApiKeyRegistry } from "../../src/security/api-key-registry";
 ⋮----
 function makeConfig(overrides: Partial<A2AServerConfig> =
 ⋮----
@@ -516,7 +627,7 @@ const VALID_BODY = (method: string)
 ================
 File: tests/security/oauth-server.test.ts
 ================
-import { afterEach, describe, expect, test, beforeEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { A2AServer } from "@adapters/http/a2a-server";
 import type { A2AServerConfig } from "@agents/types";
 import { ApiKeyRegistry } from "../../src/security/api-key-registry";
@@ -527,10 +638,10 @@ function makeConfig(overrides: Partial<A2AServerConfig> =
 File: tests/security/tls-config.test.ts
 ================
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { loadTlsConfig, isTlsEnabled } from "../../src/security/tls-config";
-import { writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { execSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { isTlsEnabled, loadTlsConfig } from "../../src/security/tls-config";
 ⋮----
 function generateTestCerts()
 ⋮----
@@ -553,6 +664,7 @@ File: tests/a2a-server-auth.test.ts
 ================
 import { afterEach, describe, expect, test } from "bun:test";
 import { A2AServer } from "@adapters/http/a2a-server";
+import { RateLimiter } from "@adapters/rate-limit";
 import type { A2AServerConfig } from "@agents/types";
 import { ApiKeyRegistry } from "../src/security/api-key-registry";
 ⋮----
@@ -609,6 +721,32 @@ async fetch(req)
 async function waitForState(state: string, timeoutMs = 2000): Promise<void>
 
 ================
+File: tests/a2a-server-rest.test.ts
+================
+import { afterEach, describe, expect, test } from "bun:test";
+import { A2AServer } from "@adapters/http/a2a-server";
+import { TaskMemory } from "@adapters/task-memory";
+import type { TaskStreamingEvent } from "@agents/types";
+import type { TaskStorePort } from "@ports/task-store";
+import { ApiKeyRegistry } from "../src/security/api-key-registry";
+import type { AgentCard as A2AAgentCard } from "../src/types/a2a-v1.ts";
+import type { AgentCard } from "../src/types/types.ts";
+⋮----
+function cardConfig(port: number, name: string): AgentCard
+⋮----
+async function restFetch(
+	port: number,
+	path: string,
+	init: RequestInit = {},
+): Promise<Response>
+⋮----
+function parseSSEFrames(raw: string): Array<
+⋮----
+function startAuthServer(): void
+⋮----
+function startServer(): void
+
+================
 File: tests/a2a-server-sse.test.ts
 ================
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
@@ -621,7 +759,23 @@ async function postA2A(
 	params: unknown,
 ): Promise<Response>
 ⋮----
-function parseSSEFrames(raw: string): Array<
+type StreamFrameData = {
+	result?: {
+		task?: { status: { state: string } };
+		statusUpdate?: {
+			status: {
+				state: string;
+				message?: { parts: Array<{ text: string }> };
+			};
+			final?: boolean;
+		};
+		artifactUpdate?: { artifact?: { parts: Array<{ text: string }> } };
+	};
+};
+⋮----
+type StreamFrame = { event: string; data: StreamFrameData };
+⋮----
+function parseSSEFrames(raw: string): StreamFrame[]
 
 ================
 File: tests/api-key-registry.test.ts
@@ -635,11 +789,11 @@ File: tests/budget-token-approximation.test.ts
 import { describe, expect, test } from "bun:test";
 import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import type { AgentCard } from "@agents/types";
-import { OrchestratorAgent } from "../src/core/orchestrator";
-import { ToolRouter } from "../src/core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { OrchestratorAgent } from "../src/core/orchestrator";
+import { ToolRouter } from "../src/core/tool-router";
 ⋮----
 function makeBudget(cap = 1_000_000): HeadroomAdapter
 ⋮----
@@ -663,15 +817,24 @@ async delegateTask(_agentUrl: string, _text: string)
 File: tests/cognitive-loop.test.ts
 ================
 import { describe, expect, test } from "bun:test";
-import {
-	CognitiveLoop,
-	type ConsensusInput,
-} from "../src/core/cognitive-loop";
 import type { AgentCard, AgentSkill } from "@agents/types";
+import { CognitiveLoop, type ConsensusInput } from "../src/core/cognitive-loop";
 ⋮----
 const makeCard = (skills: AgentSkill[] = []): AgentCard => (
 ⋮----
 const makeInput = (response: string, card = makeCard()): ConsensusInput => (
+
+================
+File: tests/dlq.test.ts
+================
+import { describe, expect, test, beforeEach } from "bun:test";
+import { SqliteTaskStore } from "@adapters/sqlite-task-store";
+import { openJabrDb } from "@adapters/sqlite-db";
+import type { Database } from "bun:sqlite";
+⋮----
+function makeStore():
+⋮----
+function makeMessage(role: "user" | "agent", text: string)
 
 ================
 File: tests/dynamic-registry-no-retry.test.ts
@@ -716,6 +879,7 @@ File: tests/e2e-ipfs.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { IpfsArtifactAdapter } from "@adapters/ipfs/ipfs-artifact-adapter";
 import type { ArtifactPort } from "@ports/artifact-port";
+import { KUBO_API } from "@/constants/ipfs";
 ⋮----
 function delay(ms: number): Promise<void>
 
@@ -736,21 +900,37 @@ interface AgentSpec {
 interface JsonRpcEnvelope {
 	jsonrpc: string;
 	id: number | string | null;
-	result?: { text?: string };
+	result?: {
+		task?: {
+			id?: string | number;
+			status?: {
+				state?: string;
+				message?: {
+					role?: string;
+					parts?: Array<{ text?: string }>;
+				};
+			};
+		};
+	};
 	error?: { code: number; message: string };
 }
 ⋮----
+function envelopeText(env: JsonRpcEnvelope | null): string
+⋮----
+// ── HTTP helpers (with one retry on transient network failure) ────────────────
 async function fetchWithTimeout(
 	url: string,
 	init: RequestInit,
 	timeoutMs: number,
 ): Promise<Response>
 ⋮----
+/** POST an A2A v1 method (default SendMessage) to an agent's root `/` endpoint. */
 async function postA2A(
 	port: number,
 	text: string,
-	method = "tasks/send",
+	method = "SendMessage",
 	timeoutMs = 5000,
+	apiKey = "dev-secret-token-for-testing",
 ): Promise<
 ⋮----
 async function getJson(
@@ -816,10 +996,10 @@ File: tests/fixer-login-disabled-full.test.ts
 import { describe, expect, test } from "bun:test";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 import type { LlmPort, LlmRequest, LlmResponse } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 ⋮----
 function lastAgentText(store: TaskStorePort, taskId: string): string
 ⋮----
@@ -851,13 +1031,14 @@ async streamGenerate(
 ================
 File: tests/fixer-login-llm.test.ts
 ================
+import { expect, test } from "bun:test";
 import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { NineRouterLlmAdapter } from "@adapters/llm/9router";
 import { SkillFS } from "@adapters/skill-fs";
 import { TaskMemory } from "@adapters/task-memory";
-import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { FIXER_CARD, FixerAgent } from "../src/core/fixer";
 ⋮----
 function lastAgentText(store: TaskStorePort, taskId: string): string
 ⋮----
@@ -940,6 +1121,13 @@ const getTask = async (taskId: string): Promise<unknown> =>
 function tmpRoot(): string
 
 ================
+File: tests/mcp-run-python.test.ts
+================
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { McpClientAdapter } from "@adapters/mcp/mcp-client";
+import { NullElicitationPort } from "@ports/elicitation-port";
+
+================
 File: tests/mcp-tool-validation.test.ts
 ================
 import { describe, expect, test } from "bun:test";
@@ -957,9 +1145,9 @@ File: tests/oracle-handover.test.ts
 import { describe, expect, test } from "bun:test";
 import { TaskMemory } from "@adapters/task-memory";
 import { decodeHandover, HANDOVER_MARKER } from "@agents/types";
-import { OracleAgent } from "../src/core/oracle";
 import type { LlmPort } from "@ports/llm-port";
 import type { SkillStorePort } from "@ports/skill-store";
+import { OracleAgent } from "../src/core/oracle";
 ⋮----
 function stubLlm(text: string): LlmPort
 ⋮----
@@ -990,11 +1178,11 @@ File: tests/orchestrator-route.test.ts
 import { describe, expect, test } from "bun:test";
 import type { AgentCard } from "@agents/types";
 import { encodeHandover } from "@agents/types";
-import { OrchestratorAgent } from "../src/core/orchestrator";
-import { ToolRouter } from "../src/core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { TaskStorePort } from "@ports/task-store";
+import { OrchestratorAgent } from "../src/core/orchestrator";
+import { ToolRouter } from "../src/core/tool-router";
 ⋮----
 function noopMemory(): MemoryStorePort
 ⋮----
@@ -1029,8 +1217,6 @@ File: tests/orchestrator.test.ts
 import { describe, expect, test } from "bun:test";
 import type { AgentCard } from "@agents/types";
 import { encodeHandover } from "@agents/types";
-import { OrchestratorAgent } from "../src/core/orchestrator";
-import { ToolRouter } from "../src/core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
@@ -1038,6 +1224,8 @@ import type { KnowledgePort } from "@ports/knowledge-port";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { RealtimePort } from "@ports/realtime-port";
 import type { TaskStorePort } from "@ports/task-store";
+import { OrchestratorAgent } from "../src/core/orchestrator";
+import { ToolRouter } from "../src/core/tool-router";
 ⋮----
 function makeCard(
 	name: string,
@@ -1068,10 +1256,128 @@ async delegateTask()
 // 3. A child task was created and completed.
 
 ================
+File: tests/plugin-registry.test.ts
+================
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { A2AMessage, A2APart } from "@agents/types";
+import {
+	createPluginRegistryUseCase,
+	type PluginContextDeps,
+} from "@core/plugin-registry";
+import type {
+	CreateTaskOpts,
+	KanbanTask,
+	KanbanTaskStatus,
+} from "@ports/kanban-port";
+import type { KnowledgeEntry } from "@ports/knowledge-port";
+import type { SessionData } from "@ports/memory-store";
+import type { IPlugin, PluginMetadata } from "@ports/plugin";
+import { PluginEventBusImpl } from "@ports/plugin-event-bus";
+import type { DomainEventMap } from "@ports/plugin-event-bus.types";
+import type { RealtimeEvent } from "@ports/realtime-port";
+import type { Task } from "@ports/task-store";
+⋮----
+function makeDeps(
+	overrides: Partial<PluginContextDeps> = {},
+): PluginContextDeps
+⋮----
+function createTestPlugin(
+	metadata: PluginMetadata,
+	onInitialize?: (ctx: any) => Promise<void>,
+): IPlugin
+⋮----
+async onInitialize(ctx)
+async onEvent(event, payload)
+async onShutdown()
+⋮----
+function createFactoryPlugin(
+	metadata: PluginMetadata,
+	onInitialize?: (ctx: any) => Promise<void>,
+)
+⋮----
+const wrappedFactory = () =>
+⋮----
+const wrappedFactory1 = () =>
+⋮----
+const wrappedFactory2 = () =>
+
+================
+File: tests/plugin-runtime-proof.test.ts
+================
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { BunDynamicPluginLoaderAdapter } from "@adapters/plugin-loader";
+import type { A2AMessage, A2APart } from "@agents/types";
+import {
+	createPluginRegistryUseCase,
+	type PluginContextDeps,
+} from "@core/plugin-registry";
+import type {
+	CreateTaskOpts,
+	KanbanTask,
+	KanbanTaskStatus,
+} from "@ports/kanban-port";
+import type { KnowledgeEntry } from "@ports/knowledge-port";
+import type { SessionData } from "@ports/memory-store";
+import type { IPlugin, PluginMetadata } from "@ports/plugin";
+import { PluginEventBusImpl } from "@ports/plugin-event-bus";
+import type { DomainEventMap } from "@ports/plugin-event-bus.types";
+import { SystemAlertSeverity } from "@ports/plugin-event-bus.types";
+import type { RealtimeEvent } from "@ports/realtime-port";
+import type { Task } from "@ports/task-store";
+import { mkdir, rm, writeFile } from "fs/promises";
+import { join } from "path";
+import { fileURLToPath } from "url";
+⋮----
+function makeDeps(
+	overrides: Partial<PluginContextDeps> = {},
+): PluginContextDeps
+⋮----
+function createRuntimeProofPluginCode(): string
+⋮----
+async function setupRuntimeProofFixture()
+⋮----
+async function cleanupRuntimeProofFixture()
+
+================
 File: tests/rate-limit.test.ts
 ================
 import { describe, expect, test } from "bun:test";
 import { RateLimiter, rateLimitResponse } from "@adapters/rate-limit";
+
+================
+File: tests/shura-routing.test.ts
+================
+import { describe, expect, test } from "bun:test";
+import type { AgentCard } from "@agents/types";
+import type { AgentRegistryPort } from "@ports/agent-registry";
+import type { BudgetPort } from "@ports/budget-port";
+import type { ConsensusEvaluator, ConsensusResult } from "@/types/types";
+import type { MemoryStorePort } from "@ports/memory-store";
+import type { TaskStorePort } from "@ports/task-store";
+import { ToolRouter } from "../src/core/tool-router";
+⋮----
+function makeCard(name: string, tags: string[]): AgentCard
+⋮----
+function noopMemory(): MemoryStorePort
+⋮----
+function noopBudget(): BudgetPort
+⋮----
+function makeRegistry(responses: Record<string, string>): AgentRegistryPort
+⋮----
+async fetchCard()
+async delegateTask(agentUrl: string)
+⋮----
+function makeCognitiveLoop(
+	results: Array<{ agentName: string; score: number; reason: string }>,
+	winnerAgentName: string,
+	winnerCard: AgentCard,
+	synthesized: string,
+): ConsensusEvaluator
+⋮----
+async evaluate(
+			inputs: any[],
+			_taskText: string,
+): Promise<ConsensusResult>
 
 ================
 File: tests/sqlite-stores.test.ts
@@ -1106,9 +1412,7 @@ File: tests/tool-router.test.ts
 ================
 import { describe, expect, test } from "bun:test";
 import type { X402Client } from "@adapters/x402/x402-client";
-import { CognitiveLoop } from "../src/core/cognitive-loop";
 import type { AgentCard } from "@agents/types";
-import { MAX_HANDOVER_DEPTH, ToolRouter } from "../src/core/tool-router";
 import type { AgentRegistryPort } from "@ports/agent-registry";
 import type { BudgetPort } from "@ports/budget-port";
 import type { KanbanPort } from "@ports/kanban-port";
@@ -1117,6 +1421,9 @@ import type { MemoryStorePort } from "@ports/memory-store";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { RealtimePort } from "@ports/realtime-port";
 import type { TaskStorePort } from "@ports/task-store";
+import { MAX_HANDOVER_DEPTH } from "../src/constants/app";
+import { CognitiveLoop } from "../src/core/cognitive-loop";
+import { ToolRouter } from "../src/core/tool-router";
 ⋮----
 function makeCard(
 	name: string,
@@ -1163,11 +1470,14 @@ const describe = (p: A2APart): string =>
 File: tests/verification.test.ts
 ================
 import { describe, expect, test } from "bun:test";
-import type { ConsensusInput } from "../src/core/cognitive-loop";
 import type { AgentCard, AgentSkill, SkillDocument } from "@agents/types";
-import { VerificationAgent, type VerificationResult } from "../src/core/verification";
 import type { SkillStorePort } from "@ports/skill-store";
 import type { TaskStorePort } from "@ports/task-store";
+import type { ConsensusInput } from "../src/core/cognitive-loop";
+import {
+	VerificationAgent,
+	type VerificationResult,
+} from "../src/core/verification";
 ⋮----
 function makeCard(name: string, skills: AgentSkill[] = []): AgentCard
 ⋮----

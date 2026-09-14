@@ -19,7 +19,6 @@ graph, not in these files: `graft callers <symbol>` is the only way to read them
 - [FIXME](FIXME.md) — FIXME
 - [GEMINI](GEMINI.md) — GEMINI
 - [hermes.config](hermes.config.md) — hermes.config
-- [jabr-TODO](jabr-TODO.md) — jabr-TODO
 - [README](README.md) — README
 - [REBRANDING](REBRANDING.md) — REBRANDING
 - [SESSION_TRANSCRIPT_2026-09-04](SESSION_TRANSCRIPT_2026-09-04.md) — SESSION_TRANSCRIPT_2026-09-04
