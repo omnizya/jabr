@@ -12,7 +12,8 @@ const TASKS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS tasks (
   id         TEXT PRIMARY KEY,
   state      TEXT NOT NULL CHECK (state IN ('submitted','working','input-required','completed','failed','canceled','rejected','auth-required','unknown')),
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  retry_count INTEGER NOT NULL DEFAULT 0
 );`;
 
 export const SCHEMA_SQL = `
@@ -62,14 +63,25 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS dead_letter_queue (
+  task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  original_id   TEXT NOT NULL,
+  error         TEXT NOT NULL,
+  retry_count   INTEGER NOT NULL DEFAULT 0,
+  moved_at      TEXT NOT NULL,
+  state_snapshot TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlq_task_id ON dead_letter_queue(task_id);
+CREATE INDEX IF NOT EXISTS idx_dlq_moved_at ON dead_letter_queue(moved_at);
 `;
 
 /**
- * Migrate a pre-A2A-v1.0 `tasks` table (4-state CHECK constraint) to the
- * current 9-state schema. SQLite cannot ALTER a CHECK constraint, so the table
- * is rebuilt while preserving existing rows. Foreign keys are disabled around
- * the rebuild; dependent tables (task_transitions, messages, artifacts)
- * reference `tasks(id)` by name and remain valid after the rename.
+ * Migrate a pre-DLQ `tasks` table to include retry_count and dead_letter_queue.
+ * Handles three cases:
+ * 1. Old 4-state schema → rebuild to current 9-state schema (existing migration)
+ * 2. Current 9-state schema without retry_count → add column
+ * 3. Already current → no-op
  */
 export function migrateTasksTable(db: Database): void {
 	const row = db
@@ -78,32 +90,50 @@ export function migrateTasksTable(db: Database): void {
 		)
 		.get() as { sql: string } | undefined;
 	if (!row) return; // no tasks table yet — SCHEMA_SQL will create it
-	if (row.sql.includes("'submitted'")) return; // already current schema
 
-	console.warn(
-		"[SqliteDb] migrating tasks table schema (state CHECK constraint)",
-	);
-	db.exec("PRAGMA foreign_keys = OFF");
-	try {
-		db.exec("BEGIN");
-		db.exec("DROP TABLE IF EXISTS tasks_new");
-		db.exec(
-			TASKS_TABLE_SQL.replace(
-				"CREATE TABLE IF NOT EXISTS tasks",
-				"CREATE TABLE tasks_new",
-			),
+	// Case 1: Old 4-state schema → rebuild
+	if (!row.sql.includes("'submitted'")) {
+		console.warn(
+			"[SqliteDb] migrating tasks table schema (state CHECK constraint)",
 		);
-		db.exec(
-			"INSERT INTO tasks_new (id, state, created_at, updated_at) SELECT id, state, created_at, updated_at FROM tasks",
-		);
-		db.exec("DROP TABLE tasks");
-		db.exec("ALTER TABLE tasks_new RENAME TO tasks");
-		db.exec("COMMIT");
-	} catch (e) {
-		db.exec("ROLLBACK");
-		throw e;
-	} finally {
-		db.exec("PRAGMA foreign_keys = ON");
+		db.exec("PRAGMA foreign_keys = OFF");
+		try {
+			db.exec("BEGIN");
+			db.exec("DROP TABLE IF EXISTS tasks_new");
+			db.exec(
+				TASKS_TABLE_SQL.replace(
+					"CREATE TABLE IF NOT EXISTS tasks",
+					"CREATE TABLE tasks_new",
+				),
+			);
+			db.exec(
+				"INSERT INTO tasks_new (id, state, created_at, updated_at) SELECT id, state, created_at, updated_at FROM tasks",
+			);
+			db.exec("DROP TABLE tasks");
+			db.exec("ALTER TABLE tasks_new RENAME TO tasks");
+			db.exec("COMMIT");
+		} catch (e) {
+			db.exec("ROLLBACK");
+			throw e;
+		} finally {
+			db.exec("PRAGMA foreign_keys = ON");
+		}
+		return;
+	}
+
+	// Case 2: Has 9-state schema but missing retry_count → add column
+	if (!row.sql.includes("retry_count")) {
+		console.warn("[SqliteDb] adding retry_count column to tasks table");
+		try {
+			db.exec("BEGIN");
+			db.exec(
+				"ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+			);
+			db.exec("COMMIT");
+		} catch (e) {
+			db.exec("ROLLBACK");
+			throw e;
+		}
 	}
 }
 

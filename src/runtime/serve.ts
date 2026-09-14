@@ -22,7 +22,7 @@ export function runAgent(config: {
 	taskStore?: TaskStorePort;
 	formatResult?: (taskStore: TaskStorePort, taskId: string) => string;
 	/**
-	 * Optional streaming handler for `tasks/sendSubscribe`. Receives the user
+	 * Optional streaming handler for `SendStreamingMessage`. Receives the user
 	 * text, a fresh taskId, and an emit() callback for SSE events. When set,
 	 * the server advertises `capabilities.streaming: true` on its AgentCard.
 	 */

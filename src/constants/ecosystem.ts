@@ -67,16 +67,8 @@ export const JABR_ENDPOINTS = {
 	emit: "/emit",
 	/** Webhook listeners (GitHub / Telegram / WhatsApp). */
 	webhook: "/webhook",
-	/** JSON-RPC entry point (tasks/send). */
+	/** JSON-RPC entry point (SendMessage). */
 	root: "/",
-} as const;
-
-/** A2A v1.0 JSON-RPC method names. */
-export const A2A_METHODS = {
-	tasksSend: "tasks/send",
-	tasksSendSubscribe: "tasks/sendSubscribe",
-	tasksCancel: "tasks/cancel",
-	tasksGet: "tasks/get",
 } as const;
 
 // ---------------------------------------------------------------------------

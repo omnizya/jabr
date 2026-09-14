@@ -23,6 +23,16 @@ export interface TaskFilter {
 	pageSize?: number;
 }
 
+export interface DLQEntry {
+	taskId: string;
+	state: string;
+	error: string;
+	retryCount: number;
+	movedAt: string;
+	messageCount: number;
+	lastError?: string;
+}
+
 export interface TaskStorePort {
 	create(taskId: string): Task;
 	get(taskId: string): Task | undefined;
@@ -38,4 +48,12 @@ export interface TaskStorePort {
 	getTransitionHistory(
 		taskId: string,
 	): Array<{ from: Task["state"]; to: Task["state"]; timestamp: string }>;
+	getRetryCount(taskId: string): number;
+	incrementRetryCount(taskId: string): void;
+	moveToDLQ(taskId: string, error: string): void;
+	listDLQ(): DLQEntry[];
+	getDLQEntry(taskId: string): DLQEntry | undefined;
+	retryFromDLQ(taskId: string): boolean;
+	purgeDLQ(taskId: string): boolean;
+	purgeAllDLQ(): number;
 }

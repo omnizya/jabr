@@ -1,18 +1,15 @@
 /**
  * auth-middleware.ts — Per-endpoint scope enforcement for OAuth 2.1.
  *
- * Maps each A2A method to the minimum scope required. The A2A server
- * dispatches on the JSON-RPC namespaced method strings (tasks/send, ...);
- * the A2A v1.0 proto wire names (SendMessage, ...) are kept as aliases
- * since clients may use either convention.
+ * Maps each A2A v1.0 wire method to the minimum scope required.
  *
- *   - tasks/send / SendMessage                  → a2a:write
- *   - tasks/sendSubscribe / SendStreamingMessage → a2a:stream OR a2a:write
- *   - tasks/get / GetTask / ListTasks           → a2a:read
- *   - tasks/cancel / CancelTask                 → a2a:admin
- *   - SubscribeToTask                           → a2a:stream OR a2a:read
- *   - GetExtendedAgentCard                      → a2a:read
- *   - Push notification config CRUD             → a2a:admin
+ *   - SendMessage                  → a2a:write
+ *   - SendStreamingMessage         → a2a:stream OR a2a:write
+ *   - GetTask / ListTasks          → a2a:read
+ *   - CancelTask                   → a2a:admin
+ *   - SubscribeToTask              → a2a:stream OR a2a:read
+ *   - GetExtendedAgentCard         → a2a:read
+ *   - Push notification config CRUD → a2a:admin
  */
 
 import {
@@ -28,7 +25,6 @@ import {
 	V1_METHOD_SEND_STREAMING_MESSAGE,
 	V1_METHOD_SUBSCRIBE_TO_TASK,
 } from "../constants/a2a-v1.ts";
-import { A2A_METHODS } from "../constants/ecosystem.ts";
 import { type OAuthScope, verifyWithScopes } from "./jwt.ts";
 
 const WRITE = ["a2a:write"] as OAuthScope[];
@@ -37,14 +33,8 @@ const READ = ["a2a:read"] as OAuthScope[];
 const STREAM_OR_READ = ["a2a:stream", "a2a:read"] as OAuthScope[];
 const ADMIN = ["a2a:admin"] as OAuthScope[];
 
-/** Minimum scope required per A2A method (dispatch names + proto-name aliases). */
+/** Minimum scope required per A2A v1.0 wire method. */
 const METHOD_SCOPES: Record<string, OAuthScope[]> = {
-	// JSON-RPC dispatch names — what the A2AServer actually receives.
-	[A2A_METHODS.tasksSend]: WRITE,
-	[A2A_METHODS.tasksSendSubscribe]: STREAM_OR_WRITE,
-	[A2A_METHODS.tasksGet]: READ,
-	[A2A_METHODS.tasksCancel]: ADMIN,
-	// A2A v1.0 proto wire names (aliases).
 	[V1_METHOD_SEND_MESSAGE]: WRITE,
 	[V1_METHOD_SEND_STREAMING_MESSAGE]: STREAM_OR_WRITE,
 	[V1_METHOD_GET_TASK]: READ,

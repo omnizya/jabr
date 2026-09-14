@@ -62,7 +62,12 @@ export class ScientistAgent {
 			text.toLowerCase().includes("python") ||
 			text.toLowerCase().includes("analyze")
 		) {
-			const script = `print("Scientist analyzing: ${text}")\n# Logic would go here\nprint("Analysis complete: Result is 42")`;
+			// Escape user text to safely embed in Python string literal
+			const escaped = JSON.stringify(text);
+			const script = `import sys
+print("Scientist analyzing:", ${escaped})
+# Logic would go here
+print("Analysis complete: Result is 42")`;
 
 			try {
 				const result = await this.mcpTools.callTool("run_python", {

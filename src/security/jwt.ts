@@ -14,10 +14,10 @@
 
 /** Scoped permissions a token grants on A2A endpoints. */
 export type OAuthScope =
-	| "a2a:read" // tasks/get, discover, health-check
-	| "a2a:write" // tasks/send, tasks/sendSubscribe
+	| "a2a:read" // GetTask, ListTasks, GetExtendedAgentCard, health-check
+	| "a2a:write" // SendMessage, SendStreamingMessage
 	| "a2a:stream" // SSE streaming
-	| "a2a:admin"; // tasks/cancel, token management
+	| "a2a:admin"; // CancelTask, token management
 
 export interface TokenClaims {
 	/** Subject — caller description from ApiKeyRegistry. */

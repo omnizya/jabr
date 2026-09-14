@@ -4,6 +4,7 @@ import {
 	WELL_KNOWN_AGENT_JSON,
 } from "@constants/a2a-v1";
 import { AGENT_CARD_PATH, KNOWN_AGENTS_NAME } from "@constants/known-agents";
+import { a2aClientInstrumenter } from "@observability";
 import {
 	fromWireSendMessageResponse,
 	toWireSendMessageRequest,
@@ -120,6 +121,17 @@ export class A2AClient implements AgentRegistryPort {
 			);
 			const start = performance.now();
 			const tlsConfig = await loadTlsConfig();
+
+			// --- OpenTelemetry client span ---
+			const span = a2aClientInstrumenter.startClientSpan(
+				"SendMessage",
+				name ?? "unknown",
+				{
+					textLength: text.length,
+					targetUrl: agentUrl,
+				},
+			);
+
 			const res = await fetch(agentUrl, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -130,6 +142,8 @@ export class A2AClient implements AgentRegistryPort {
 
 			if (!res.ok) {
 				const msg = `[A2AClient] delegateTask failed: ${res.status} ${res.statusText}`;
+				a2aClientInstrumenter.recordError(span, new Error(msg));
+				span.end();
 				console.error(msg);
 				return msg;
 			}
@@ -138,6 +152,8 @@ export class A2AClient implements AgentRegistryPort {
 
 			if (data.error) {
 				const msg = `[A2AClient] delegateTask error: ${data.error.code} ${data.error.message}`;
+				a2aClientInstrumenter.recordError(span, new Error(msg));
+				span.end();
 				console.error(msg);
 				return msg;
 			}
@@ -160,12 +176,16 @@ export class A2AClient implements AgentRegistryPort {
 				console.log(
 					`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms textLen=${resultText.length}`,
 				);
+				a2aClientInstrumenter.recordSuccess(span, resultText.length);
+				span.end();
 				return resultText;
 			}
 
 			console.log(
 				`[A2AClient] ← ${agentUrl} status=${res.status} latency=${latency}ms (no text content)`,
 			);
+			a2aClientInstrumenter.recordSuccess(span, 0);
+			span.end();
 			return "[A2AClient] delegateTask: no text content in response";
 		} catch (err) {
 			const msg = `[A2AClient] delegateTask error: ${String(err)}`;

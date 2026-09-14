@@ -1,4 +1,5 @@
 import { A2AClient } from "@adapters/a2a/client";
+import { ContextCompressor } from "@adapters/context-compressor.ts";
 import { HeadroomAdapter } from "@adapters/headroom/headroom";
 import { HermesKanbanAdapter } from "@adapters/hermes-kanban";
 import { A2AServer } from "@adapters/http/a2a-server";
@@ -14,13 +15,17 @@ import { SettlementLedger } from "@adapters/x402/settlement-ledger.ts";
 import { X402Client } from "@adapters/x402/x402-client";
 import { X402Server } from "@adapters/x402/x402-server";
 import type { ResolvedCaller } from "@agents/types";
+import { optionalBoolEnv, optionalEnv } from "@config/env-manager.ts";
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
+import { JABR_VERIFY_KEYWORDS_DEFAULT } from "@constants/app";
 import { JABR_PORTS } from "@constants/ecosystem";
+import { shutdownTracerProvider } from "@observability";
 import { PluginEventBusImpl } from "@ports/plugin-event-bus";
 import type { DomainEventBus } from "@ports/plugin-event-bus.types";
 import type { RealtimePort } from "@ports/realtime-port";
 import { verbose } from "@utils/logger";
 import type { AgentConfig } from "@/types/types";
+import { CognitiveLoop } from "../core/cognitive-loop.ts";
 import { ORCHESTRATOR_CARD, OrchestratorAgent } from "../core/orchestrator.ts";
 import { ToolRouter } from "../core/tool-router.ts";
 import { ApiKeyRegistry } from "../security/api-key-registry.ts";
@@ -58,7 +63,29 @@ if (import.meta.main) {
 	const registryClient = new A2AClient(budget);
 	const db = openJabrDb(); // memory/jabr.db
 	const taskStore = new SqliteTaskStore(db);
-	const memory = new SqliteMemoryStore(db, { mirrorFile: null }); // sqlite is source of truth; no .md mirror
+	const memory = new ContextCompressor(
+		new SqliteMemoryStore(db, { mirrorFile: null }), // sqlite is source of truth; no .md mirror
+	); // read() auto-compresses context window per JABR_MEMORY_MAX_TOKENS
+
+	// Periodic TTL eviction: purge stale entries every hour.
+	const ttlInterval = setInterval(
+		() => {
+			try {
+				const purged = memory.purgeStale();
+				if (purged > 0) {
+					verbose(
+						`[Run:Orchestrator] TTL eviction purged ${purged} stale memory entries`,
+					);
+				}
+			} catch (e) {
+				console.error("[Run:Orchestrator] TTL eviction error:", e);
+			}
+		},
+		60 * 60 * 1000,
+	);
+	// Don't keep the process alive solely for the eviction timer.
+	(ttlInterval as any).unref?.();
+
 	const llmPort = createLlmAdapter(budget);
 
 	// Real-time event transport: native Bun WebSocket server on port 4008.
@@ -145,6 +172,14 @@ if (import.meta.main) {
 	const palace = new MemPalaceAdapter();
 	const kanban = new HermesKanbanAdapter(process.env.HERMES_KANBAN_BOARD);
 
+	const cognitiveLoop = new CognitiveLoop(
+		{
+			minAgents: 2,
+			confidenceThreshold: 0.7,
+		},
+		llmPort,
+	);
+
 	const toolRouter = new ToolRouter({
 		agents: agentMap,
 		registry: registryClient,
@@ -155,6 +190,16 @@ if (import.meta.main) {
 		kanban,
 		realtime,
 		pluginEventBus,
+		cognitiveLoop,
+		verification: {
+			enabled: optionalBoolEnv("JABR_VERIFY_ENABLED", false),
+			keywords: optionalEnv(
+				"JABR_VERIFY_KEYWORDS",
+				JABR_VERIFY_KEYWORDS_DEFAULT,
+			),
+			agentName: "verification",
+			consensusThreshold: 0.7,
+		},
 	});
 
 	const agent = new OrchestratorAgent(toolRouter, taskStore, memory);
@@ -262,7 +307,9 @@ if (import.meta.main) {
 		console.log("[Orchestrator] received signal, shutting down...");
 		server.shutdown().then(() => {
 			orchestratorLifecycle.announceOffline();
-			process.exit(0);
+			shutdownTracerProvider().finally(() => {
+				process.exit(0);
+			});
 		});
 	};
 	process.on("SIGINT", shutdown);

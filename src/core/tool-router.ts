@@ -1,3 +1,4 @@
+import { delegationInstrumenter, taskMetrics } from "@observability";
 import type {
 	TaskCompletePayload,
 	TaskFailedPayload,
@@ -8,6 +9,8 @@ import type {
 	AgentCard,
 	ConsensusInput,
 	ToolRouterConfig,
+	VerificationConfig,
+	VerificationResult,
 } from "@/types/types";
 
 export type { ConsensusInput };
@@ -55,8 +58,21 @@ export class ToolRouter {
 				}
 			}
 
-			if (score > 0 && (!bestMatch || score > bestMatch.score)) {
-				bestMatch = { name, url: agent.url, label: agent.card.name, score };
+			if (score > 0) {
+				if (!bestMatch) {
+					bestMatch = { name, url: agent.url, label: agent.card.name, score };
+				} else if (score > bestMatch.score) {
+					bestMatch = { name, url: agent.url, label: agent.card.name, score };
+				} else if (score === bestMatch.score) {
+					// Tie-break: weighted scoring (successRate, responseTime, cost)
+					const tieA = this.tieBreakScore(agent.card);
+					const tieB = this.tieBreakScore(
+						this.cfg.agents[bestMatch.name]!.card,
+					);
+					if (tieA > tieB) {
+						bestMatch = { name, url: agent.url, label: agent.card.name, score };
+					}
+				}
 			}
 		}
 
@@ -97,15 +113,38 @@ export class ToolRouter {
 		text: string,
 		agentName?: string,
 	): Promise<string> {
-		if (this.cfg.x402Client) {
-			return this.cfg.x402Client.delegateTask(agentUrl, text, agentName);
+		const span = delegationInstrumenter.startDelegationSpan({
+			sourceAgent: "orchestrator",
+			targetAgent: agentName ?? "unknown",
+			textLength: text.length,
+		});
+		try {
+			let result: string;
+			if (this.cfg.x402Client) {
+				result = await this.cfg.x402Client.delegateTask(
+					agentUrl,
+					text,
+					agentName,
+				);
+			} else if (this.cfg.registry) {
+				result = await this.cfg.registry.delegateTask(
+					agentUrl,
+					text,
+					agentName,
+				);
+			} else {
+				throw new Error(
+					"No delegation mechanism configured (need x402Client or registry)",
+				);
+			}
+			delegationInstrumenter.recordSuccess(span, result.length);
+			return result;
+		} catch (err) {
+			delegationInstrumenter.recordError(span, err);
+			throw err;
+		} finally {
+			span.end();
 		}
-		if (this.cfg.registry) {
-			return this.cfg.registry.delegateTask(agentUrl, text, agentName);
-		}
-		throw new Error(
-			"No delegation mechanism configured (need x402Client or registry)",
-		);
 	}
 
 	// ---- Budget deduction (pre-delegation) ----
@@ -198,6 +237,116 @@ export class ToolRouter {
 		}
 
 		return result.synthesized;
+	}
+
+	// ---- SHURA verification ----
+
+	/**
+	 * Decide whether a task warrants SHURA verification. True when:
+	 *   1. Verification is enabled in config.
+	 *   2. The task text contains any configured high-stakes keyword.
+	 */
+	shouldVerifyTask(taskText: string): boolean {
+		const v = this.cfg.verification;
+		if (!v || !v.enabled) return false;
+		const lower = taskText.toLowerCase();
+		return v.keywords
+			.split(",")
+			.map((k) => k.trim().toLowerCase())
+			.some((k) => k.length > 0 && lower.includes(k));
+	}
+
+	/**
+	 * Run SHURA verification on a completed task result. Delegates the task to
+	 * the verification agent with a JSON payload containing the specialist's
+	 * output, and returns a VerificationResult indicating consensus.
+	 */
+	async runVerification(
+		taskText: string,
+		specialistResult: string,
+		specialistAgentName: string,
+	): Promise<VerificationResult | null> {
+		const v = this.cfg.verification;
+		if (!v || !v.enabled) return null;
+
+		const cognitiveLoop = this.cfg.cognitiveLoop;
+		if (!cognitiveLoop) {
+			console.warn(
+				"[ToolRouter] verification: cognitiveLoop not configured, skipping",
+			);
+			return null;
+		}
+
+		const inputs: ConsensusInput[] = [];
+
+		// Primary: the specialist that produced the result.
+		const specialistCard = await this.getCard(specialistAgentName);
+		inputs.push({
+			agentName: specialistAgentName,
+			card: specialistCard ?? {
+				name: specialistAgentName,
+				description: "",
+				url: "",
+				version: "1.0.0",
+				capabilities: {},
+				skills: [],
+				supportedInterfaces: [],
+			},
+			response: specialistResult,
+		});
+
+		// Secondary: delegate the same task to one additional agent for
+		// independent cross-check (if a second non-specialist is available).
+		const available = this.getAvailableAgentNames().filter(
+			(n) => n !== specialistAgentName && n !== v.agentName,
+		);
+		for (const name of available.slice(0, 1)) {
+			try {
+				const url = await this.getAgentUrl(name);
+				if (!url) continue;
+				const card = await this.getCard(name);
+				if (!card) continue;
+				await this.deductBudget(name, taskText.length);
+				const response = await this.delegateTask(url, taskText, name);
+				inputs.push({ agentName: name, card, response });
+			} catch {
+				// skip failed secondary agent
+			}
+		}
+
+		if (inputs.length < 2) {
+			return {
+				consensus: true,
+				confidence: 0.5,
+				winner: specialistAgentName,
+				synthesized: specialistResult,
+				scores: [
+					{
+						agentName: specialistAgentName,
+						score: 0.5,
+						reason: "single-agent result (no peer available)",
+					},
+				],
+				contested: false,
+				threshold: v.consensusThreshold,
+				participantCount: inputs.length,
+			};
+		}
+
+		const result = await cognitiveLoop.evaluate(inputs, taskText);
+		const topScore = result.scores[0]?.score ?? 0;
+		const consensus = topScore >= v.consensusThreshold;
+
+		return {
+			consensus,
+			confidence: topScore,
+			winner: result.winner.agentName,
+			synthesized: result.synthesized,
+			scores: result.scores,
+			contested: !consensus,
+			threshold: v.consensusThreshold,
+			participantCount: inputs.length,
+		};
 	}
 
 	// ---- World state ----
@@ -368,6 +517,35 @@ export class ToolRouter {
 	}
 
 	// ---- helpers ----
+
+	/**
+	 * Compute a weighted tie-break score from agent card metrics.
+	 * Higher is better. Used when multiple agents have equal tag scores.
+	 *
+	 * Weights:
+	 *   - successRate: 0.5 (higher is better)
+	 *   - responseTime: 0.3 (lower is better, normalized against 5000ms ceiling)
+	 *   - cost: 0.2 (lower is better, normalized against 100-cost ceiling)
+	 */
+	private tieBreakScore(card: AgentCard): number {
+		let score = 0;
+
+		// successRate: 0..1 range, higher is better
+		const successRate = card.successRate ?? 0.5;
+		score += successRate * 0.5;
+
+		// responseTime: normalize against 5000ms ceiling, lower is better
+		const responseTime = card.responseTime ?? 2500;
+		const rtNormalized = Math.max(0, Math.min(1, 1 - responseTime / 5000));
+		score += rtNormalized * 0.3;
+
+		// cost: normalize against 100-costPerTask ceiling, lower is better
+		const cost = card.pricing?.costPerTask ?? 50;
+		const costNormalized = Math.max(0, Math.min(1, 1 - cost / 100));
+		score += costNormalized * 0.2;
+
+		return score;
+	}
 
 	private extractTags(card: AgentCard): string[] {
 		const tags: string[] = [];

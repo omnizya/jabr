@@ -3,7 +3,8 @@ import {
 	idempotencyConflictResponse,
 } from "@adapters/idempotency-lock";
 import { rateLimitResponse } from "@adapters/rate-limit";
-import { A2A_METHODS, JABR_PORTS } from "@constants/ecosystem";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import type {
 	TelegramBotPort,
 	TelegramChatAction,
@@ -449,12 +450,12 @@ export class TelegramWebhookAdapter implements TelegramBotPort {
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
-				method: A2A_METHODS.tasksSend,
+				method: V1_METHOD_SEND_MESSAGE,
 				params: {
 					message: {
 						role: "user",
 						messageId: crypto.randomUUID(),
-						parts: [{ kind: "text", text }],
+						parts: [{ text }],
 					},
 				},
 			}),

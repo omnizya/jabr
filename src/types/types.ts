@@ -102,6 +102,36 @@ export interface ToolRouterKnowledgePort {
 	): Promise<Array<{ slug: string; content: string }>>;
 }
 
+export interface VerificationConfig {
+	/** Whether SHURA verification is enabled. When true, cross-checks high-stakes tasks. */
+	enabled: boolean;
+	/** Comma-separated keywords that mark a task as high-stakes and trigger verification. */
+	keywords: string;
+	/** Name of the verification agent in ToolRouterConfig.agents. */
+	agentName: string;
+	/** Consensus threshold below which the result is flagged as contested. */
+	consensusThreshold: number;
+}
+
+export interface VerificationResult {
+	/** Whether the top response met the consensus threshold. */
+	consensus: boolean;
+	/** The confidence score of the winning response (0-1). */
+	confidence: number;
+	/** Name of the winning agent. */
+	winner: string;
+	/** The synthesized final response. */
+	synthesized: string;
+	/** Score breakdown for all participants. */
+	scores: Array<{ agentName: string; score: number; reason: string }>;
+	/** True when no agent met the consensus threshold — result is contested. */
+	contested: boolean;
+	/** The threshold that was applied. */
+	threshold: number;
+	/** Number of agents that participated. */
+	participantCount: number;
+}
+
 export interface ToolRouterConfig {
 	agents: Record<string, AgentConfig>;
 	registry?: AgentRegistryPort;
@@ -113,6 +143,7 @@ export interface ToolRouterConfig {
 	kanban?: KanbanPort;
 	realtime?: RealtimePort;
 	pluginEventBus?: DomainEventBus;
+	verification?: VerificationConfig;
 }
 /** The subset of WebhookPayload this bridge needs — no infrastructure types. */
 export type WebhookSource = "github" | "telegram" | "whatsapp" | "generic";
@@ -328,6 +359,11 @@ export interface AgentCard {
 	skills: AgentSkill[];
 	supportedInterfaces: readonly AgentInterface[];
 	successRate?: number;
+	/**
+	 * Average response time in milliseconds. Lower is better. Used as a
+	 * tie-breaker in routing when multiple agents have equal tag scores.
+	 */
+	responseTime?: number;
 	/** Per-task pricing declaration — consumed from the target agent's budget by the orchestrator. */
 	pricing?: AgentPricing;
 	/** Security scheme details used for authenticating with this agent (A2A v1.0). */
@@ -594,7 +630,7 @@ export interface A2AServerConfig<R, S> {
 	/** Max milliseconds to wait for in-flight requests during graceful shutdown. Default 30000. */
 	drainTimeoutMs?: number;
 	/**
-	 * Optional streaming handler for `tasks/sendSubscribe`. Receives the user
+	 * Optional streaming handler for `SendStreamingMessage`. Receives the user
 	 * text, a fresh taskId, and an emit() callback for SSE events. When set,
 	 * the server advertises `capabilities.streaming: true` on its AgentCard.
 	 */
@@ -607,7 +643,7 @@ export interface A2AServerConfig<R, S> {
 	) => Promise<string>;
 	/** Optional world-state handler for GET /.well-known/world-state. */
 	onWorldState?: () => Promise<Record<string, unknown>>;
-	/** Optional task store for tasks/get and tasks/cancel support. */
+	/** Optional task store for `GetTask` and `CancelTask` support. */
 	taskStore?: S; //TaskStorePort;
 	/** Optional push notification config for async task state callbacks. */
 	pushNotificationConfig?: PushNotificationConfig;

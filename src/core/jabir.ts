@@ -1,26 +1,21 @@
-import type {
-	A2AMessage,
-	AgentCard,
-	HandoverRequest,
-	ResolvedCaller,
-} from "@agents/types";
+import type { A2AMessage, AgentCard, ResolvedCaller } from "@agents/types";
 import { decodeHandover } from "@agents/types";
 import { jabrUrlForPort } from "@config/jabr-config";
 import {
 	PROTOCOL_BINDING_JSONRPC,
 	SUPPORTED_INTERFACES_VERSION,
 } from "@constants/a2a-v1";
+import { DLQ_MAX_RETRIES, MAX_HANDOVER_DEPTH } from "@constants/app";
 import { JABR_PORTS } from "@constants/ecosystem";
-import type { KnowledgePort } from "@ports/knowledge-port";
+import { delegationInstrumenter, taskMetrics } from "@observability";
 import type { MemoryStorePort } from "@ports/memory-store";
 import type { TaskStorePort } from "@ports/task-store";
-import { MAX_HANDOVER_DEPTH } from "../constants/app.ts";
 import {
 	createCircularHandoffError,
 	extendChain,
 	wouldCreateCycle,
-} from "../security/handover-chain.ts";
-import { ToolRouter } from "./tool-router.ts";
+} from "@security/handover-chain";
+import { ToolRouter } from "./tool-router";
 
 export const JABIR_CARD: AgentCard = {
 	name: "JABIR",
@@ -114,6 +109,9 @@ export class JabirAgent {
 			priority: taskMeta?.priority ?? 0,
 			parentTaskIds: referenceTaskIds.length > 0 ? referenceTaskIds : undefined,
 		});
+		taskMetrics.recordTaskCreated(assignee, taskId);
+
+		const taskStartTime = Date.now();
 
 		try {
 			this.taskStore.updateState(taskId, "working");
@@ -167,12 +165,13 @@ export class JabirAgent {
 
 			// Deduct per-agent pricing from the target's budget before delegation.
 			const budget = this.toolRouter.cfg.budget;
+			let costTokens = 0;
 			if (budget) {
 				const card = await this.toolRouter.getCard(agentName);
 				if (card?.pricing) {
 					const costPerTask = card.pricing.costPerTask;
 					const costPerToken = card.pricing.costPerToken ?? 0;
-					const costTokens =
+					costTokens =
 						costPerTask +
 						costPerToken * Math.max(1, Math.ceil(augmentedText.length / 4));
 					await budget.consume(agentName, costTokens);
@@ -182,11 +181,39 @@ export class JabirAgent {
 				}
 			}
 
+			// --- Cost attribution metric ---
+			if (costTokens > 0) {
+				taskMetrics.recordCost({
+					agentName,
+					taskId,
+					tokens: costTokens,
+				});
+			}
+
 			let result = await this.toolRouter.delegateTask(
 				agentUrl,
 				augmentedText,
 				agentName,
 			);
+
+			// --- SHURA verification: cross-check high-stakes tasks ---
+			if (this.toolRouter.shouldVerifyTask(augmentedText)) {
+				try {
+					const verifyResult = await this.toolRouter.runVerification(
+						augmentedText,
+						result,
+						agentName,
+					);
+					if (verifyResult && verifyResult.contested) {
+						this.memory.append(
+							`[depth=${depth}] SHURA verification CONTESTED: ${verifyResult.winner} (score: ${verifyResult.confidence.toFixed(3)}, threshold: ${verifyResult.threshold})`,
+						);
+						result = `${result}\n\n---\n**SHURA verification CONTESTED** (threshold: ${verifyResult.threshold}, winner score: ${verifyResult.confidence.toFixed(3)}). Winner: ${verifyResult.winner}. Review recommended.`;
+					}
+				} catch (e) {
+					console.error("[JABIR] SHURA verification failed:", e);
+				}
+			}
 
 			const handover = decodeHandover(result);
 
@@ -215,6 +242,12 @@ export class JabirAgent {
 						assignee,
 						priority: taskMeta?.priority ?? 0,
 					});
+					taskMetrics.recordTaskFailed(
+						assignee,
+						taskId,
+						Date.now() - taskStartTime,
+						chainErr.message,
+					);
 					return;
 				}
 
@@ -312,6 +345,11 @@ export class JabirAgent {
 					assignee,
 					priority: taskMeta?.priority ?? 0,
 				});
+				taskMetrics.recordTaskCompleted(
+					assignee,
+					taskId,
+					Date.now() - taskStartTime,
+				);
 				return;
 			}
 
@@ -340,28 +378,62 @@ export class JabirAgent {
 				assignee,
 				priority: taskMeta?.priority ?? 0,
 			});
+			taskMetrics.recordTaskCompleted(
+				assignee,
+				taskId,
+				Date.now() - taskStartTime,
+			);
 
 			await this.toolRouter.syncToKanban(this.taskStore, taskId, result);
 		} catch (e) {
+			const errorMessage = String(e);
+			const retryable =
+				/timeout/i.test(errorMessage) && !/cancel/i.test(errorMessage);
+			const prevRetries = this.taskStore.getRetryCount(taskId);
+
+			if (retryable && prevRetries < DLQ_MAX_RETRIES) {
+				// Auto-retry: increment retry count and re-dispatch
+				this.taskStore.incrementRetryCount(taskId);
+				this.memory.append(
+					`[dlq] Retry ${prevRetries + 1}/${DLQ_MAX_RETRIES} for task ${taskId.slice(0, 12)} (error: ${errorMessage.slice(0, 60)})`,
+				);
+				// Re-queue for dispatch by resetting to submitted
+				this.taskStore.updateState(taskId, "submitted");
+				return;
+			}
+
+			// Permanent failure: either non-retryable or max retries exceeded
 			this.taskStore.updateState(taskId, "failed");
 			this.taskStore.appendMessage(taskId, {
 				messageId: crypto.randomUUID(),
 				role: "agent",
 				kind: "message",
-				parts: [{ kind: "text", text: `Error: ${String(e)}` }],
+				parts: [{ kind: "text", text: `Error: ${errorMessage}` }],
 				contextId: taskId,
 			} as A2AMessage);
 
-			const isTimeout = /timeout/i.test(String(e));
-			const isCancellation = /cancel/i.test(String(e));
-			this.toolRouter.emitTaskFailed(taskId, String(e), {
+			// Move to DLQ if max retries exhausted
+			if (retryable && prevRetries >= DLQ_MAX_RETRIES) {
+				this.taskStore.moveToDLQ(taskId, errorMessage);
+				this.memory.append(
+					`[dlq] Task ${taskId.slice(0, 12)} moved to DLQ after ${prevRetries} retries`,
+				);
+			}
+
+			this.toolRouter.emitTaskFailed(taskId, errorMessage, {
 				startedAt: taskMeta?.startedAt,
 				title: taskMeta?.title ?? userText.slice(0, 80),
 				assignee,
 				priority: taskMeta?.priority ?? 0,
-				retryable: isTimeout && !isCancellation,
-				retryCount: taskMeta?.retryCount ?? 0,
+				retryable,
+				retryCount: prevRetries,
 			});
+			taskMetrics.recordTaskFailed(
+				assignee,
+				taskId,
+				Date.now() - taskStartTime,
+				errorMessage,
+			);
 		}
 	}
 }

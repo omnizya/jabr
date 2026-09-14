@@ -29,7 +29,22 @@ const PYTHON_ENV_DIR = join(process.cwd(), ".python_env");
 function ensurePythonEnv() {
 	if (!existsSync(PYTHON_ENV_DIR)) {
 		mkdirSync(PYTHON_ENV_DIR, { recursive: true });
-		Bun.spawnSync(["uv", "init", "--lib", PYTHON_ENV_DIR]);
+	}
+	// Without a pyproject.toml, uv run --project resolves to the parent dir
+	// and python can't find main.py. Force the init so the env is always valid.
+	const manifest = join(PYTHON_ENV_DIR, "pyproject.toml");
+	if (!existsSync(manifest)) {
+		const proc = Bun.spawnSync(
+			["uv", "init", "--lib", "--name", "python-env", PYTHON_ENV_DIR],
+			{
+				cwd: dirname(PYTHON_ENV_DIR),
+			},
+		);
+		if (proc.exitCode !== 0) {
+			throw new Error(
+				`Failed to initialize Python env: ${new TextDecoder().decode(proc.stderr)}`,
+			);
+		}
 	}
 }
 
@@ -190,8 +205,9 @@ server.registerTool(
 		writeFileSync(mainPath, code, "utf-8");
 
 		const proc = Bun.spawnSync(
-			["uv", "run", "--project", PYTHON_ENV_DIR, "python", "main.py"],
+			["uv", "run", "--project", PYTHON_ENV_DIR, "python", mainPath],
 			{
+				cwd: PYTHON_ENV_DIR,
 				timeout: 10_000,
 			},
 		);

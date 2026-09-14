@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { A2A_METHODS, JABR_PORTS } from "@constants/ecosystem";
+import { V1_METHOD_SEND_MESSAGE } from "@constants/a2a-v1";
+import { JABR_PORTS } from "@constants/ecosystem";
 import {
 	isAudioMessage,
 	isDocumentMessage,
@@ -24,7 +25,7 @@ import type { BunRequest } from "bun";
  * HTTPS POST. This adapter:
  *  1. Verifies the HMAC-SHA256 signature (X-WA-Webhook-Signature).
  *  2. Parses the nested WhatsApp Cloud payload into WhatsAppWebhookEvent.
- *  3. Routes inbound messages to agents via delegateUrl (JSON-RPC tasks/send).
+ *  3. Routes inbound messages to agents via delegateUrl (JSON-RPC SendMessage).
  *  4. Exposes sendMessage / sendInteractiveMessage / sendDocument / markAsRead
  *     by calling the WhatsApp Cloud API on behalf of the bot.
  */
@@ -57,7 +58,7 @@ export interface WhatsAppWebhookAdapterConfig {
 
 	/**
 	 * Agent URL to forward inbound messages to.
-	 * Uses JSON-RPC `tasks/send` with the message text as the prompt.
+	 * Uses JSON-RPC `SendMessage` with the message text as the prompt.
 	 */
 	delegateUrl?: string;
 }
@@ -502,14 +503,12 @@ export class WhatsAppWebhookAdapter implements WhatsAppBotPort {
 			body: JSON.stringify({
 				jsonrpc: "2.0",
 				id: 1,
-				method: A2A_METHODS.tasksSend,
+				method: V1_METHOD_SEND_MESSAGE,
 				params: {
 					message: {
 						role: "user",
 						messageId: crypto.randomUUID(),
-						parts: [
-							{ kind: "text", text: `[WhatsApp] From +${from}:\n${text}` },
-						],
+						parts: [{ text: `[WhatsApp] From +${from}:\n${text}` }],
 					},
 				},
 			}),

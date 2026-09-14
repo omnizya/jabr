@@ -1,7 +1,12 @@
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { initSchema } from "@adapters/sqlite-db";
 import type { A2AMessage, A2APart } from "@agents/types";
-import type { Task, TaskFilter, TaskStorePort } from "@ports/task-store";
+import type {
+	DLQEntry,
+	Task,
+	TaskFilter,
+	TaskStorePort,
+} from "@ports/task-store";
 import type { Task as A2ATask } from "../types/a2a-v1.ts";
 
 export class SqliteTaskStore implements TaskStorePort {
@@ -18,6 +23,16 @@ export class SqliteTaskStore implements TaskStorePort {
 	private readonly stmtRecordTransition;
 	private readonly stmtGetTransitions;
 	private readonly stmtListTasks;
+
+	// DLQ statements
+	private readonly stmtGetRetryCount;
+	private readonly stmtIncrementRetryCount;
+	private readonly stmtMoveToDLQ;
+	private readonly stmtListDLQ;
+	private readonly stmtGetDLQEntry;
+	private readonly stmtRetryFromDLQ;
+	private readonly stmtPurgeDLQ;
+	private readonly stmtPurgeAllDLQ;
 
 	// Subscriptions for real-time updates
 	private readonly subscriptions = new Map<string, Set<(task: Task) => void>>();
@@ -62,6 +77,39 @@ export class SqliteTaskStore implements TaskStorePort {
 		this.stmtListTasks = db.query(
 			`SELECT id, state, created_at, updated_at FROM tasks ORDER BY created_at`,
 		);
+
+		// DLQ prepared statements
+		this.stmtGetRetryCount = db.query(
+			`SELECT retry_count FROM tasks WHERE id = ?`,
+		);
+		this.stmtIncrementRetryCount = db.query(
+			`UPDATE tasks SET retry_count = retry_count + 1, updated_at = ? WHERE id = ?`,
+		);
+		this.stmtMoveToDLQ = db.query(
+			`INSERT OR REPLACE INTO dead_letter_queue (task_id, original_id, error, retry_count, moved_at, state_snapshot)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+		);
+		this.stmtListDLQ = db.query(
+			`SELECT dlq.task_id, t.state, dlq.error, dlq.retry_count, dlq.moved_at,
+			        (SELECT COUNT(*) FROM messages m WHERE m.task_id = dlq.task_id) as msg_count
+			 FROM dead_letter_queue dlq
+			 JOIN tasks t ON t.id = dlq.task_id
+			 ORDER BY dlq.moved_at DESC`,
+		);
+		this.stmtGetDLQEntry = db.query(
+			`SELECT dlq.task_id, t.state, dlq.error, dlq.retry_count, dlq.moved_at,
+			        (SELECT COUNT(*) FROM messages m WHERE m.task_id = dlq.task_id) as msg_count
+			 FROM dead_letter_queue dlq
+			 JOIN tasks t ON t.id = dlq.task_id
+			 WHERE dlq.task_id = ?`,
+		);
+		this.stmtRetryFromDLQ = db.query(
+			`DELETE FROM dead_letter_queue WHERE task_id = ?`,
+		);
+		this.stmtPurgeDLQ = db.query(
+			`DELETE FROM dead_letter_queue WHERE task_id = ?`,
+		);
+		this.stmtPurgeAllDLQ = db.query(`DELETE FROM dead_letter_queue`);
 	}
 
 	private reconstruct(taskId: string): Task | undefined {
@@ -292,5 +340,101 @@ export class SqliteTaskStore implements TaskStorePort {
 			to: r.to_state,
 			timestamp: r.timestamp,
 		}));
+	}
+
+	// ---- Dead Letter Queue (DLQ) ----
+
+	getRetryCount(taskId: string): number {
+		const row = this.stmtGetRetryCount.get(taskId) as
+			| { retry_count: number }
+			| undefined;
+		return row?.retry_count ?? 0;
+	}
+
+	incrementRetryCount(taskId: string): void {
+		const now = new Date().toISOString();
+		this.stmtIncrementRetryCount.run(now, taskId);
+	}
+
+	moveToDLQ(taskId: string, error: string): void {
+		const now = new Date().toISOString();
+		const retryCount = this.getRetryCount(taskId);
+		const task = this.reconstruct(taskId);
+		const stateSnapshot = JSON.stringify({
+			id: task?.id ?? taskId,
+			state: task?.state ?? "failed",
+			messages: task?.messages ?? [],
+			artifacts: task?.artifacts ?? [],
+		});
+		this.stmtMoveToDLQ.run(
+			taskId,
+			taskId,
+			error,
+			retryCount,
+			now,
+			stateSnapshot,
+		);
+	}
+
+	listDLQ(): DLQEntry[] {
+		const rows = this.stmtListDLQ.all() as Array<{
+			task_id: string;
+			state: string;
+			error: string;
+			retry_count: number;
+			moved_at: string;
+			msg_count: number;
+		}>;
+		return rows.map((r) => ({
+			taskId: r.task_id,
+			state: r.state,
+			error: r.error,
+			retryCount: r.retry_count,
+			movedAt: r.moved_at,
+			messageCount: r.msg_count,
+		}));
+	}
+
+	getDLQEntry(taskId: string): DLQEntry | undefined {
+		const row = this.stmtGetDLQEntry.get(taskId) as
+			| {
+					task_id: string;
+					state: string;
+					error: string;
+					retry_count: number;
+					moved_at: string;
+					msg_count: number;
+			  }
+			| undefined;
+		if (!row) return undefined;
+		return {
+			taskId: row.task_id,
+			state: row.state,
+			error: row.error,
+			retryCount: row.retry_count,
+			movedAt: row.moved_at,
+			messageCount: row.msg_count,
+		};
+	}
+
+	retryFromDLQ(taskId: string): boolean {
+		const entry = this.getDLQEntry(taskId);
+		if (!entry) return false;
+		// Remove from DLQ
+		this.stmtRetryFromDLQ.run(taskId);
+		// Reset task state to submitted for re-dispatch
+		const now = new Date().toISOString();
+		this.stmtUpdateState.run("submitted", now, taskId);
+		return true;
+	}
+
+	purgeDLQ(taskId: string): boolean {
+		const result = this.stmtPurgeDLQ.run(taskId);
+		return result.changes > 0;
+	}
+
+	purgeAllDLQ(): number {
+		const result = this.stmtPurgeAllDLQ.run();
+		return result.changes;
 	}
 }

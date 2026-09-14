@@ -44,6 +44,14 @@ function makeTaskStore() {
 		getTransitionHistory: () => [],
 		list: () => [],
 		subscribe: () => () => {},
+		getRetryCount: (_taskId: string): number => 0,
+		incrementRetryCount: (_taskId: string): void => {},
+		moveToDLQ: (_taskId: string, _error: string): void => {},
+		listDLQ: () => [],
+		getDLQEntry: (_taskId: string) => undefined,
+		retryFromDLQ: (_taskId: string): boolean => false,
+		purgeDLQ: (_taskId: string): boolean => false,
+		purgeAllDLQ: (): number => 0,
 	} as TaskStorePort;
 }
 

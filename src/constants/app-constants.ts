@@ -43,6 +43,12 @@ export const DISCOVER_POLL_INTERVAL_MS = 1_000;
  */
 export const DEFAULT_MAX_RETRIES = 7;
 
+/** Maximum number of automatic retry attempts before a failed task is moved
+ * to the dead letter queue (DLQ). Once in the DLQ, the task requires manual
+ * intervention (retry/purge via CLI).
+ */
+export const DLQ_MAX_RETRIES = 3;
+
 // ---------------------------------------------------------------------------
 // Timeouts (milliseconds)
 // ---------------------------------------------------------------------------
@@ -79,7 +85,7 @@ export const MCP_ELICITATION_TIMEOUT_MS = 300_000;
  */
 export const MCP_HEALTHCHECK_TIMEOUT_MS = 2_000;
 
-/** Default timeout for A2A `tasks/send` requests in E2E probes and manual
+/** Default timeout for A2A `SendMessage` requests in E2E probes and manual
  * testing.  Short enough to surface a hung agent quickly, long enough to
  * survive a cold-start LLM call on a small model.
  *
@@ -135,6 +141,14 @@ export const RESEARCH_TEMPERATURE = 0.2;
  */
 export const SYNTHESIS_TEMPERATURE = 0.3;
 
+/** Default comma-separated high-stakes keywords that trigger SHURA
+ * verification when JABR_VERIFY_ENABLED is true. Tasks matching any of
+ * these keywords are cross-checked by the verification agent after
+ * specialist completion.
+ */
+export const JABR_VERIFY_KEYWORDS_DEFAULT =
+	"security,financial,auth,crypto,payment,compliance,legal,medical,password,secret,credential,token,key,encrypt,hash,signature,audit,risk,vulnerability,breach";
+
 /** Default temperature for the OpenAI adapter when the caller does not
  * supply an explicit value.  Neutral-creative balance suitable for general
  * conversational and code-generation tasks.
@@ -163,6 +177,7 @@ export const AppConstants = {
 	MAX_DISCOVER_ATTEMPTS,
 	DISCOVER_POLL_INTERVAL_MS,
 	DEFAULT_MAX_RETRIES,
+	DLQ_MAX_RETRIES,
 	MCP_ELICITATION_TIMEOUT_MS,
 	MCP_HEALTHCHECK_TIMEOUT_MS,
 	DEFAULT_A2A_TIMEOUT_MS,
@@ -172,4 +187,5 @@ export const AppConstants = {
 	SYNTHESIS_TEMPERATURE,
 	DEFAULT_MODEL_TEMPERATURE,
 	DEFAULT_TIMEOUT_MS,
+	JABR_VERIFY_KEYWORDS_DEFAULT,
 } as const;

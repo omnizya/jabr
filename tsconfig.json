@@ -22,7 +22,9 @@
 			"@constants/*": ["./src/constants/*"],
 			"@utils/*": ["./src/utils/*"],
 			"@types/*": ["./src/types/*"],
-			"@agents/*": ["./src/types/*"]
+			"@agents/*": ["./src/types/*"],
+			"@observability": ["./src/observability/index.ts"],
+			"@observability/*": ["./src/observability/*"]
 		},
 		"strict": true,
 		"skipLibCheck": true,

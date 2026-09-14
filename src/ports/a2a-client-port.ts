@@ -5,7 +5,7 @@
 import type { AgentCard } from "@agents/types";
 
 /**
- * Structured result from a synchronous `tasks/send` call.
+ * Structured result from a synchronous `SendMessage` call.
  *
  * Mirrors the JSON-RPC result envelope returned by A2A servers. The server
  * responds with one of three content shapes — `text` (flat), `artifacts`
@@ -22,7 +22,7 @@ export interface A2ATaskResult {
 }
 
 /**
- * SSE event frame received from a `tasks/sendSubscribe` stream.
+ * SSE event frame received from a `SendStreamingMessage` (SSE) stream.
  *
  * The server emits two event types (see `a2a-server.ts`):
  *   - `TaskStatusUpdateEvent` — carries `taskId`, `state`, `message`, `timestamp`.
@@ -51,7 +51,7 @@ export type A2ASseEvent =
 
 export interface A2AClientPort {
 	/**
-	 * Send a task to an agent via synchronous `tasks/send` and await the
+	 * Send a task to an agent via synchronous `SendMessage` and await the
 	 * full result. Resolves with the structured response envelope.
 	 *
 	 * @param agentUrl  Target agent's root URL (e.g. `http://localhost:4000`).
@@ -65,7 +65,7 @@ export interface A2AClientPort {
 	): Promise<A2ATaskResult>;
 
 	/**
-	 * Send a task asynchronously via `tasks/send` and return immediately
+	 * Send a task asynchronously via `SendMessage` and return immediately
 	 * with the assigned task ID. The caller polls or streams separately
 	 * for completion.
 	 *
@@ -81,7 +81,7 @@ export interface A2AClientPort {
 	): Promise<string>;
 
 	/**
-	 * Retrieve the current state of a task by its ID via `tasks/get`.
+	 * Retrieve the current state of a task by its ID via `GetTask`.
 	 *
 	 * @param agentUrl  Target agent's root URL.
 	 * @param taskId    The task ID to look up.
@@ -90,7 +90,7 @@ export interface A2AClientPort {
 	getTask(agentUrl: string, taskId: string): Promise<Record<string, unknown>>;
 
 	/**
-	 * Cancel a running task via `tasks/cancel`.
+	 * Cancel a running task via `CancelTask`.
 	 *
 	 * @param agentUrl  Target agent's root URL.
 	 * @param taskId    The task ID to cancel.
@@ -118,7 +118,7 @@ export interface A2AClientPort {
 	/**
 	 * Subscribe to real-time progress events for a task via SSE streaming.
 	 *
-	 * Sends a `tasks/sendSubscribe` JSON-RPC request and consumes the resulting
+	 * Sends a `SendStreamingMessage` JSON-RPC request and consumes the resulting
 	 * text/event-stream. Each parsed SSE frame is forwarded to the `onEvent`
 	 * callback. The promise resolves when the stream closes (task completed,
 	 * failed, or canceled) or rejects on network / parse errors.

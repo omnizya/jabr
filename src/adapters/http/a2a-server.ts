@@ -8,7 +8,6 @@
  *     StreamResponse oneof.
  *   - GetTask / ListTasks / CancelTask / SubscribeToTask — task-store backed.
  *   - GetExtendedAgentCard + create/get/list/delete push-notification configs.
- *   - Legacy tasks/* aliases remain below until Unit 7 retires A2A_METHODS.
  *
  * Authentication:
  *   - X-API-Key header (ApiKeyRegistry) — per-key ACL.
@@ -41,7 +40,7 @@ import {
 	V1_METHOD_SEND_STREAMING_MESSAGE,
 	V1_METHOD_SUBSCRIBE_TO_TASK,
 } from "@constants/a2a-v1";
-import { A2A_METHODS } from "@constants/ecosystem";
+import { a2aServerInstrumenter, taskMetrics } from "@observability";
 import type {
 	Task as StoreTask,
 	TaskFilter,
@@ -54,11 +53,8 @@ import {
 	buildCorsPreflightHeaders,
 	err,
 	formatAnonymousSSEFrame,
-	formatSSEEvent,
-	type JSONRPCNotification,
 	type JSONRPCRequest,
 	type JSONRPCResponse,
-	notification,
 	ok,
 } from "@utils/rpc";
 import {
@@ -90,9 +86,7 @@ import type {
 	SendMessageRequest,
 	StreamResponse,
 	SubscribeToTaskRequest,
-	TaskArtifactUpdateEvent,
 	TaskPushNotificationConfig,
-	TaskStatusUpdateEvent,
 	Message as WireMessage,
 	Task as WireTask,
 	TaskState as WireTaskState,
@@ -100,38 +94,6 @@ import type {
 import { ApiKeyRegistry } from "../../security/api-key-registry";
 import { scopesForMethod } from "../../security/auth-middleware";
 import { loadTlsConfigSync } from "../../security/tls-config";
-
-/**
- * Validates the params shape for a tasks/send JSON-RPC call.
- */
-export function validateTasksSendParams(params: unknown): string | null {
-	if (params === null || typeof params !== "object") {
-		return "params must be an object";
-	}
-	const p = params as Record<string, unknown>;
-	if (!("message" in p)) return "missing required field: message";
-	if (p.message === null || typeof p.message !== "object") {
-		return "message must be an object";
-	}
-	const msg = p.message as Record<string, unknown>;
-	if (!("parts" in msg)) return "missing required field: message.parts";
-	if (!Array.isArray(msg.parts)) return "message.parts must be an array";
-	if (msg.parts.length === 0) return "message.parts must not be empty";
-	for (const part of msg.parts) {
-		if (part === null || typeof part !== "object")
-			return "each part must be an object";
-		const partObj = part as Record<string, unknown>;
-		if (typeof partObj.kind !== "string")
-			return "each part must have a string 'kind'";
-		if (partObj.kind === "text" && typeof partObj.text !== "string") {
-			return "text parts must have a string 'text' field";
-		}
-	}
-	if ("role" in msg && typeof msg.role !== "string") {
-		return "message.role must be a string";
-	}
-	return null;
-}
 
 /**
  * Build an SSE stream with emit() and end() callbacks.
@@ -760,7 +722,7 @@ export class A2AServer {
 							sendReq = fromWireSendMessageRequest(params);
 						} catch (e) {
 							console.error(
-								`[A2AServer] tasks/send invalid params (-32602) id=${id}: ${e}`,
+								`[A2AServer] SendMessage invalid params (-32602) id=${id}: ${e}`,
 							);
 							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
 								headers: v1JsonHeaders,
@@ -781,7 +743,7 @@ export class A2AServer {
 							sendReq = fromWireSendMessageRequest(params);
 						} catch (e) {
 							console.error(
-								`[A2AServer] tasks/sendStreaming invalid params (-32602) id=${id}: ${e}`,
+								`[A2AServer] SendStreamingMessage invalid params (-32602) id=${id}: ${e}`,
 							);
 							return Response.json(err(id, -32602, `Invalid params: ${e}`), {
 								headers: v1JsonHeaders,
@@ -1004,400 +966,10 @@ export class A2AServer {
 						});
 					}
 
-					// --- tasks/sendSubscribe — SSE streaming branch ---
-					if (method === A2A_METHODS.tasksSendSubscribe) {
-						console.log(`[A2AServer] ← POST / tasks/sendSubscribe id=${id}`);
-
-						const validationError = validateTasksSendParams(params);
-						if (validationError) {
-							console.error(
-								`[A2AServer] tasks/sendSubscribe invalid params (-32600) id=${id}: ${validationError}`,
-							);
-							const origin = req.headers.get("Origin");
-							const corsHeaders = buildCorsHeaders(origin);
-							return Response.json(
-								err(id, -32600, `Invalid params: ${validationError}`),
-								{ headers: corsHeaders ?? {} },
-							);
-						}
-
-						const message = params as {
-							message: {
-								role?: string;
-								parts: Array<{ kind: string; text?: string }>;
-							};
-						};
-						const parts = message.message.parts;
-						const text = parts.find((p) => p.kind === "text")?.text ?? "";
-
-						const origin = req.headers.get("Origin");
-						const corsHeaders = buildCorsHeaders(origin);
-						const responseHeaders = {
-							...(corsHeaders ?? {}),
-							"Content-Type": "text/event-stream",
-							"Cache-Control": "no-cache, no-transform",
-							Connection: "keep-alive",
-							"X-Accel-Buffering": "no",
-						};
-
-						const { stream, emit, end } = buildSSEStream();
-
-						// Emit an SSE event frame for a TaskStreamingEvent.
-						const emitEvent = (event: TaskStreamingEvent) => {
-							if (event.type === "status") {
-								emit(
-									formatSSEEvent("TaskStatusUpdateEvent", {
-										taskId: event.taskId,
-										state: event.state,
-										message: event.message,
-										timestamp: event.timestamp,
-									}),
-								);
-							} else {
-								emit(
-									formatSSEEvent("TaskArtifactUpdateEvent", {
-										taskId: event.taskId,
-										artifact: event.artifact,
-									}),
-								);
-							}
-						};
-
-						const taskId = crypto.randomUUID();
-						console.log(
-							`[A2AServer] tasks/sendSubscribe starting taskId=${taskId} textLen=${text.length}`,
-						);
-
-						// Create AbortController for cooperative cancellation via tasks/cancel.
-						const streamController = new AbortController();
-						self.taskAbortControllers.set(taskId, streamController);
-
-						// Track in-flight streaming request for graceful shutdown.
-						self.inflightStream++;
-						const onDone = () => {
-							self.inflightStream--;
-							self._resolveDrainWaiters();
-						};
-						if (self.shuttingDown) {
-							self.taskAbortControllers.delete(taskId);
-							onDone();
-							return new Response(
-								JSON.stringify({
-									error: { code: -32603, message: "Server is shutting down" },
-								}),
-								{ status: 503, headers: responseHeaders },
-							);
-						}
-
-						// Kick off the handler; do not await — SSE must stream concurrently.
-						(async () => {
-							try {
-								// Emit initial "submitted" status.
-								emitEvent({
-									type: "status",
-									taskId,
-									state: "submitted",
-									message: "Task accepted for streaming execution",
-									timestamp: new Date().toISOString(),
-								});
-
-								let result: string;
-								if (onTaskStreaming) {
-									result = await onTaskStreaming(
-										text,
-										taskId,
-										emitEvent,
-										caller,
-										streamController.signal,
-									);
-								} else {
-									// Fallback: synthetic status events around sync onTask.
-									emitEvent({
-										type: "status",
-										taskId,
-										state: "working",
-										message: "Processing",
-										timestamp: new Date().toISOString(),
-									});
-									result = await onTask(text, caller, streamController.signal);
-									emitEvent({
-										type: "artifact",
-										taskId,
-										artifact: {
-											name: "result",
-											parts: [{ kind: "text", text: result }],
-										},
-									});
-								}
-
-								// Emit completion.
-								emitEvent({
-									type: "status",
-									taskId,
-									state: "completed",
-									message: result.slice(0, 200),
-									timestamp: new Date().toISOString(),
-								});
-							} catch (e) {
-								console.error("[A2AServer] tasks/sendSubscribe error:", e);
-								emitEvent({
-									type: "status",
-									taskId,
-									state: "failed",
-									message: String(e),
-									timestamp: new Date().toISOString(),
-								});
-							} finally {
-								self.taskAbortControllers.delete(taskId);
-								// Signal stream end. The pull-based stream will close after
-								// flushing any remaining buffered events.
-								end();
-								onDone();
-							}
-						})();
-
-						return new Response(stream, { headers: responseHeaders });
-					}
-
-					// --- tasks/get — retrieve task state ---
-					if (method === A2A_METHODS.tasksGet) {
-						console.log(`[A2AServer] ← POST / tasks/get id=${id}`);
-						const taskId = (params as { taskId?: string })?.taskId;
-						if (!taskId) {
-							return Response.json(
-								err(id, -32600, "Invalid params: missing taskId"),
-								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
-							);
-						}
-						if (!self.taskStore) {
-							return Response.json(
-								err(
-									id,
-									-32603,
-									"Server misconfigured: task store not available",
-								),
-								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
-							);
-						}
-						const task = self.taskStore.get(taskId);
-						if (!task) {
-							return Response.json(
-								err(id, -32000, `Task not found: ${taskId}`),
-								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
-							);
-						}
-						return Response.json(
-							ok(id, {
-								id: task.id,
-								contextId: task.id,
-								status: {
-									state: task.state,
-									timestamp: new Date().toISOString(),
-								},
-								history: task.messages,
-								artifacts: task.artifacts,
-							}),
-							{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
-						);
-					}
-
-					// --- tasks/cancel — cancel a running task ---
-					if (method === A2A_METHODS.tasksCancel) {
-						console.log(`[A2AServer] ← POST / tasks/cancel id=${id}`);
-						const taskId = (params as { taskId?: string })?.taskId;
-						if (!taskId) {
-							return Response.json(
-								err(id, -32600, "Invalid params: missing taskId"),
-								{ headers: buildCorsHeaders(req.headers.get("Origin")) ?? {} },
-							);
-						}
-						// If the task has an in-flight handler, abort it cooperatively.
-						const controller = self.taskAbortControllers.get(taskId);
-						if (controller) {
-							controller.abort("canceled");
-							self.taskAbortControllers.delete(taskId);
-						}
-						if (self.taskStore) {
-							const task = self.taskStore.get(taskId);
-							if (!task) {
-								return Response.json(
-									err(id, -32000, `Task not found: ${taskId}`),
-									{
-										headers: buildCorsHeaders(req.headers.get("Origin")) ?? {},
-									},
-								);
-							}
-							// Only SUBMITTED and WORKING tasks can be canceled.
-							if (task.state !== "submitted" && task.state !== "working") {
-								return Response.json(
-									err(
-										id,
-										-32002,
-										`Task in state '${task.state}' cannot be canceled`,
-									),
-									{
-										headers: buildCorsHeaders(req.headers.get("Origin")) ?? {},
-									},
-								);
-							}
-							self.taskStore.updateState(taskId, "canceled");
-						}
-						return Response.json(ok(id, { id: taskId, state: "canceled" }), {
-							headers: buildCorsHeaders(req.headers.get("Origin")) ?? {},
-						});
-					}
-
-					// --- tasks/send — synchronous branch ---
-					if (method !== A2A_METHODS.tasksSend) {
-						console.error(
-							`[A2AServer] POST / method not found (-32601) id=${id} method=${method}`,
-						);
-						const origin = req.headers.get("Origin");
-						const corsHeaders = buildCorsHeaders(origin);
-						return Response.json(
-							err(id, -32601, `Method not found: ${method}`),
-							{ headers: corsHeaders ?? {} },
-						);
-					}
-
-					// --- Input shape validation before dispatch ---
-					const validationError = validateTasksSendParams(params);
-					if (validationError) {
-						console.error(
-							`[A2AServer] POST / invalid params (-32600) id=${id}: ${validationError}`,
-						);
-						const origin = req.headers.get("Origin");
-						const corsHeaders = buildCorsHeaders(origin);
-						return Response.json(
-							err(id, -32600, `Invalid params: ${validationError}`),
-							{ headers: corsHeaders ?? {} },
-						);
-					}
-
-					try {
-						const message = params as {
-							message: {
-								role?: string;
-								parts: Array<{ kind: string; text?: string }>;
-							};
-							notificationUrl?: string;
-							callbackUrl?: string;
-						};
-						const parts = message.message.parts;
-						const text = parts.find((p) => p.kind === "text")?.text ?? "";
-						const callbackUrl = message.notificationUrl ?? message.callbackUrl;
-
-						console.log(
-							`[A2AServer] ← POST / tasks/send id=${id} textLen=${text.length} callback=${callbackUrl ?? "none"}`,
-						);
-
-						// Track in-flight sync request for graceful shutdown.
-						self.inflightSync++;
-						if (self.shuttingDown) {
-							self.inflightSync--;
-							const origin = req.headers.get("Origin");
-							const corsHeaders = buildCorsHeaders(origin);
-							return new Response(
-								JSON.stringify(err(id, -32603, "Server is shutting down")),
-								{
-									status: 503,
-									headers: {
-										...(corsHeaders ?? {}),
-										"Content-Type": "application/json",
-									},
-								},
-							);
-						}
-
-						// --- Push notification mode: run task async, return task ID immediately ---
-						if (callbackUrl) {
-							const taskId = crypto.randomUUID();
-							const pushController = new AbortController();
-							self.taskAbortControllers.set(taskId, pushController);
-
-							console.log(
-								`[A2AServer] tasks/send push mode taskId=${taskId} callback=${callbackUrl}`,
-							);
-
-							// Fire-and-forget: run task and POST state changes to callback.
-							(async () => {
-								try {
-									self._postCallback(callbackUrl, taskId, "submitted", {
-										message: "Task accepted for execution",
-									});
-
-									const start = performance.now();
-									const result = await onTask(
-										text,
-										caller,
-										pushController.signal,
-									);
-									const latency = Math.round(performance.now() - start);
-									console.log(
-										`[A2AServer] push mode onTask done taskId=${taskId} latency=${latency}ms`,
-									);
-
-									self._postCallback(callbackUrl, taskId, "completed", {
-										result,
-										latencyMs: latency,
-									});
-								} catch (e) {
-									console.error(
-										`[A2AServer] push mode onTask error taskId=${taskId}:`,
-										e,
-									);
-									self._postCallback(callbackUrl, taskId, "failed", {
-										message: String(e),
-									});
-								} finally {
-									self.taskAbortControllers.delete(taskId);
-									self.inflightSync--;
-									self._resolveDrainWaiters();
-								}
-							})();
-
-							const origin = req.headers.get("Origin");
-							const corsHeaders = buildCorsHeaders(origin);
-							return Response.json(ok(id, { id: taskId, state: "submitted" }), {
-								headers: corsHeaders ?? {},
-							});
-						}
-
-						// --- Synchronous mode: await onTask, return result ---
-						// Generate taskId and AbortController for cooperative cancellation.
-						const taskId = crypto.randomUUID();
-						const syncController = new AbortController();
-						self.taskAbortControllers.set(taskId, syncController);
-
-						console.log(
-							`[A2AServer] executing onTask (id=${id} taskId=${taskId})`,
-						);
-						const start = performance.now();
-						const result = await onTask(text, caller, syncController.signal);
-						const latency = Math.round(performance.now() - start);
-						console.log(
-							`[A2AServer] onTask done (id=${id}) latency=${latency}ms resultLen=${String(result).length}`,
-						);
-						self.inflightSync--;
-						self.taskAbortControllers.delete(taskId);
-						self._resolveDrainWaiters();
-
-						const origin = req.headers.get("Origin");
-						const corsHeaders = buildCorsHeaders(origin);
-						return Response.json(ok(id, { text: result }), {
-							headers: corsHeaders ?? {},
-						});
-					} catch (e) {
-						self.inflightSync--;
-						self._resolveDrainWaiters();
-						console.error("[A2AServer] internal error:", e);
-						const origin = req.headers.get("Origin");
-						const corsHeaders = buildCorsHeaders(origin);
-						return Response.json(
-							err(id, -32603, `Internal error: ${String(e)}`),
-							{ headers: corsHeaders ?? {} },
-						);
-					}
+					// --- A2A v1.0 only: unknown JSON-RPC method → -32601 ---
+					return Response.json(err(id, -32601, `Method not found: ${method}`), {
+						headers: v1JsonHeaders,
+					});
 				}
 
 				// --- A2A v1.0 REST binding ---
@@ -1869,7 +1441,7 @@ export class A2AServer {
 			`   Card:       http://localhost:${port}/.well-known/agent-card.json`,
 		);
 		console.log(
-			`   Stream:     http://localhost:${port}/ (tasks/sendSubscribe → SSE)`,
+			`   Stream:     http://localhost:${port}/ (SendStreamingMessage → SSE)`,
 		);
 		console.log(
 			`   Rate limit: ${rateLimiter.maxRequests} req/${rateLimiter.windowMs / 1000}s per caller (X-API-Key or IP)`,
@@ -1938,8 +1510,16 @@ export class A2AServer {
 			sendReq.notificationUrl ??
 			sendReq.sendMessageConfiguration?.taskPushNotificationConfig?.url;
 		console.log(
-			`[A2AServer] tasks/send taskId=${taskId} textLen=${text.length}`,
+			`[A2AServer] SendMessage taskId=${taskId} textLen=${text.length}`,
 		);
+
+		// --- OpenTelemetry span ---
+		const span = a2aServerInstrumenter.startServerSpan("SendMessage", {
+			taskId,
+			textLength: text.length,
+			caller: caller?.description,
+			agentName: this.config.card.name,
+		});
 
 		// Push mode: reply immediately with a submitted task and deliver the
 		// outcome (and failures) via the notification callback.
@@ -1956,15 +1536,18 @@ export class A2AServer {
 						caller,
 						pushController.signal,
 					);
+					a2aServerInstrumenter.recordSuccess(span, result.length);
 					this._postCallback(callbackUrl, taskId, "completed", {
 						result,
 					});
 				} catch (e) {
+					a2aServerInstrumenter.recordError(span, e);
 					this._postCallback(callbackUrl, taskId, "failed", {
 						message: String(e),
 					});
 				} finally {
 					this.taskAbortControllers.delete(taskId);
+					span.end();
 				}
 			})();
 			return {
@@ -1981,6 +1564,9 @@ export class A2AServer {
 
 		// Sync mode: block until the handler returns.
 		if (this.shuttingDown) {
+			span.setAttribute("error.message", "Server is shutting down");
+			span.setStatus({ code: "ERROR", message: "Server is shutting down" });
+			span.end();
 			return {
 				ok: false,
 				code: -32603,
@@ -1998,6 +1584,7 @@ export class A2AServer {
 				syncController.signal,
 			);
 			this.taskAbortControllers.delete(taskId);
+			a2aServerInstrumenter.recordSuccess(span, result.length);
 			const agentMessage = v1AgentMessage(contextId, taskId, result);
 			const wireTask: WireTask = {
 				taskId,
@@ -2017,7 +1604,8 @@ export class A2AServer {
 				}),
 			};
 		} catch (e) {
-			console.error(`[A2AServer] tasks/send error: ${e}`);
+			a2aServerInstrumenter.recordError(span, e);
+			console.error(`[A2AServer] SendMessage error: ${e}`);
 			return {
 				ok: false,
 				code: -32603,
@@ -2026,6 +1614,7 @@ export class A2AServer {
 		} finally {
 			this.inflightSync--;
 			this._resolveDrainWaiters();
+			span.end();
 		}
 	}
 
@@ -2068,7 +1657,7 @@ export class A2AServer {
 		};
 
 		console.log(
-			`[A2AServer] tasks/sendStreaming starting taskId=${taskId} textLen=${text.length}`,
+			`[A2AServer] SendStreamingMessage starting taskId=${taskId} textLen=${text.length}`,
 		);
 
 		// Emit the submitted task frame before spawning the handler so the
@@ -2182,7 +1771,7 @@ export class A2AServer {
 					});
 				}
 			} catch (e) {
-				console.error(`[A2AServer] tasks/sendStreaming error: ${e}`);
+				console.error(`[A2AServer] SendStreamingMessage error: ${e}`);
 				emitFrame({
 					statusUpdate: {
 						taskId,

@@ -24,6 +24,7 @@ export class SqliteMemoryStore implements MemoryStorePort {
 	private readonly stmtDeleteSession;
 	private readonly stmtGetSession;
 	private readonly stmtSaveSession;
+	private readonly stmtPurgeOlderThan;
 
 	constructor(db: Database, opts?: SqliteMemoryStoreOptions) {
 		db.exec("PRAGMA foreign_keys = ON");
@@ -58,6 +59,9 @@ export class SqliteMemoryStore implements MemoryStorePort {
 			`INSERT INTO sessions (id, data_json, created_at, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at`,
 		);
+		this.stmtPurgeOlderThan = db.query(
+			`DELETE FROM memory_log WHERE created_at < ?`,
+		);
 	}
 
 	read(): string {
@@ -85,6 +89,16 @@ export class SqliteMemoryStore implements MemoryStorePort {
 				console.error("[SqliteMemoryStore] mirror write failed:", e);
 			}
 		}
+	}
+
+	/**
+	 * Evict entries older than `hours` from the memory_log table.
+	 * Uses the created_at ISO timestamp column. Returns number of rows deleted.
+	 */
+	purgeOlderThan(hours: number): number {
+		const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+		const res = this.stmtPurgeOlderThan.run(cutoff);
+		return res.changes;
 	}
 
 	listSessions(): string[] {
