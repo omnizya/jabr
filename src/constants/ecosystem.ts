@@ -30,7 +30,7 @@ function portFromEnv(name: string, fallback: number): number {
  *
  *   orchestrator 4000, oracle 4001, librarian 4002, explorer 4003,
  *   designer 4004, fixer 4005, scientist 4006, githubWebhook 4007,
- *   realtime 4008, verification 4009, jarvis 1337
+ *   realtime 4008, verification 4009, llm 4010, jarvis 1337
  *
  * Each value is env-overridable via the documented variable name.
  */
@@ -42,7 +42,7 @@ export const JABR_PORTS = {
 	designer: portFromEnv("DESIGNER_PORT", 4004),
 	fixer: portFromEnv("FIXER_PORT", 4005),
 	scientist: portFromEnv("SCIENTIST_PORT", 4006),
-	llm: portFromEnv("LLM_PORT", 4007),
+	llm: portFromEnv("LLM_PORT", 4010),
 	githubWebhook: portFromEnv("GITHUB_WEBHOOK_PORT", 4007),
 	realtime: portFromEnv("JABR_REALTIME_PORT", 4008),
 	verification: portFromEnv("VERIFICATION_PORT", 4009),
@@ -96,7 +96,7 @@ export const JABR_URL_DEFAULT = "http://localhost:4000";
 
 /**
  * Dev CORS allowlist used when ALLOWED_ORIGINS is empty. Derived from
- * JABR_PORTS so every agent/infra port (4000-4009, 1337) is covered
+ * JABR_PORTS so every agent/infra port (4000-4010, 1337) is covered
  * automatically, plus static dev frontends (Vite 5173, plain HTTP 8080).
  * Single source of truth consumed by agents/utils/rpc.ts and
  * bun-websocket-adapter.ts.
