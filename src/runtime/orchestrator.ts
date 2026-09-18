@@ -15,7 +15,11 @@ import { SettlementLedger } from "@adapters/x402/settlement-ledger.ts";
 import { X402Client } from "@adapters/x402/x402-client";
 import { X402Server } from "@adapters/x402/x402-server";
 import type { ResolvedCaller } from "@agents/types";
-import { optionalBoolEnv, optionalEnv } from "@config/env-manager.ts";
+import {
+	EnvManager,
+	optionalBoolEnv,
+	optionalEnv,
+} from "@config/env-manager.ts";
 import { jabrUrlForPort, jabrUrlOrUndefined } from "@config/jabr-config";
 import { JABR_VERIFY_KEYWORDS_DEFAULT } from "@constants/app";
 import { JABR_PORTS } from "@constants/ecosystem";
@@ -34,16 +38,28 @@ import { bridgeRealtimeToPlugin, initLifecycle } from "./lifecycle.ts";
 if (import.meta.main) {
 	const PORT = JABR_PORTS.orchestrator;
 
-	// --- Settlement infrastructure ---
-	if (!process.env.JABR_X402_HMAC_SECRET) {
-		console.error(
-			"Fatal: JABR_X402_HMAC_SECRET environment variable is required",
-		);
-		process.exit(1);
-	}
+	// --- Startup validation (required + optional warnings) ---
+	const env = new EnvManager();
+	env
+		.require(
+			"JABR_X402_HMAC_SECRET",
+			"generate with: bun scripts/generate-hmac-secret.ts --write",
+		)
+		.string("JABR_URL", { default: "http://localhost:4000" })
+		.string("NODE_ENV", { default: "development" })
+		.int("ORCHESTRATOR_PORT", { default: 4000 })
+		.url("NINEROUTER_URL", { default: "http://localhost:20127" })
+		.warnIfUnset("NINEROUTER_KEY", "LLM features disabled without 9Router key")
+		.warnIfUnset("GITHUB_TOKEN", "GitHub webhook actions disabled")
+		.warnIfUnset("POLLINATIONS_API_KEY", "image generation disabled")
+		.warnIfUnset("HERMES_KANBAN_BOARD", "kanban sync disabled")
+		.warnIfUnset("HERMES_KANBAN_TASK", "kanban sync disabled")
+		.json("A2A_API_KEYS", { default: [] });
+	env.report();
 
+	// --- Settlement infrastructure ---
 	const ledger = new SettlementLedger({
-		hmacSecret: process.env.JABR_X402_HMAC_SECRET,
+		hmacSecret: process.env.JABR_X402_HMAC_SECRET as string,
 		chainEndpoint: process.env.JABR_X402_CHAIN_ENDPOINT ?? undefined,
 		defaultAutoRefillThreshold:
 			Number(process.env.JABR_X402_AUTO_REFILL_THRESHOLD) || 0,
