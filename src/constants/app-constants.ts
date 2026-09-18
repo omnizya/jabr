@@ -50,6 +50,27 @@ export const DEFAULT_MAX_RETRIES = 7;
 export const DLQ_MAX_RETRIES = 3;
 
 // ---------------------------------------------------------------------------
+// Push notification callback retry
+// ---------------------------------------------------------------------------
+
+/** Maximum number of retry attempts for push notification callbacks before
+ * the task is moved to the DLQ. Each retry uses exponential backoff. */
+export const CALLBACK_MAX_RETRIES = 3;
+
+/** Initial backoff interval (ms) for callback retry. Each subsequent retry
+ * doubles this value up to CALLBACK_MAX_BACKOFF_MS. */
+export const CALLBACK_INITIAL_BACKOFF_MS = 500;
+
+/** Upper bound (ms) on the exponential backoff interval between callback
+ * retries. Prevents backoff from growing unbounded. */
+export const CALLBACK_MAX_BACKOFF_MS = 10_000;
+
+/** Timeout (ms) for each individual callback POST attempt. If the callback
+ * server does not respond within this window, the attempt is treated as a
+ * failure and retried (up to CALLBACK_MAX_RETRIES). */
+export const CALLBACK_TIMEOUT_MS = 5_000;
+
+// ---------------------------------------------------------------------------
 // Timeouts (milliseconds)
 // ---------------------------------------------------------------------------
 

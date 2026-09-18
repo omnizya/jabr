@@ -40,6 +40,12 @@ import {
 	V1_METHOD_SEND_STREAMING_MESSAGE,
 	V1_METHOD_SUBSCRIBE_TO_TASK,
 } from "@constants/a2a-v1";
+import {
+	CALLBACK_INITIAL_BACKOFF_MS,
+	CALLBACK_MAX_BACKOFF_MS,
+	CALLBACK_MAX_RETRIES,
+	CALLBACK_TIMEOUT_MS,
+} from "@constants/app-constants";
 import { a2aServerInstrumenter, taskMetrics } from "@observability";
 import type {
 	Task as StoreTask,
@@ -319,6 +325,9 @@ export class A2AServer {
 	// --- task cancellation support ---
 	private readonly taskAbortControllers = new Map<string, AbortController>();
 	private readonly taskStore?: TaskStorePort;
+
+	// --- push notification callback retry state ---
+	private readonly taskCallbackRetryCount = new Map<string, number>();
 
 	// --- v1.0 in-memory task push notification configs (per taskId) ---
 	private readonly taskPushNotificationConfigs = new Map<
@@ -2113,8 +2122,13 @@ export class A2AServer {
 	}
 
 	/**
-	 * POST a task state change to a callback URL.
-	 * Fire-and-forget: errors are logged but never thrown.
+	 * POST a task state change to a callback URL with retry, timeout, and DLQ.
+	 *
+	 * Retries up to CALLBACK_MAX_RETRIES times with exponential backoff.
+	 * Each attempt has a CALLBACK_TIMEOUT_MS timeout. After all retries are
+	 * exhausted, the task is moved to the DLQ (if a taskStore is configured).
+	 *
+	 * Invalid URLs fail immediately without retry.
 	 */
 	private _postCallback(
 		callbackUrl: string,
@@ -2122,21 +2136,121 @@ export class A2AServer {
 		state: TaskState | "submitted" | "completed" | "failed",
 		extra: Record<string, unknown> = {},
 	): void {
+		// Validate URL before attempting any fetch
+		try {
+			new URL(callbackUrl);
+		} catch (err) {
+			console.error(
+				`[A2AServer] push callback invalid url url=${callbackUrl} taskId=${taskId}:`,
+				err,
+			);
+			this._scheduleCallbackRetry(callbackUrl, taskId, state, extra, 0);
+			return;
+		}
+
 		const body = {
 			taskId,
 			state,
 			timestamp: new Date().toISOString(),
 			...extra,
 		};
+
+		this._doCallbackFetch(callbackUrl, taskId, state, body, extra, 0);
+	}
+
+	/**
+	 * Execute a single callback fetch attempt with timeout.
+	 * On failure, schedules a retry or moves to DLQ.
+	 */
+	private _doCallbackFetch(
+		callbackUrl: string,
+		taskId: string,
+		state: TaskState | "submitted" | "completed" | "failed",
+		body: Record<string, unknown>,
+		extra: Record<string, unknown>,
+		attempt: number,
+	): void {
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), CALLBACK_TIMEOUT_MS);
+
 		fetch(callbackUrl, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
-		}).catch((err) => {
+			signal: controller.signal,
+		})
+			.then((res) => {
+				clearTimeout(timeoutId);
+				if (!res.ok) {
+					throw new Error(`HTTP ${res.status}`);
+				}
+				// Success — reset retry count
+				this.taskCallbackRetryCount.delete(taskId);
+			})
+			.catch((err) => {
+				clearTimeout(timeoutId);
+				console.error(
+					`[A2AServer] push callback failed url=${callbackUrl} taskId=${taskId} attempt=${attempt + 1}:`,
+					err,
+				);
+				this._scheduleCallbackRetry(
+					callbackUrl,
+					taskId,
+					state,
+					extra,
+					attempt + 1,
+				);
+			});
+	}
+
+	/**
+	 * Schedule a retry with exponential backoff, or move to DLQ if max retries exhausted.
+	 */
+	private _scheduleCallbackRetry(
+		callbackUrl: string,
+		taskId: string,
+		state: TaskState | "submitted" | "completed" | "failed",
+		extra: Record<string, unknown>,
+		nextAttempt: number,
+	): void {
+		if (nextAttempt >= CALLBACK_MAX_RETRIES) {
+			// Max retries exhausted — move to DLQ
 			console.error(
-				`[A2AServer] push callback failed url=${callbackUrl} taskId=${taskId}:`,
-				err,
+				`[A2AServer] push callback exhausted retries url=${callbackUrl} taskId=${taskId} attempts=${nextAttempt}`,
 			);
-		});
+			if (this.taskStore) {
+				const errorMsg = `Callback failed after ${nextAttempt} retries (last: ${callbackUrl})`;
+				this.taskStore.moveToDLQ(taskId, errorMsg);
+			}
+			this.taskCallbackRetryCount.delete(taskId);
+			return;
+		}
+
+		// Exponential backoff: initial * 2^attempt, capped at max
+		const backoffMs = Math.min(
+			CALLBACK_INITIAL_BACKOFF_MS * Math.pow(2, nextAttempt - 1),
+			CALLBACK_MAX_BACKOFF_MS,
+		);
+
+		console.log(
+			`[A2AServer] push callback retry scheduled url=${callbackUrl} taskId=${taskId} attempt=${nextAttempt + 1}/${CALLBACK_MAX_RETRIES} backoff=${backoffMs}ms`,
+		);
+
+		setTimeout(() => {
+			const body = {
+				taskId,
+				state,
+				timestamp: new Date().toISOString(),
+				...extra,
+			};
+			this._doCallbackFetch(
+				callbackUrl,
+				taskId,
+				state,
+				body,
+				extra,
+				nextAttempt,
+			);
+		}, backoffMs);
 	}
 }
