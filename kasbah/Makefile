@@ -65,3 +65,24 @@ execute-code-modernization:
 ## Params: team/project are optional; omit input for interactive selection.
 execute-linear-summary:
 	uv run python -m entrypoints.start --workflow linear-weekly-summary $(if $(input),--input '$(input)',--input '{}')
+
+## Jabr Integration Workflows
+## Usage: make execute-jabr-orchestrator input='{"task": "Explain AI", "target_agents": ["oracle", "librarian"]}'
+execute-jabr-orchestrator:
+	uv run python -m entrypoints.start --workflow jabr-orchestrator $(if $(input),--input '$(input)',--input '{"task": "Hello from Jabr", "target_agents": ["oracle"]}')
+
+## Usage: make execute-jabr-delegate input='{"task": "Review code", "target_agents": ["oracle"]}'
+execute-jabr-delegate:
+	uv run python -m entrypoints.start --workflow jabr-agent-delegate $(if $(input),--input '$(input)',--input '{"task": "Hello", "target_agents": ["oracle"]}')
+
+## Usage: make execute-jabr-health-check
+execute-jabr-health-check:
+	uv run python -m entrypoints.start --workflow jabr-health-check --input '{}'
+
+## Usage: make execute-jabr-code-review input='{"code": "def hello(): return 42", "language": "python"}'
+execute-jabr-code-review:
+	uv run python -m entrypoints.start --workflow jabr-code-review $(if $(input),--input '$(input)',--input '{"code": "def hello(): return 42", "language": "python"}')
+
+## Usage: make execute-jabr-quick-review input='{"code": "def hello(): return 42"}'
+execute-jabr-quick-review:
+	uv run python -m entrypoints.start --workflow jabr-quick-review $(if $(input),--input '$(input)',--input '{"code": "def hello(): return 42"}')
