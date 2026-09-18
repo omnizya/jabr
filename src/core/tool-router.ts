@@ -8,6 +8,8 @@ import type { TaskStorePort } from "@/ports/task-store";
 import type {
 	AgentCard,
 	ConsensusInput,
+	DelegationOptions,
+	FetchImpl,
 	ToolRouterConfig,
 	VerificationConfig,
 	VerificationResult,
@@ -172,25 +174,111 @@ export class ToolRouter {
 
 	// ---- Multi-agent consensus ----
 
+	/**
+	 * Check if an agent is healthy by hitting its /health endpoint.
+	 * Returns true when the agent responds with 200 and status "ok".
+	 */
+	private async checkAgentHealth(
+		agentName: string,
+		agentUrl: string,
+		fetchImpl?: FetchImpl,
+	): Promise<boolean> {
+		const mem = this.cfg.memory;
+		const healthUrl = `${agentUrl.replace(/\/$/, "")}/health`;
+		const f = fetchImpl ?? fetch;
+
+		try {
+			const resp = await f(healthUrl, { method: "GET" });
+			if (!resp.ok) {
+				const body = await resp.text().catch(() => "");
+				const msg = `[preflight] ${agentName} not ready: ${resp.status} ${body.slice(0, 100)}`;
+				if (mem) mem.append(msg);
+				console.warn(msg);
+				return false;
+			}
+			const data = (await resp.json().catch(() => ({}))) as Record<
+				string,
+				unknown
+			>;
+			const status = data.status;
+			if (status !== "ok") {
+				const msg = `[preflight] ${agentName} not ready: status=${String(status)}`;
+				if (mem) mem.append(msg);
+				console.warn(msg);
+				return false;
+			}
+			return true;
+		} catch (err) {
+			const errMsg = err instanceof Error ? err.message : String(err);
+			const msg = `[preflight] ${agentName} health check failed: ${errMsg}`;
+			if (mem) mem.append(msg);
+			console.warn(msg);
+			return false;
+		}
+	}
+
 	async delegateToMultiple(
 		agentNames: string[],
 		userText: string,
+		options?: DelegationOptions,
 	): Promise<ConsensusInput[]> {
-		const tasks = agentNames
-			.filter((name) => name !== "orchestrator")
-			.map(async (name) => {
-				const url = await this.getAgentUrl(name);
-				if (!url) return null;
-				try {
-					await this.deductBudget(name, userText.length);
-					const response = await this.delegateTask(url, userText, name);
-					const card = await this.getCard(name);
-					if (!card) return null;
-					return { agentName: name, card, response } satisfies ConsensusInput;
-				} catch {
-					return null;
+		const mem = this.cfg.memory;
+		const captureErrors = options?.captureErrors ?? true;
+		const f = options?.fetchImpl;
+
+		// Filter out orchestrator and agents without URLs
+		const candidates: Array<{ name: string; url: string }> = [];
+		for (const name of agentNames) {
+			if (name === "orchestrator") continue;
+			const url = await this.getAgentUrl(name);
+			if (!url) continue;
+			candidates.push({ name, url });
+		}
+
+		// Preflight health checks: skip agents that are not ready
+		let eligible = candidates;
+		if (options?.preflight) {
+			const healthChecks = await Promise.all(
+				candidates.map(async ({ name, url }) => {
+					const healthy = await this.checkAgentHealth(name, url, f);
+					return { name, url, healthy };
+				}),
+			);
+			const healthy = healthChecks.filter((h) => h.healthy);
+			const unhealthy = healthChecks.filter((h) => !h.healthy);
+			eligible = healthy.map(({ name, url }) => ({ name, url }));
+
+			if (mem) {
+				if (unhealthy.length > 0) {
+					mem.append(
+						`[preflight] skipped ${unhealthy.length} agent(s): ${unhealthy.map((s) => s.name).join(", ")}`,
+					);
 				}
-			});
+				if (healthy.length > 0) {
+					mem.append(
+						`[preflight] ${healthy.length} agent(s) passed health check: ${healthy.map((s) => s.name).join(", ")}`,
+					);
+				}
+			}
+		}
+
+		const tasks = eligible.map(async ({ name, url }) => {
+			try {
+				await this.deductBudget(name, userText.length);
+				const response = await this.delegateTask(url, userText, name);
+				const card = await this.getCard(name);
+				if (!card) return null;
+				return { agentName: name, card, response } satisfies ConsensusInput;
+			} catch (err) {
+				if (captureErrors) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					const msg = `[delegateToMultiple] ${name} failed: ${errMsg}`;
+					if (mem) mem.append(msg);
+					console.error(msg);
+				}
+				return null;
+			}
+		});
 
 		const results = await Promise.all(tasks);
 		return results.filter((r): r is ConsensusInput => r !== null);
@@ -199,6 +287,7 @@ export class ToolRouter {
 	async executeConsensus(
 		userText: string,
 		agentNames?: string[],
+		options?: DelegationOptions,
 	): Promise<string> {
 		const available = this.getAvailableAgentNames();
 		const participants =
@@ -219,7 +308,11 @@ export class ToolRouter {
 			mem.append(`[consensus] Delegating to ${participants.length} agents`);
 		}
 
-		const inputs = await this.delegateToMultiple(participants, userText);
+		const inputs = await this.delegateToMultiple(
+			participants,
+			userText,
+			options,
+		);
 
 		if (inputs.length === 0) return "No agents responded";
 

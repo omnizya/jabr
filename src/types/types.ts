@@ -86,6 +86,19 @@ export interface TaskDelegator {
 	): Promise<string>;
 }
 
+/** Fetch function signature for health checks and delegation. */
+export type FetchImpl = (url: string, init?: RequestInit) => Promise<Response>;
+
+/** Options for multi-agent delegation with preflight health checks. */
+export interface DelegationOptions {
+	/** Whether to run preflight health checks before delegating. Default false. */
+	preflight?: boolean;
+	/** Injectable fetch implementation for testing. */
+	fetchImpl?: FetchImpl;
+	/** Whether to capture and report errors instead of silently swallowing. Default true. */
+	captureErrors?: boolean;
+}
+
 /** Structural subset of CognitiveLoop used for consensus evaluation. */
 export interface ConsensusEvaluator {
 	evaluate(
