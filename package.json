@@ -29,6 +29,7 @@
 		"verification": "bun src/runtime/agents/verification.ts",
 		"llm": "bun src/runtime/agents/llm.ts",
 		"dev": "bash scripts/dev.sh",
+		"kasbah": "make -C kasbah start-worker",
 		"cli": "bun scripts/jabr-cli.ts",
 		"build": "bun scripts/build.ts",
 		"test:e2e": "bun test tests/e2e-live.test.ts",
