@@ -38,6 +38,7 @@
 		"format": "biome format --write .",
 		"validate": "tsc --noEmit && biome lint .",
 		"kb-maintenance": "bun scripts/kb-maintenance.ts",
+		"planner": "bun scripts/planner.ts",
 		"fetch:sources": "bun scripts/opensrc-fetch.ts",
 		"souls": "python3 scripts/generate-agent-souls.py",
 		"prepare": "husky"
