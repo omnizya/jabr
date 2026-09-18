@@ -434,6 +434,30 @@ export class EnvManager {
 		return this;
 	}
 
+	/**
+	 * Warn (not fail) when an optional var is unset. Use for variables that
+	 * degrade gracefully (e.g. NINEROUTER_KEY without which LLM features are
+	 * disabled) — the process continues but logs a prominent warning.
+	 */
+	warnIfUnset(name: string, reason?: string): this {
+		this.specs.push({
+			name,
+			required: false,
+			validate: () => {
+				const v = process.env[name];
+				if (v === undefined || v === "") {
+					const msg = reason
+						? `${name} is unset — ${reason}`
+						: `${name} is unset (optional)`;
+					logger.warn(msg);
+				} else {
+					logger.info(`loaded ${name}=${v}`);
+				}
+			},
+		});
+		return this;
+	}
+
 	/** Run every registered spec. Collects errors instead of exiting. */
 	validate(): EnvVarError[] {
 		for (const s of this.specs) s.validate();

@@ -384,7 +384,9 @@ describe("requireJsonEnv", () => {
 
 	test("parses valid JSON", () => {
 		process.env.A2A_API_KEYS = '[{"key":"abc"}]';
-		expect(requireJsonEnv("A2A_API_KEYS")).toEqual([{ key: "abc" }]);
+		expect(requireJsonEnv<{ key: string }[]>("A2A_API_KEYS")).toEqual([
+			{ key: "abc" },
+		]);
 	});
 
 	test("throws when unset", () => {
@@ -483,6 +485,57 @@ describe("EnvManager", () => {
 		env.report();
 		expect(
 			captured.info.some((m) => m.includes("validated successfully")),
+		).toBe(true);
+	});
+});
+
+// ── warnIfUnset ──────────────────────────────────────────────────────────────
+
+describe("warnIfUnset", () => {
+	beforeEach(() => {
+		snapshotEnv();
+		clearEnv();
+		useCaptureLogger();
+	});
+	afterEach(() => {
+		restoreEnv();
+		resetEnvManagerLogger();
+	});
+
+	test("warns when optional var is unset", () => {
+		process.env.NINEROUTER_KEY = "";
+		const env = new EnvManager();
+		env.warnIfUnset("NINEROUTER_KEY", "LLM disabled");
+		const errors = env.validate();
+		expect(errors.length).toBe(0);
+		expect(
+			captured.warn.some(
+				(m) => m.includes("NINEROUTER_KEY") && m.includes("LLM disabled"),
+			),
+		).toBe(true);
+	});
+
+	test("logs info when optional var is set", () => {
+		process.env.NINEROUTER_KEY = "sk-123";
+		const env = new EnvManager();
+		env.warnIfUnset("NINEROUTER_KEY", "LLM disabled");
+		const errors = env.validate();
+		expect(errors.length).toBe(0);
+		expect(captured.info.some((m) => m.includes("NINEROUTER_KEY=sk-123"))).toBe(
+			true,
+		);
+	});
+
+	test("uses generic reason when none provided", () => {
+		delete process.env.HERMES_KANBAN_BOARD;
+		const env = new EnvManager();
+		env.warnIfUnset("HERMES_KANBAN_BOARD");
+		const errors = env.validate();
+		expect(errors.length).toBe(0);
+		expect(
+			captured.warn.some(
+				(m) => m.includes("HERMES_KANBAN_BOARD") && m.includes("(optional)"),
+			),
 		).toBe(true);
 	});
 });
